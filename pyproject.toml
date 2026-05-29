@@ -1,0 +1,16 @@
+[project]
+name = "viki"
+version = "0.1.0"
+description = "Vision-based Kinematic Imitation — robot dataset generation from human RGB-D video"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.26",
+    "opencv-python-headless>=4.9",
+    "pyrealsense2>=2.58",
+    "fastapi>=0.111",
+    "uvicorn[standard]>=0.29",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

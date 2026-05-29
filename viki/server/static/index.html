@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ViKi — Capture</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #16161a;
+    --border: #2a2a30;
+    --accent: #5b7fff;
+    --accent2: #ff6b6b;
+    --text: #e8e8f0;
+    --muted: #6b6b80;
+    --green: #4ade80;
+    --red: #f87171;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); }
+  header .subtitle { color: var(--muted); font-size: 11px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot.alive { background: var(--green); box-shadow: 0 0 6px var(--green); }
+
+  .toolbar {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 24px; border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  button {
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--surface); color: var(--text); cursor: pointer;
+    font-family: inherit; font-size: 12px; transition: all 0.15s;
+  }
+  button:hover { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.primary:hover { opacity: 0.85; }
+  button.danger { border-color: var(--red); color: var(--red); }
+  button.danger:hover { background: var(--red); color: #fff; }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  select {
+    padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
+    background: var(--surface); color: var(--text);
+    font-family: inherit; font-size: 12px;
+  }
+  label { color: var(--muted); font-size: 11px; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
+    gap: 16px; padding: 16px 24px;
+  }
+
+  .camera-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    overflow: hidden; transition: border-color 0.2s;
+  }
+  .camera-card.running { border-color: var(--accent); }
+
+  .card-header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+  }
+  .card-header .name { font-weight: 600; font-size: 12px; flex: 1; }
+  .tag {
+    padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 600;
+    background: var(--border); color: var(--muted);
+  }
+  .tag.realsense { background: #1a2a4a; color: #5b9fff; }
+  .tag.kinect { background: #1a3a2a; color: #4ade80; }
+  .tag.running { background: #1a3a1a; color: var(--green); }
+
+  .card-controls {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+    padding: 8px 14px; border-bottom: 1px solid var(--border);
+  }
+
+  .streams {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+  }
+  .stream-panel { position: relative; background: #000; aspect-ratio: 4/3; }
+  .stream-panel img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .stream-label {
+    position: absolute; top: 6px; left: 8px;
+    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);
+    background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 3px;
+  }
+  .stream-divider { width: 1px; background: var(--border); }
+
+  .card-footer {
+    display: flex; gap: 16px; padding: 8px 14px;
+    font-size: 11px; color: var(--muted);
+  }
+  .card-footer span { display: flex; gap: 4px; align-items: center; }
+
+  #log {
+    margin: 0 24px 24px;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+    padding: 10px 14px; font-size: 11px; color: var(--muted);
+    max-height: 120px; overflow-y: auto;
+  }
+  #log .entry { padding: 1px 0; }
+  #log .entry.error { color: var(--red); }
+  #log .entry.ok { color: var(--green); }
+
+  .empty-state {
+    text-align: center; padding: 60px 24px; color: var(--muted);
+  }
+  .empty-state h2 { font-size: 14px; margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="server-dot"></div>
+  <h1>ViKi</h1>
+  <span class="subtitle">capture server</span>
+</header>
+
+<div class="toolbar">
+  <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
+  <button onclick="startAll()">▶ Start all</button>
+  <button class="danger" onclick="stopAll()">■ Stop all</button>
+  <div style="flex:1"></div>
+  <label>fps</label>
+  <select id="fps-select">
+    <option value="15">15</option>
+    <option value="30" selected>30</option>
+  </select>
+  <label>color</label>
+  <select id="res-select">
+    <option value="640x480" selected>640 × 480</option>
+    <option value="1280x720">1280 × 720</option>
+    <option value="1920x1080">1920 × 1080</option>
+  </select>
+  <label>depth (Kinect)</label>
+  <select id="depth-select">
+    <option value="NFOV_UNBINNED" selected>NFOV unbinned</option>
+    <option value="NFOV_2X2BINNED">NFOV 2×2</option>
+    <option value="WFOV_UNBINNED">WFOV unbinned</option>
+    <option value="WFOV_2X2BINNED">WFOV 2×2</option>
+  </select>
+</div>
+
+<div class="grid" id="grid">
+  <div class="empty-state">
+    <h2>No cameras detected</h2>
+    <p>Click "Scan devices" to discover connected cameras</p>
+  </div>
+</div>
+
+<div id="log"></div>
+
+<script>
+const state = {};   // device_id → { running, infoInterval }
+
+function log(msg, cls = '') {
+  const el = document.getElementById('log');
+  const e = document.createElement('div');
+  e.className = 'entry ' + cls;
+  e.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(e);
+  while (el.children.length > 40) el.removeChild(el.lastChild);
+}
+
+async function api(method, path, body) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (body) opts.body = JSON.stringify(body);
+  const r = await fetch(path, opts);
+  return r.json();
+}
+
+async function checkServer() {
+  try {
+    await fetch('/api/devices');
+    document.getElementById('server-dot').classList.add('alive');
+  } catch {
+    document.getElementById('server-dot').classList.remove('alive');
+  }
+}
+
+async function scanDevices() {
+  log('Scanning for devices...');
+  try {
+    const data = await api('GET', '/api/devices');
+    log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
+    const all = [
+      ...data.realsense.map(id => ({ id, type: 'realsense' })),
+      ...data.kinect.map(id => ({ id, type: 'kinect' })),
+    ];
+    renderCards(all, data.active || []);
+  } catch (e) {
+    log('Scan failed: ' + e, 'error');
+  }
+}
+
+function renderCards(devices, active) {
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+  if (devices.length === 0) {
+    grid.innerHTML = `<div class="empty-state"><h2>No cameras detected</h2><p>Make sure cameras are connected and container has USB access.</p></div>`;
+    return;
+  }
+  devices.forEach(d => {
+    const isActive = active.includes(d.id);
+    if (!state[d.id]) state[d.id] = { running: isActive };
+    else state[d.id].running = isActive;
+    grid.appendChild(buildCard(d.id, d.type, isActive));
+    if (isActive) attachStreams(d.id);
+  });
+}
+
+function buildCard(id, type, running) {
+  const card = document.createElement('div');
+  card.className = 'camera-card' + (running ? ' running' : '');
+  card.id = 'card-' + id;
+  card.innerHTML = `
+    <div class="card-header">
+      <div class="dot ${running ? 'alive' : ''}"></div>
+      <span class="name">${id}</span>
+      <span class="tag ${type}">${type}</span>
+      ${running ? '<span class="tag running">LIVE</span>' : ''}
+    </div>
+    <div class="card-controls">
+      <button id="btn-start-${id}" ${running ? 'disabled' : ''} onclick="startCamera('${id}')">▶ Start</button>
+      <button id="btn-stop-${id}" ${running ? '' : 'disabled'} class="danger" onclick="stopCamera('${id}')">■ Stop</button>
+    </div>
+    <div class="streams">
+      <div class="stream-panel">
+        <img id="color-${id}" src="" alt="color">
+        <span class="stream-label">COLOR</span>
+      </div>
+      <div class="stream-divider"></div>
+      <div class="stream-panel">
+        <img id="depth-${id}" src="" alt="depth">
+        <span class="stream-label">DEPTH</span>
+      </div>
+    </div>
+    <div class="card-footer" id="footer-${id}">
+      <span>—</span>
+    </div>
+  `;
+  return card;
+}
+
+function attachStreams(id) {
+  const colorImg = document.getElementById('color-' + id);
+  const depthImg = document.getElementById('depth-' + id);
+  if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
+  if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
+
+  // Poll info
+  if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
+  state[id].infoInterval = setInterval(() => updateInfo(id), 2000);
+}
+
+function detachStreams(id) {
+  const colorImg = document.getElementById('color-' + id);
+  const depthImg = document.getElementById('depth-' + id);
+  if (colorImg) colorImg.src = '';
+  if (depthImg) depthImg.src = '';
+  if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
+}
+
+async function updateInfo(id) {
+  try {
+    const info = await api('GET', `/api/cameras/${id}/info`);
+    const footer = document.getElementById('footer-' + id);
+    if (!footer) return;
+    const shape = info.color_shape ? `${info.color_shape[1]}×${info.color_shape[0]}` : '—';
+    const ci = info.color_intrinsics;
+    const intr = ci ? `fx=${ci.fx.toFixed(1)} fy=${ci.fy.toFixed(1)}` : '';
+    footer.innerHTML = `<span>color: ${shape}</span><span>${intr}</span>`;
+  } catch { /* camera stopped */ }
+}
+
+async function startCamera(id) {
+  const fps = parseInt(document.getElementById('fps-select').value);
+  const [w, h] = document.getElementById('res-select').value.split('x').map(Number);
+  const depth_mode = document.getElementById('depth-select').value;
+  log(`Starting ${id}...`);
+  try {
+    await api('POST', `/api/cameras/${id}/start`, { fps, color_width: w, color_height: h, depth_mode });
+    log(`${id} started`, 'ok');
+    setRunning(id, true);
+  } catch (e) {
+    log(`Failed to start ${id}: ${e}`, 'error');
+  }
+}
+
+async function stopCamera(id) {
+  log(`Stopping ${id}...`);
+  await api('POST', `/api/cameras/${id}/stop`);
+  log(`${id} stopped`);
+  setRunning(id, false);
+}
+
+function setRunning(id, running) {
+  state[id] = state[id] || {};
+  state[id].running = running;
+  const card = document.getElementById('card-' + id);
+  const btnStart = document.getElementById('btn-start-' + id);
+  const btnStop = document.getElementById('btn-stop-' + id);
+  if (!card) return;
+  card.className = 'camera-card' + (running ? ' running' : '');
+  if (btnStart) btnStart.disabled = running;
+  if (btnStop) btnStop.disabled = !running;
+  if (running) attachStreams(id);
+  else detachStreams(id);
+}
+
+async function startAll() {
+  for (const id of Object.keys(state)) {
+    if (!state[id].running) await startCamera(id);
+  }
+}
+
+async function stopAll() {
+  for (const id of Object.keys(state)) {
+    if (state[id].running) await stopCamera(id);
+  }
+}
+
+// Init
+checkServer();
+setInterval(checkServer, 5000);
+scanDevices();
+</script>
+</body>
+</html>
