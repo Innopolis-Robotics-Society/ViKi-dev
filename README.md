@@ -54,7 +54,7 @@ Human Demo (RGB-D)
 ## Roadmap / Plan of Work
 
 ### Phase 1 — Multi-view Capture System
-- [ ] Hardware setup: RealSense D435i × 2 + Azure Kinect
+- [x] Hardware setup: RealSense D435i × 2 + Azure Kinect
 - [ ] Hardware sync via GPIO trigger (RealSense primary → secondary + Azure)
 - [ ] Extrinsic calibration with ArUco marker board
 - [ ] Capture node: synchronized recording, timestamped bags
