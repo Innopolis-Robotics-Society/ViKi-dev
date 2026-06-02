@@ -5,11 +5,8 @@
 # What this does:
 #   1. Installs Docker (if not present)
 #   2. Adds user to docker group
-#   3. udev rules for RealSense and Azure Kinect
+#   3. udev rules for RealSense, Azure Kinect, and DRI
 #   4. Adds user to plugdev + video groups
-#
-# What stays inside the container:
-#   - libk4a, librealsense, Python packages — all in Docker
 #
 # Usage:
 #   chmod +x scripts/host_setup.sh
@@ -53,31 +50,36 @@ usermod -aG docker "$CURRENT_USER"
 
 # ── 2. udev rules: Intel RealSense ───────────────────────────────────────────
 info "Installing RealSense udev rules..."
-cat > /etc/udev/rules.d/99-realsense.rules << 'EOF'
+cat > /etc/udev/rules.d/99-realsense.rules << 'RULES'
 SUBSYSTEM=="usb", ATTRS{idVendor}=="8086", MODE="0666", GROUP="plugdev"
-EOF
+RULES
 
 # ── 3. udev rules: Azure Kinect DK ───────────────────────────────────────────
 info "Installing Azure Kinect udev rules..."
-cat > /etc/udev/rules.d/99-k4a.rules << 'EOF'
+cat > /etc/udev/rules.d/99-k4a.rules << 'RULES'
 SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="097a", MODE="0666", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="097b", MODE="0666", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="097c", MODE="0666", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="097d", MODE="0666", GROUP="plugdev"
 SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="097e", MODE="0666", GROUP="plugdev"
-EOF
+RULES
+
+# ── 4. udev rules: DRI (GPU access for Kinect depth engine) ──────────────────
+info "Installing DRI udev rules..."
+cat > /etc/udev/rules.d/99-dri.rules << 'RULES'
+SUBSYSTEM=="drm", MODE="0666"
+RULES
 
 udevadm control --reload-rules
 udevadm trigger
 info "udev rules installed."
 
-# ── 4. Add user to plugdev + video ───────────────────────────────────────────
-info "Adding '$CURRENT_USER' to plugdev and video groups..."
-usermod -aG plugdev,video "$CURRENT_USER"
+# ── 5. Add user to plugdev + video ───────────────────────────────────────────
+info "Adding '$CURRENT_USER' to plugdev, video, render groups..."
+usermod -aG plugdev,video,render "$CURRENT_USER"
 
 # ── Done ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "${GREEN}Done.${NC}"
-echo ""
-warn "IMPORTANT: log out and back in for group changes to take effect."
-warn "Then reconnect your cameras physically and run: docker compose up --build"
+warn "Log out and back in for group changes to take effect."
+warn "Then reconnect your cameras and run: docker compose up"

@@ -1,22 +1,11 @@
 """
 viki.server.app
----------------
-FastAPI server providing:
-  GET  /                          -> UI (index.html)
-  GET  /api/devices               -> list detected cameras
-  POST /api/cameras/{id}/start    -> start a camera stream
-  POST /api/cameras/{id}/stop     -> stop a camera stream
-  GET  /api/cameras/{id}/stream   -> MJPEG stream (colour)
-  GET  /api/cameras/{id}/depth    -> MJPEG stream (depth colormap)
-  GET  /api/cameras/{id}/info     -> current config + intrinsics
 """
-
 from __future__ import annotations
 
-import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Optional
 
 import cv2
 import numpy as np
@@ -69,6 +58,8 @@ async def start_camera(device_id: str, req: StartRequest):
             depth_mode=req.depth_mode,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
     return {"status": "started", "device_id": device_id}
 
@@ -88,25 +79,24 @@ async def camera_info(device_id: str):
 
 
 @app.get("/api/cameras/{device_id}/stream")
-async def colour_stream(device_id: str):
+def colour_stream(device_id: str):
     return StreamingResponse(
         _mjpeg_gen(app.state.manager, device_id, "color"),
         media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
-
 @app.get("/api/cameras/{device_id}/depth")
-async def depth_stream(device_id: str):
+def depth_stream(device_id: str):
     return StreamingResponse(
         _mjpeg_gen(app.state.manager, device_id, "depth"),
         media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
-
-async def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
-    loop = asyncio.get_event_loop()
+def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
     while True:
-        frame = await loop.run_in_executor(None, mgr.latest_frame, device_id)
+        frame = mgr.latest_frame(device_id)
         if frame is None:
             img = _placeholder(640, 480, f"{device_id}: not started")
         elif kind == "color":
@@ -121,7 +111,7 @@ async def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
             + str(len(data)).encode()
             + b"\r\n\r\n" + data + b"\r\n"
         )
-        await asyncio.sleep(1 / 30)
+        time.sleep(1 / 30)
 
 
 def _depth_colormap(depth: np.ndarray) -> np.ndarray:

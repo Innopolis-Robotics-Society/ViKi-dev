@@ -10,6 +10,7 @@ Tested with libk4a 1.4.1 on Ubuntu 22.04 inside Docker.
 from __future__ import annotations
 
 import ctypes
+import cv2
 import ctypes.util
 import numpy as np
 from typing import Optional
@@ -129,6 +130,32 @@ _lib.k4a_device_get_serialnum.argtypes = [
     K4ADevice, ctypes.c_char_p, ctypes.POINTER(ctypes.c_size_t)
 ]
 
+# Calibration & transformation
+K4ACalibration  = ctypes.c_void_p
+K4ATransformation = ctypes.c_void_p
+
+_lib.k4a_device_get_calibration.restype  = ctypes.c_int
+_lib.k4a_device_get_calibration.argtypes = [
+    K4ADevice, ctypes.c_int, ctypes.c_int, ctypes.c_void_p
+]
+
+_lib.k4a_transformation_create.restype  = K4ATransformation
+_lib.k4a_transformation_create.argtypes = [ctypes.c_void_p]
+
+_lib.k4a_transformation_destroy.restype  = None
+_lib.k4a_transformation_destroy.argtypes = [K4ATransformation]
+
+_lib.k4a_image_create.restype  = ctypes.c_int
+_lib.k4a_image_create.argtypes = [
+    ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int64,
+    ctypes.POINTER(K4AImage)
+]
+
+_lib.k4a_transformation_depth_image_to_color_camera.restype  = ctypes.c_int
+_lib.k4a_transformation_depth_image_to_color_camera.argtypes = [
+    K4ATransformation, K4AImage, ctypes.POINTER(K4AImage)
+]
+
 # ── Resolution maps ───────────────────────────────────────────────────────────
 
 _COLOR_RES_MAP = {
@@ -180,6 +207,7 @@ class KinectBackend(CameraBackend):
         depth_mode: str = "NFOV_UNBINNED",
         fps: int = 30,
         timeout_ms: int = 5000,
+        align_depth_to_color: bool = True,
     ) -> None:
         if color_resolution not in _COLOR_RES_MAP:
             raise ValueError(f"Unsupported color_resolution {color_resolution}. "
@@ -196,9 +224,11 @@ class KinectBackend(CameraBackend):
         self._fps             = fps
         self._timeout_ms      = timeout_ms
 
-        self._handle: K4ADevice = K4ADevice(None)
-        self._serial_str: str   = f"kinect_{device_index}"
-        self._running           = False
+        self._align_depth = align_depth_to_color
+        self._handle: K4ADevice   = K4ADevice(None)
+        self._transform: K4ATransformation = K4ATransformation(None)
+        self._serial_str: str     = f"kinect_{device_index}"
+        self._running             = False
 
     # ── CameraBackend interface ───────────────────────────────────────────────
 
@@ -236,11 +266,29 @@ class KinectBackend(CameraBackend):
             _lib.k4a_device_close(self._handle)
             raise RuntimeError(f"k4a_device_start_cameras failed (result={res})")
 
+        # Create transformation handle for depth->color alignment
+        if self._align_depth:
+            # k4a_calibration_t is a large struct (~1KB) — allocate as byte buffer
+            cal_buf = ctypes.create_string_buffer(4096)
+            res = _lib.k4a_device_get_calibration(
+                self._handle,
+                _DEPTH_MODE_MAP[self._depth_mode_str],
+                _COLOR_RES_MAP[self._color_resolution],
+                cal_buf,
+            )
+            if res == K4A_RESULT_SUCCEEDED:
+                self._transform = _lib.k4a_transformation_create(cal_buf)
+            else:
+                self._align_depth = False  # fallback: no alignment
+
         self._running = True
 
     def stop(self) -> None:
         if not self._running:
             return
+        if self._transform:
+            _lib.k4a_transformation_destroy(self._transform)
+            self._transform = K4ATransformation(None)
         _lib.k4a_device_stop_cameras(self._handle)
         _lib.k4a_device_close(self._handle)
         self._handle  = K4ADevice(None)
@@ -264,8 +312,12 @@ class KinectBackend(CameraBackend):
             depth_img = _lib.k4a_capture_get_depth_image(capture)
 
             color = self._image_to_numpy_bgr(color_img)
-            depth = self._image_to_numpy_depth(depth_img)
             ts    = int(_lib.k4a_image_get_timestamp_usec(color_img))
+
+            if self._align_depth and self._transform:
+                depth = self._transform_depth(depth_img, color_img)
+            else:
+                depth = self._image_to_numpy_depth(depth_img)
 
             _lib.k4a_image_release(color_img)
             _lib.k4a_image_release(depth_img)
@@ -291,26 +343,63 @@ class KinectBackend(CameraBackend):
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
+    def _transform_depth(self, depth_img: K4AImage, color_img: K4AImage) -> np.ndarray:
+        """Transform depth image into color camera space."""
+        w = _lib.k4a_image_get_width_pixels(color_img)
+        h = _lib.k4a_image_get_height_pixels(color_img)
+        stride = w * 2  # uint16 = 2 bytes per pixel
+
+        transformed = K4AImage(None)
+        res = _lib.k4a_image_create(
+            K4A_IMAGE_FORMAT_DEPTH16, w, h, stride,
+            ctypes.byref(transformed)
+        )
+        if res != K4A_RESULT_SUCCEEDED:
+            return self._image_to_numpy_depth(depth_img)
+
+        res = _lib.k4a_transformation_depth_image_to_color_camera(
+            self._transform, depth_img, ctypes.byref(transformed)
+        )
+        if res != K4A_RESULT_SUCCEEDED:
+            _lib.k4a_image_release(transformed)
+            return self._image_to_numpy_depth(depth_img)
+
+        result = self._image_to_numpy_depth(transformed)
+        _lib.k4a_image_release(transformed)
+        return result
+
     @staticmethod
     def _image_to_numpy_bgr(img: K4AImage) -> np.ndarray:
-        w   = _lib.k4a_image_get_width_pixels(img)
-        h   = _lib.k4a_image_get_height_pixels(img)
-        buf = _lib.k4a_image_get_buffer(img)
-        # BGRA32 -> copy to numpy -> drop alpha
-        arr = np.ctypeslib.as_array(
-            (ctypes.c_uint8 * (h * w * 4)).from_address(buf)
-        ).reshape(h, w, 4).copy()
-        return arr[:, :, :3]  # BGRA -> BGR
+        w    = _lib.k4a_image_get_width_pixels(img)
+        h    = _lib.k4a_image_get_height_pixels(img)
+        size = _lib.k4a_image_get_size(img)
+        buf  = _lib.k4a_image_get_buffer(img)
+        if not buf or size == 0:
+            return np.zeros((h, w, 3), dtype=np.uint8)
+        raw = ctypes.string_at(buf, size)
+        expected = h * w * 4
+        if len(raw) == expected:
+            # BGRA32 — direct reshape
+            arr = np.frombuffer(raw, dtype=np.uint8).reshape(h, w, 4).copy()
+            return arr[:, :, :3]
+        else:
+            # Compressed (MJPEG) — decode via OpenCV
+            arr = np.frombuffer(raw, dtype=np.uint8)
+            decoded = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+            if decoded is None:
+                return np.zeros((h, w, 3), dtype=np.uint8)
+            return decoded
 
     @staticmethod
     def _image_to_numpy_depth(img: K4AImage) -> np.ndarray:
-        w   = _lib.k4a_image_get_width_pixels(img)
-        h   = _lib.k4a_image_get_height_pixels(img)
-        buf = _lib.k4a_image_get_buffer(img)
-        # DEPTH16 = uint16, millimetres
-        return np.ctypeslib.as_array(
-            (ctypes.c_uint16 * (h * w)).from_address(buf)
-        ).reshape(h, w).copy()
+        w    = _lib.k4a_image_get_width_pixels(img)
+        h    = _lib.k4a_image_get_height_pixels(img)
+        size = _lib.k4a_image_get_size(img)
+        buf  = _lib.k4a_image_get_buffer(img)
+        if not buf or size == 0:
+            return np.zeros((h, w), dtype=np.uint16)
+        raw = ctypes.string_at(buf, size)
+        return np.frombuffer(raw, dtype=np.uint16).reshape(h, w).copy()
 
     # ── Static utils ──────────────────────────────────────────────────────────
 

@@ -9,6 +9,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget ca-certificates gnupg2 apt-transport-https \
     libusb-1.0-0 libgl1 libglib2.0-0 \
+    libgl1-mesa-dri mesa-vulkan-drivers \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -49,5 +50,8 @@ RUN pip3 install --no-cache-dir \
     pyrealsense2 \
     opencv-python-headless numpy
 
-EXPOSE 8000
-CMD ["uvicorn", "viki.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+# ── Entrypoint ────────────────────────────────────────────────────────────────
+COPY docker/entrypoint.sh /app/docker/entrypoint.sh
+RUN chmod +x /app/docker/entrypoint.sh
+
+CMD ["/bin/bash"]

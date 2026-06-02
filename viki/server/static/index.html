@@ -10,7 +10,6 @@
     --surface: #16161a;
     --border: #2a2a30;
     --accent: #5b7fff;
-    --accent2: #ff6b6b;
     --text: #e8e8f0;
     --muted: #6b6b80;
     --green: #4ade80;
@@ -26,13 +25,12 @@
   }
   header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); }
   header .subtitle { color: var(--muted); font-size: 11px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
   .dot.alive { background: var(--green); box-shadow: 0 0 6px var(--green); }
 
   .toolbar {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 24px; border-bottom: 1px solid var(--border);
-    background: var(--bg);
   }
   button {
     padding: 6px 14px; border: 1px solid var(--border); border-radius: 4px;
@@ -46,7 +44,7 @@
   button.danger:hover { background: var(--red); color: #fff; }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
 
-  select {
+  select, input[type=number] {
     padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
     background: var(--surface); color: var(--text);
     font-family: inherit; font-size: 12px;
@@ -75,21 +73,22 @@
     background: var(--border); color: var(--muted);
   }
   .tag.realsense { background: #1a2a4a; color: #5b9fff; }
-  .tag.kinect { background: #1a3a2a; color: #4ade80; }
-  .tag.running { background: #1a3a1a; color: var(--green); }
+  .tag.kinect    { background: #1a3a2a; color: #4ade80; }
+  .tag.running   { background: #1a3a1a; color: var(--green); }
 
   .card-controls {
     display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
     padding: 8px 14px; border-bottom: 1px solid var(--border);
   }
+  .card-controls .sep {
+    width: 1px; height: 18px; background: var(--border); margin: 0 4px;
+  }
 
   .streams {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 0;
+    display: grid; grid-template-columns: 1fr 1fr;
   }
-  .stream-panel { position: relative; background: #000; aspect-ratio: 4/3; }
-  .stream-panel img {
-    width: 100%; height: 100%; object-fit: cover; display: block;
-  }
+  .stream-panel { position: relative; background: #000; aspect-ratio: 4/3; overflow: hidden; }
+  .stream-panel img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .stream-label {
     position: absolute; top: 6px; left: 8px;
     font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);
@@ -101,7 +100,6 @@
     display: flex; gap: 16px; padding: 8px 14px;
     font-size: 11px; color: var(--muted);
   }
-  .card-footer span { display: flex; gap: 4px; align-items: center; }
 
   #log {
     margin: 0 24px 24px;
@@ -111,11 +109,9 @@
   }
   #log .entry { padding: 1px 0; }
   #log .entry.error { color: var(--red); }
-  #log .entry.ok { color: var(--green); }
+  #log .entry.ok    { color: var(--green); }
 
-  .empty-state {
-    text-align: center; padding: 60px 24px; color: var(--muted);
-  }
+  .empty-state { text-align: center; padding: 60px 24px; color: var(--muted); }
   .empty-state h2 { font-size: 14px; margin-bottom: 8px; }
 </style>
 </head>
@@ -131,25 +127,6 @@
   <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
   <button onclick="startAll()">▶ Start all</button>
   <button class="danger" onclick="stopAll()">■ Stop all</button>
-  <div style="flex:1"></div>
-  <label>fps</label>
-  <select id="fps-select">
-    <option value="15">15</option>
-    <option value="30" selected>30</option>
-  </select>
-  <label>color</label>
-  <select id="res-select">
-    <option value="640x480" selected>640 × 480</option>
-    <option value="1280x720">1280 × 720</option>
-    <option value="1920x1080">1920 × 1080</option>
-  </select>
-  <label>depth (Kinect)</label>
-  <select id="depth-select">
-    <option value="NFOV_UNBINNED" selected>NFOV unbinned</option>
-    <option value="NFOV_2X2BINNED">NFOV 2×2</option>
-    <option value="WFOV_UNBINNED">WFOV unbinned</option>
-    <option value="WFOV_2X2BINNED">WFOV 2×2</option>
-  </select>
 </div>
 
 <div class="grid" id="grid">
@@ -162,12 +139,31 @@
 <div id="log"></div>
 
 <script>
-const state = {};   // device_id → { running, infoInterval }
+// Per-camera config definitions
+const CAMERA_CONFIG = {
+  realsense: {
+    resolutions: ['640x480', '1280x720', '1920x1080'],
+    defaultRes:  '640x480',
+    fps:         [15, 30],
+    defaultFps:  30,
+    depthModes:  null,  // not applicable
+  },
+  kinect: {
+    resolutions: ['1280x720', '1920x1080', '2048x1536'],
+    defaultRes:  '1280x720',
+    fps:         [5, 15, 30],
+    defaultFps:  30,
+    depthModes:  ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
+    defaultDepth: 'NFOV_UNBINNED',
+  },
+};
+
+const state = {};  // device_id -> { running, type, infoInterval }
 
 function log(msg, cls = '') {
   const el = document.getElementById('log');
-  const e = document.createElement('div');
-  e.className = 'entry ' + cls;
+  const e  = document.createElement('div');
+  e.className  = 'entry ' + cls;
   e.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
   el.prepend(e);
   while (el.children.length > 40) el.removeChild(el.lastChild);
@@ -196,7 +192,7 @@ async function scanDevices() {
     log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
     const all = [
       ...data.realsense.map(id => ({ id, type: 'realsense' })),
-      ...data.kinect.map(id => ({ id, type: 'kinect' })),
+      ...data.kinect.map(id  => ({ id, type: 'kinect' })),
     ];
     renderCards(all, data.active || []);
   } catch (e) {
@@ -207,17 +203,42 @@ async function scanDevices() {
 function renderCards(devices, active) {
   const grid = document.getElementById('grid');
   grid.innerHTML = '';
-  if (devices.length === 0) {
+  if (!devices.length) {
     grid.innerHTML = `<div class="empty-state"><h2>No cameras detected</h2><p>Make sure cameras are connected and container has USB access.</p></div>`;
     return;
   }
   devices.forEach(d => {
     const isActive = active.includes(d.id);
-    if (!state[d.id]) state[d.id] = { running: isActive };
-    else state[d.id].running = isActive;
+    state[d.id] = { running: isActive, type: d.type, ...(state[d.id] || {}) };
     grid.appendChild(buildCard(d.id, d.type, isActive));
     if (isActive) attachStreams(d.id);
   });
+}
+
+function buildControls(id, type) {
+  const cfg = CAMERA_CONFIG[type] || CAMERA_CONFIG.realsense;
+
+  const resOpts = cfg.resolutions.map(r =>
+    `<option value="${r}" ${r === cfg.defaultRes ? 'selected' : ''}>${r.replace('x', ' × ')}</option>`
+  ).join('');
+
+  const fpsOpts = cfg.fps.map(f =>
+    `<option value="${f}" ${f === cfg.defaultFps ? 'selected' : ''}>${f} fps</option>`
+  ).join('');
+
+  let depthPart = '';
+  if (cfg.depthModes) {
+    const dOpts = cfg.depthModes.map(m =>
+      `<option value="${m}" ${m === cfg.defaultDepth ? 'selected' : ''}>${m}</option>`
+    ).join('');
+    depthPart = `<div class="sep"></div><label>depth</label><select id="depth-${id}">${dOpts}</select>`;
+  }
+
+  return `
+    <label>res</label><select id="res-${id}">${resOpts}</select>
+    <label>fps</label><select id="fps-${id}">${fpsOpts}</select>
+    ${depthPart}
+  `;
 }
 
 function buildCard(id, type, running) {
@@ -226,14 +247,16 @@ function buildCard(id, type, running) {
   card.id = 'card-' + id;
   card.innerHTML = `
     <div class="card-header">
-      <div class="dot ${running ? 'alive' : ''}"></div>
+      <div class="dot ${running ? 'alive' : ''}" id="dot-${id}"></div>
       <span class="name">${id}</span>
       <span class="tag ${type}">${type}</span>
-      ${running ? '<span class="tag running">LIVE</span>' : ''}
+      ${running ? `<span class="tag running" id="live-tag-${id}">LIVE</span>` : `<span class="tag running" id="live-tag-${id}" style="display:none">LIVE</span>`}
     </div>
     <div class="card-controls">
       <button id="btn-start-${id}" ${running ? 'disabled' : ''} onclick="startCamera('${id}')">▶ Start</button>
-      <button id="btn-stop-${id}" ${running ? '' : 'disabled'} class="danger" onclick="stopCamera('${id}')">■ Stop</button>
+      <button id="btn-stop-${id}"  ${running ? '' : 'disabled'} class="danger" onclick="stopCamera('${id}')">■ Stop</button>
+      <div class="sep"></div>
+      ${buildControls(id, type)}
     </div>
     <div class="streams">
       <div class="stream-panel">
@@ -246,11 +269,17 @@ function buildCard(id, type, running) {
         <span class="stream-label">DEPTH</span>
       </div>
     </div>
-    <div class="card-footer" id="footer-${id}">
-      <span>—</span>
-    </div>
+    <div class="card-footer" id="footer-${id}"><span>—</span></div>
   `;
   return card;
+}
+
+function getCardConfig(id) {
+  const resVal = document.getElementById(`res-${id}`)?.value || '640x480';
+  const [w, h]  = resVal.split('x').map(Number);
+  const fps     = parseInt(document.getElementById(`fps-${id}`)?.value || '30');
+  const depth   = document.getElementById(`depth-${id}`)?.value || 'NFOV_UNBINNED';
+  return { color_width: w, color_height: h, fps, depth_mode: depth };
 }
 
 function attachStreams(id) {
@@ -258,8 +287,6 @@ function attachStreams(id) {
   const depthImg = document.getElementById('depth-' + id);
   if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
   if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
-
-  // Poll info
   if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
   state[id].infoInterval = setInterval(() => updateInfo(id), 2000);
 }
@@ -274,23 +301,38 @@ function detachStreams(id) {
 
 async function updateInfo(id) {
   try {
-    const info = await api('GET', `/api/cameras/${id}/info`);
+    const info   = await api('GET', `/api/cameras/${id}/info`);
     const footer = document.getElementById('footer-' + id);
     if (!footer) return;
+
+    // Update color panel aspect ratio
+    if (info.color_shape) {
+      const [ch, cw] = info.color_shape;
+      const colorPanel = document.querySelector(`#card-${id} .stream-panel:first-child`);
+      if (colorPanel) colorPanel.style.aspectRatio = `${cw}/${ch}`;
+    }
+
+    // Update depth panel aspect ratio
+    if (info.depth_shape) {
+      const [dh, dw] = info.depth_shape;
+      const depthPanel = document.querySelector(`#card-${id} .stream-panel:last-child`);
+      if (depthPanel) depthPanel.style.aspectRatio = `${dw}/${dh}`;
+    }
+
     const shape = info.color_shape ? `${info.color_shape[1]}×${info.color_shape[0]}` : '—';
-    const ci = info.color_intrinsics;
-    const intr = ci ? `fx=${ci.fx.toFixed(1)} fy=${ci.fy.toFixed(1)}` : '';
-    footer.innerHTML = `<span>color: ${shape}</span><span>${intr}</span>`;
+    const dshape = info.depth_shape ? `depth: ${info.depth_shape[1]}×${info.depth_shape[0]}` : '';
+    const ci    = info.color_intrinsics;
+    const intr  = ci ? `fx=${ci.fx.toFixed(1)} fy=${ci.fy.toFixed(1)}` : '';
+    footer.innerHTML = `<span>color: ${shape}</span><span>${dshape}</span><span>${intr}</span>`;
   } catch { /* camera stopped */ }
 }
 
 async function startCamera(id) {
-  const fps = parseInt(document.getElementById('fps-select').value);
-  const [w, h] = document.getElementById('res-select').value.split('x').map(Number);
-  const depth_mode = document.getElementById('depth-select').value;
-  log(`Starting ${id}...`);
+  const cfg = getCardConfig(id);
+  log(`Starting ${id} @ ${cfg.color_width}×${cfg.color_height} ${cfg.fps}fps...`);
   try {
-    await api('POST', `/api/cameras/${id}/start`, { fps, color_width: w, color_height: h, depth_mode });
+    const res = await api('POST', `/api/cameras/${id}/start`, cfg);
+    if (res.detail) { log(`${id} error: ${res.detail}`, 'error'); return; }
     log(`${id} started`, 'ok');
     setRunning(id, true);
   } catch (e) {
@@ -306,32 +348,33 @@ async function stopCamera(id) {
 }
 
 function setRunning(id, running) {
-  state[id] = state[id] || {};
+  if (!state[id]) state[id] = {};
   state[id].running = running;
-  const card = document.getElementById('card-' + id);
+  const card    = document.getElementById('card-' + id);
+  const dot     = document.getElementById('dot-' + id);
+  const liveTag = document.getElementById('live-tag-' + id);
   const btnStart = document.getElementById('btn-start-' + id);
-  const btnStop = document.getElementById('btn-stop-' + id);
+  const btnStop  = document.getElementById('btn-stop-' + id);
   if (!card) return;
   card.className = 'camera-card' + (running ? ' running' : '');
+  if (dot)     dot.className     = 'dot' + (running ? ' alive' : '');
+  if (liveTag) liveTag.style.display = running ? '' : 'none';
   if (btnStart) btnStart.disabled = running;
-  if (btnStop) btnStop.disabled = !running;
+  if (btnStop)  btnStop.disabled  = !running;
   if (running) attachStreams(id);
-  else detachStreams(id);
+  else         detachStreams(id);
 }
 
 async function startAll() {
-  for (const id of Object.keys(state)) {
+  for (const id of Object.keys(state))
     if (!state[id].running) await startCamera(id);
-  }
 }
 
 async function stopAll() {
-  for (const id of Object.keys(state)) {
+  for (const id of Object.keys(state))
     if (state[id].running) await stopCamera(id);
-  }
 }
 
-// Init
 checkServer();
 setInterval(checkServer, 5000);
 scanDevices();
