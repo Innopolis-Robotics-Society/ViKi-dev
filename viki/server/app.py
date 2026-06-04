@@ -103,7 +103,7 @@ def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
             img = frame.color
         else:
             depth = frame.depth
-            # print(f"[depth:{device_id}] shape={depth.shape} min={depth.min()} max={depth.max()} nonzero={(depth>0).sum()}", flush=True)
+            print(f"[depth:{device_id}] shape={depth.shape} min={depth.min()} max={depth.max()} nonzero={(depth>0).sum()}", flush=True)
             img = _depth_colormap(depth)
 
         _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])

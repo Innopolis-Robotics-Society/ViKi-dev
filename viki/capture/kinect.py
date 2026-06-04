@@ -207,7 +207,7 @@ class KinectBackend(CameraBackend):
         depth_mode: str = "NFOV_UNBINNED",
         fps: int = 30,
         timeout_ms: int = 5000,
-        align_depth_to_color: bool = False, # Not working
+        align_depth_to_color: bool = False, # bugged
     ) -> None:
         if color_resolution not in _COLOR_RES_MAP:
             raise ValueError(f"Unsupported color_resolution {color_resolution}. "
@@ -217,6 +217,12 @@ class KinectBackend(CameraBackend):
                              f"Supported: {list(_DEPTH_MODE_MAP)}")
         if fps not in _FPS_MAP:
             raise ValueError(f"Supported fps: 5, 15, 30. Got: {fps}")
+
+        # WFOV_UNBINNED only supports up to 15 fps
+        if depth_mode == "WFOV_UNBINNED" and fps > 15:
+            raise ValueError(
+                f"WFOV_UNBINNED only supports fps <= 15. Got: {fps}. Use 5 or 15."
+            )
 
         self._device_index    = device_index
         self._color_resolution = color_resolution
@@ -254,7 +260,7 @@ class KinectBackend(CameraBackend):
             color_resolution       = _COLOR_RES_MAP[self._color_resolution],
             depth_mode             = _DEPTH_MODE_MAP[self._depth_mode],
             camera_fps             = _FPS_MAP[self._fps],
-            synchronized_images_only = True,
+            synchronized_images_only = False,  # allow color/depth to arrive independently
             depth_delay_off_color_usec = 0,
             wired_sync_mode        = 0,
             subordinate_delay_off_master_usec = 0,
@@ -313,16 +319,26 @@ class KinectBackend(CameraBackend):
             color_img = _lib.k4a_capture_get_color_image(capture)
             depth_img = _lib.k4a_capture_get_depth_image(capture)
 
+            if not color_img:
+                if depth_img:
+                    _lib.k4a_image_release(depth_img)
+                raise TimeoutError("Color image is NULL in capture — frame dropped.")
+
             color = self._image_to_numpy_bgr(color_img)
             ts    = int(_lib.k4a_image_get_timestamp_usec(color_img))
 
-            if self._align_depth and self._transform:
+            if depth_img and (self._align_depth and self._transform):
                 depth = self._transform_depth(depth_img, color_img)
-            else:
+            elif depth_img:
                 depth = self._image_to_numpy_depth(depth_img)
+            else:
+                # depth image missing in this capture — return zeros
+                h, w = self._color_resolution[1], self._color_resolution[0]
+                depth = np.zeros((h, w), dtype=np.uint16)
 
             _lib.k4a_image_release(color_img)
-            _lib.k4a_image_release(depth_img)
+            if depth_img:
+                _lib.k4a_image_release(depth_img)
         finally:
             _lib.k4a_capture_release(capture)
 

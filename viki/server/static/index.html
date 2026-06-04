@@ -146,7 +146,7 @@ const CAMERA_CONFIG = {
     defaultRes:  '640x480',
     fps:         [15, 30],
     defaultFps:  30,
-    depthModes:  null,  // not applicable
+    depthModes:  null,
   },
   kinect: {
     resolutions: ['1280x720', '1920x1080', '2048x1536'],
@@ -155,6 +155,8 @@ const CAMERA_CONFIG = {
     defaultFps:  30,
     depthModes:  ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
     defaultDepth: 'NFOV_UNBINNED',
+    // WFOV_UNBINNED hardware limitation: max 15 fps
+    depthModeMaxFps: { 'WFOV_UNBINNED': 15 },
   },
 };
 
@@ -231,7 +233,7 @@ function buildControls(id, type) {
     const dOpts = cfg.depthModes.map(m =>
       `<option value="${m}" ${m === cfg.defaultDepth ? 'selected' : ''}>${m}</option>`
     ).join('');
-    depthPart = `<div class="sep"></div><label>depth</label><select id="depthmode-${id}">${dOpts}</select>`;
+    depthPart = `<div class="sep"></div><label>depth</label><select id="depthmode-${id}" onchange="updateFpsForDepthMode('${id}')">${dOpts}</select>`;
   }
 
   return `
@@ -272,6 +274,21 @@ function buildCard(id, type, running) {
     <div class="card-footer" id="footer-${id}"><span>—</span></div>
   `;
   return card;
+}
+
+function updateFpsForDepthMode(id) {
+  const cfg = CAMERA_CONFIG[state[id]?.type] || CAMERA_CONFIG.realsense;
+  if (!cfg.depthModeMaxFps) return;
+  const depthMode = document.getElementById(`depthmode-${id}`)?.value;
+  const maxFps = cfg.depthModeMaxFps[depthMode] || 30;
+  const fpsSelect = document.getElementById(`fps-${id}`);
+  if (!fpsSelect) return;
+  for (const opt of fpsSelect.options) {
+    opt.disabled = parseInt(opt.value) > maxFps;
+    if (parseInt(opt.value) > maxFps && fpsSelect.value === opt.value) {
+      fpsSelect.value = maxFps;
+    }
+  }
 }
 
 function getCardConfig(id) {
