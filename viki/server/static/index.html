@@ -88,7 +88,7 @@
     display: grid; grid-template-columns: 1fr 1fr;
   }
   .stream-panel { position: relative; background: #000; aspect-ratio: 4/3; overflow: hidden; }
-  .stream-panel img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .stream-panel img { width: 100%; height: 100%; object-fit: contain; display: block; }
   .stream-label {
     position: absolute; top: 6px; left: 8px;
     font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);
@@ -231,7 +231,7 @@ function buildControls(id, type) {
     const dOpts = cfg.depthModes.map(m =>
       `<option value="${m}" ${m === cfg.defaultDepth ? 'selected' : ''}>${m}</option>`
     ).join('');
-    depthPart = `<div class="sep"></div><label>depth</label><select id="depth-${id}">${dOpts}</select>`;
+    depthPart = `<div class="sep"></div><label>depth</label><select id="depthmode-${id}">${dOpts}</select>`;
   }
 
   return `
@@ -278,15 +278,18 @@ function getCardConfig(id) {
   const resVal = document.getElementById(`res-${id}`)?.value || '640x480';
   const [w, h]  = resVal.split('x').map(Number);
   const fps     = parseInt(document.getElementById(`fps-${id}`)?.value || '30');
-  const depth   = document.getElementById(`depth-${id}`)?.value || 'NFOV_UNBINNED';
+  const depth   = document.getElementById(`depthmode-${id}`)?.value || 'NFOV_UNBINNED';
   return { color_width: w, color_height: h, fps, depth_mode: depth };
 }
 
 function attachStreams(id) {
   const colorImg = document.getElementById('color-' + id);
   const depthImg = document.getElementById('depth-' + id);
-  if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
-  if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
+  // Small delay to let the camera worker produce first frame before streaming
+  setTimeout(() => {
+    if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
+    if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
+  }, 1500);
   if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
   state[id].infoInterval = setInterval(() => updateInfo(id), 2000);
 }

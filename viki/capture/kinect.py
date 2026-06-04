@@ -207,7 +207,7 @@ class KinectBackend(CameraBackend):
         depth_mode: str = "NFOV_UNBINNED",
         fps: int = 30,
         timeout_ms: int = 5000,
-        align_depth_to_color: bool = True,
+        align_depth_to_color: bool = False, # Not working
     ) -> None:
         if color_resolution not in _COLOR_RES_MAP:
             raise ValueError(f"Unsupported color_resolution {color_resolution}. "
@@ -272,7 +272,7 @@ class KinectBackend(CameraBackend):
             cal_buf = ctypes.create_string_buffer(4096)
             res = _lib.k4a_device_get_calibration(
                 self._handle,
-                _DEPTH_MODE_MAP[self._depth_mode_str],
+                _DEPTH_MODE_MAP[self._depth_mode],
                 _COLOR_RES_MAP[self._color_resolution],
                 cal_buf,
             )
@@ -293,6 +293,8 @@ class KinectBackend(CameraBackend):
         _lib.k4a_device_close(self._handle)
         self._handle  = K4ADevice(None)
         self._running = False
+        import time
+        time.sleep(2.0)  # give USB time to fully release before next open
 
     def get_frame(self) -> Frame:
         if not self._running:
@@ -347,7 +349,7 @@ class KinectBackend(CameraBackend):
         """Transform depth image into color camera space."""
         w = _lib.k4a_image_get_width_pixels(color_img)
         h = _lib.k4a_image_get_height_pixels(color_img)
-        stride = w * 2  # uint16 = 2 bytes per pixel
+        stride = ctypes.c_int64(w * 2)  # uint16 = 2 bytes per pixel
 
         transformed = K4AImage(None)
         res = _lib.k4a_image_create(

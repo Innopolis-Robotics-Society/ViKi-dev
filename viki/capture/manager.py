@@ -42,6 +42,8 @@ class _CameraWorker:
                 frame = self.backend.get_frame()
                 with self._lock:
                     self._latest = frame
+            except TimeoutError:
+                pass  # skip timed-out frame, keep running
             except Exception as exc:
                 print(f"[worker:{self.backend.device_id}] error: {exc}")
                 time.sleep(0.1)
