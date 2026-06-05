@@ -51,6 +51,14 @@ K4A_FRAMES_PER_SECOND_5   = 0
 K4A_FRAMES_PER_SECOND_15  = 1
 K4A_FRAMES_PER_SECOND_30  = 2
 
+# Wired sync modes — set on K4ADeviceConfig.wired_sync_mode
+# STANDALONE  : no sync cable; each device captures independently
+# MASTER      : sends sync pulses on SYNC OUT; start this AFTER the subordinate
+# SUBORDINATE : receives pulses on SYNC IN; start this FIRST
+K4A_WIRED_SYNC_MODE_STANDALONE   = 0
+K4A_WIRED_SYNC_MODE_MASTER       = 1
+K4A_WIRED_SYNC_MODE_SUBORDINATE  = 2
+
 K4A_IMAGE_FORMAT_COLOR_BGRA32 = 0
 K4A_IMAGE_FORMAT_DEPTH16      = 3
 
@@ -207,7 +215,10 @@ class KinectBackend(CameraBackend):
         depth_mode: str = "NFOV_UNBINNED",
         fps: int = 30,
         timeout_ms: int = 5000,
-        align_depth_to_color: bool = False, # bugged
+        align_depth_to_color: bool = False,  # bugged
+        wired_sync_mode: int = K4A_WIRED_SYNC_MODE_STANDALONE,
+        subordinate_delay_us: int = 0,
+        synchronized_images_only: bool = False,
     ) -> None:
         if color_resolution not in _COLOR_RES_MAP:
             raise ValueError(f"Unsupported color_resolution {color_resolution}. "
@@ -230,7 +241,10 @@ class KinectBackend(CameraBackend):
         self._fps             = fps
         self._timeout_ms      = timeout_ms
 
-        self._align_depth = align_depth_to_color
+        self._align_depth             = align_depth_to_color
+        self._wired_sync_mode         = wired_sync_mode
+        self._subordinate_delay_us    = subordinate_delay_us
+        self._synchronized_images_only = synchronized_images_only
         self._handle: K4ADevice   = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._serial_str: str     = f"kinect_{device_index}"
@@ -260,10 +274,10 @@ class KinectBackend(CameraBackend):
             color_resolution       = _COLOR_RES_MAP[self._color_resolution],
             depth_mode             = _DEPTH_MODE_MAP[self._depth_mode],
             camera_fps             = _FPS_MAP[self._fps],
-            synchronized_images_only = False,  # allow color/depth to arrive independently
+            synchronized_images_only = self._synchronized_images_only,
             depth_delay_off_color_usec = 0,
-            wired_sync_mode        = 0,
-            subordinate_delay_off_master_usec = 0,
+            wired_sync_mode        = self._wired_sync_mode,
+            subordinate_delay_off_master_usec = self._subordinate_delay_us,
             disable_streaming_indicator = False,
         )
 

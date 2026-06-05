@@ -9,9 +9,13 @@ from __future__ import annotations
 
 import threading
 import time
+from collections import deque
 from typing import Optional
 
 from .base import CameraBackend, Frame
+
+# Frames kept per camera for timestamp-based sync queries.
+_FRAME_BUFFER_SIZE = 12
 
 
 class _CameraWorker:
@@ -19,7 +23,7 @@ class _CameraWorker:
 
     def __init__(self, backend: CameraBackend) -> None:
         self.backend = backend
-        self._latest: Optional[Frame] = None
+        self._buffer: deque = deque(maxlen=_FRAME_BUFFER_SIZE)
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._loop, daemon=True)
@@ -34,14 +38,22 @@ class _CameraWorker:
 
     def latest(self) -> Optional[Frame]:
         with self._lock:
-            return self._latest
+            return self._buffer[-1] if self._buffer else None
+
+    def nearest_to(self, host_timestamp_us: int) -> Optional[Frame]:
+        """Return the buffered frame whose host_timestamp_us is closest to the given value."""
+        with self._lock:
+            if not self._buffer:
+                return None
+            return min(self._buffer, key=lambda f: abs(f.host_timestamp_us - host_timestamp_us))
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
             try:
                 frame = self.backend.get_frame()
+                frame.host_timestamp_us = time.time_ns() // 1000
                 with self._lock:
-                    self._latest = frame
+                    self._buffer.append(frame)
             except TimeoutError:
                 pass  # skip timed-out frame, keep running
             except Exception as exc:
@@ -56,6 +68,10 @@ class CameraManager:
         self._workers: dict[str, _CameraWorker] = {}
 
     # ── Device discovery ──────────────────────────────────────────────────────
+
+    def active_device_ids(self) -> list:
+        """Return the device IDs of all currently running cameras."""
+        return list(self._workers.keys())
 
     def list_devices(self) -> dict:
         """Return all detected camera device IDs grouped by type."""
@@ -89,14 +105,66 @@ class CameraManager:
         color_width: int = 640,
         color_height: int = 480,
         depth_mode: str = "NFOV_UNBINNED",
+        **kwargs,
     ) -> None:
         if device_id in self._workers:
             return  # already running
 
-        backend = self._make_backend(device_id, fps, color_width, color_height, depth_mode)
+        backend = self._make_backend(device_id, fps, color_width, color_height, depth_mode, **kwargs)
         worker = _CameraWorker(backend)
         worker.start()
         self._workers[device_id] = worker
+
+    def start_kinect_sync(
+        self,
+        master_id: str,
+        subordinate_ids: list,
+        fps: int = 30,
+        color_width: int = 1280,
+        color_height: int = 720,
+        depth_mode: str = "NFOV_UNBINNED",
+        subordinate_delay_us: int = 0,
+    ) -> None:
+        """
+        Start Azure Kinects in hardware-sync mode with correct startup order.
+
+        The subordinate(s) must be started before the master so they are
+        already listening for trigger pulses when the master begins sending them.
+
+        Parameters
+        ----------
+        master_id : str
+            Device ID of the master Kinect (SYNC OUT connected to cable).
+        subordinate_ids : list[str]
+            Device IDs of subordinate Kinects (SYNC IN connected to cable).
+        subordinate_delay_us : int
+            Delay added to each subordinate's capture relative to the master's
+            trigger, in microseconds.  A non-zero value staggers the depth IR
+            projectors and reduces inter-device interference even further.
+        """
+        from .kinect import K4A_WIRED_SYNC_MODE_MASTER, K4A_WIRED_SYNC_MODE_SUBORDINATE
+
+        for sub_id in subordinate_ids:
+            self.start(
+                sub_id,
+                fps=fps,
+                color_width=color_width,
+                color_height=color_height,
+                depth_mode=depth_mode,
+                wired_sync_mode=K4A_WIRED_SYNC_MODE_SUBORDINATE,
+                subordinate_delay_us=subordinate_delay_us,
+                synchronized_images_only=True,
+            )
+
+        self.start(
+            master_id,
+            fps=fps,
+            color_width=color_width,
+            color_height=color_height,
+            depth_mode=depth_mode,
+            wired_sync_mode=K4A_WIRED_SYNC_MODE_MASTER,
+            synchronized_images_only=True,
+        )
 
     def stop(self, device_id: str) -> None:
         worker = self._workers.pop(device_id, None)
@@ -108,6 +176,11 @@ class CameraManager:
             self.stop(device_id)
 
     # ── Frame access ──────────────────────────────────────────────────────────
+
+    def nearest_frame(self, device_id: str, host_timestamp_us: int) -> Optional[Frame]:
+        """Return the buffered frame from device_id nearest to host_timestamp_us."""
+        worker = self._workers.get(device_id)
+        return worker.nearest_to(host_timestamp_us) if worker else None
 
     def latest_frame(self, device_id: str) -> Optional[Frame]:
         worker = self._workers.get(device_id)
@@ -145,6 +218,7 @@ class CameraManager:
         color_width: int,
         color_height: int,
         depth_mode: str,
+        **kwargs,
     ) -> CameraBackend:
         if device_id.startswith("kinect_"):
             from .kinect import KinectBackend
@@ -154,6 +228,7 @@ class CameraManager:
                 color_resolution=(color_width, color_height),
                 depth_mode=depth_mode,
                 fps=fps,
+                **kwargs,
             )
         else:
             from .realsense import RealSenseBackend

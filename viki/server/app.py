@@ -35,6 +35,14 @@ class StartRequest(BaseModel):
     color_width: int = 640
     color_height: int = 480
     depth_mode: str = "NFOV_UNBINNED"
+    # Kinect-only: hardware sync wiring (ignored for RealSense)
+    # 0 = standalone, 1 = master, 2 = subordinate
+    wired_sync_mode: int = 0
+    # Subordinate capture delay relative to master trigger, microseconds.
+    # A small positive value (e.g. 160) staggers the depth IR projectors.
+    subordinate_delay_us: int = 0
+    # Require color and depth to arrive in the same capture (recommended for sync recording).
+    synchronized_images_only: bool = False
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -56,6 +64,9 @@ async def start_camera(device_id: str, req: StartRequest):
             color_width=req.color_width,
             color_height=req.color_height,
             depth_mode=req.depth_mode,
+            wired_sync_mode=req.wired_sync_mode,
+            subordinate_delay_us=req.subordinate_delay_us,
+            synchronized_images_only=req.synchronized_images_only,
         )
     except Exception as e:
         import traceback
@@ -94,17 +105,64 @@ def depth_stream(device_id: str):
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
 
+_DEPTH_EMA_ALPHA = 0.05  # range settles over ~20 frames (~0.67 s at 30 fps)
+# Minimum fraction of pixels that must be valid for a depth frame to be displayed.
+# Frames below this threshold (blank / missing depth) are dropped and the last
+# good image is held instead.
+_DEPTH_MIN_VALID_FRACTION = 0.05
+
+
 def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
+    last_ts = -1
+    # Depth-stream state — only used when kind == "depth"
+    d_min: float = 0.0
+    d_max: float = 1.0
+    ema_initialised = False
+    last_good_depth_img: np.ndarray | None = None
+
     while True:
         frame = mgr.latest_frame(device_id)
+
         if frame is None:
+            if device_id not in mgr.active_device_ids():
+                return
             img = _placeholder(640, 480, f"{device_id}: not started")
-        elif kind == "color":
-            img = frame.color
+            last_ts = -1
+        elif frame.host_timestamp_us == last_ts:
+            time.sleep(0.005)
+            continue
         else:
-            depth = frame.depth
-            print(f"[depth:{device_id}] shape={depth.shape} min={depth.min()} max={depth.max()} nonzero={(depth>0).sum()}", flush=True)
-            img = _depth_colormap(depth)
+            last_ts = frame.host_timestamp_us
+            if kind == "color":
+                img = frame.color
+            else:
+                depth = frame.depth
+                valid = depth[depth > 0]
+                valid_fraction = valid.size / max(depth.size, 1)
+
+                if valid_fraction < _DEPTH_MIN_VALID_FRACTION:
+                    # Blank or mostly-zero frame (missing depth capture from SDK).
+                    # Hold the last good image so the stream doesn't flash black.
+                    if last_good_depth_img is None:
+                        time.sleep(0.005)
+                        continue
+                    img = last_good_depth_img
+                else:
+                    # Update EMA range using 2nd/98th percentile to ignore outliers.
+                    p2  = float(np.percentile(valid, 2))
+                    p98 = float(np.percentile(valid, 98))
+                    if not ema_initialised:
+                        d_min, d_max = p2, p98
+                        ema_initialised = True
+                    else:
+                        d_min = _DEPTH_EMA_ALPHA * p2  + (1 - _DEPTH_EMA_ALPHA) * d_min
+                        d_max = _DEPTH_EMA_ALPHA * p98 + (1 - _DEPTH_EMA_ALPHA) * d_max
+
+                    norm = np.clip(
+                        (depth.astype(np.float32) - d_min) / (d_max - d_min + 1e-6), 0, 1
+                    )
+                    img = cv2.applyColorMap((norm * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+                    last_good_depth_img = img
 
         _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
         data = jpeg.tobytes()
@@ -113,18 +171,6 @@ def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
             + str(len(data)).encode()
             + b"\r\n\r\n" + data + b"\r\n"
         )
-        time.sleep(1 / 30)
-
-
-def _depth_colormap(depth: np.ndarray) -> np.ndarray:
-    valid = depth[depth > 0]
-    if valid.size == 0:
-        return np.zeros((*depth.shape, 3), dtype=np.uint8)
-    d_min, d_max = valid.min(), valid.max()
-    norm = np.clip(
-        (depth.astype(np.float32) - d_min) / (d_max - d_min + 1e-6), 0, 1
-    )
-    return cv2.applyColorMap((norm * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
 
 
 def _placeholder(w: int, h: int, text: str) -> np.ndarray:

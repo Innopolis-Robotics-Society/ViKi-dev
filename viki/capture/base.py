@@ -36,10 +36,13 @@ class Frame:
 
     Fields
     ------
-    color         : np.ndarray  HxWx3, uint8, BGR (OpenCV convention)
-    depth         : np.ndarray  HxW,   uint16, millimetres
-    timestamp_us  : int         capture time, microseconds (device monotonic clock)
-    device_id     : str         unique device identifier (serial number or alias)
+    color             : np.ndarray  HxWx3, uint8, BGR (OpenCV convention)
+    depth             : np.ndarray  HxW,   uint16, millimetres
+    timestamp_us      : int         capture time, microseconds (device monotonic clock)
+    device_id         : str         unique device identifier (serial number or alias)
+    host_timestamp_us : int         host-clock time (time.time_ns()//1000) when the frame
+                                    arrived in the worker thread; set by CameraManager,
+                                    not by the backend. Used for cross-camera sync.
     color_intrinsics : CameraIntrinsics | None
     depth_intrinsics : CameraIntrinsics | None
     """
@@ -47,11 +50,32 @@ class Frame:
     depth: np.ndarray
     timestamp_us: int
     device_id: str
+    host_timestamp_us: int = 0
     color_intrinsics: Optional[CameraIntrinsics] = None
     depth_intrinsics: Optional[CameraIntrinsics] = None
 
     def has_depth(self) -> bool:
         return self.depth is not None and self.depth.size > 0
+
+
+@dataclass
+class SyncedFrameGroup:
+    """
+    A set of frames — one per camera — aligned to a common host-clock tick.
+
+    offsets_us[device_id] = frame.host_timestamp_us - sync_timestamp_us
+    Negative means the frame arrived before the tick (early); positive means after (late).
+    """
+    frames: dict
+    sync_timestamp_us: int
+    offsets_us: dict
+
+    @property
+    def device_ids(self) -> list:
+        return list(self.frames.keys())
+
+    def has_depth(self) -> bool:
+        return all(f.has_depth() for f in self.frames.values())
 
 
 class CameraBackend(ABC):
