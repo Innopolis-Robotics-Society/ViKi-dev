@@ -362,8 +362,12 @@ async function startCamera(id) {
 
 async function stopCamera(id) {
   log(`Stopping ${id}...`);
-  await api('POST', `/api/cameras/${id}/stop`);
-  log(`${id} stopped`);
+  try {
+    await api('POST', `/api/cameras/${id}/stop`);
+  } catch (e) {
+    log(`Stop request failed: ${e}`, 'error');
+  }
+  // Always update UI regardless of request outcome.
   setRunning(id, false);
 }
 

@@ -214,7 +214,7 @@ class KinectBackend(CameraBackend):
         color_resolution: tuple[int, int] = (1280, 720),
         depth_mode: str = "NFOV_UNBINNED",
         fps: int = 30,
-        timeout_ms: int = 5000,
+        timeout_ms: int = 1000,
         align_depth_to_color: bool = False,  # bugged
         wired_sync_mode: int = K4A_WIRED_SYNC_MODE_STANDALONE,
         subordinate_delay_us: int = 0,

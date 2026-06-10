@@ -51,12 +51,12 @@ async def index():
 
 
 @app.get("/api/devices")
-async def list_devices():
+def list_devices():
     return app.state.manager.list_devices()
 
 
 @app.post("/api/cameras/{device_id}/start")
-async def start_camera(device_id: str, req: StartRequest):
+def start_camera(device_id: str, req: StartRequest):
     try:
         app.state.manager.start(
             device_id,
