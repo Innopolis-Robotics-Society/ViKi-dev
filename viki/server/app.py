@@ -23,6 +23,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.manager = CameraManager()
+    app.state.manager.load_calibration()
     app.state.calibrator = CalibrationManager()
     yield
     app.state.manager.stop_all()
@@ -213,9 +214,14 @@ def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
     d_max: float = 1.0
     ema_initialised = False
     last_good_depth_img: np.ndarray | None = None
+    
+    # Cache for undistortion
+    calib = mgr.get_calibration(device_id)
+    map1, map2 = None, None
 
     while True:
         frame = mgr.latest_frame(device_id)
+
 
         if frame is None:
             if device_id not in mgr.active_device_ids():
@@ -229,6 +235,16 @@ def _mjpeg_gen(mgr: CameraManager, device_id: str, kind: str):
             last_ts = frame.host_timestamp_us
             if kind == "color":
                 img = frame.color
+                # Apply undistortion if calibration is available
+                if calib is not None:
+                    mtx, dist = calib["mtx"], calib["dist"]
+                    h, w = img.shape[:2]
+                    if map1 is None:
+                        # Precompute mapping for performance
+                        map1, map2 = cv2.initUndistortRectifyMap(
+                            mtx, dist, None, mtx, (w, h), cv2.CV_32FC1
+                        )
+                    img = cv2.remap(img, map1, map2, cv2.INTER_LINEAR)
             else:
                 depth = frame.depth
                 valid = depth[depth > 0]
