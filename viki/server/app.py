@@ -15,6 +15,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from viki.capture.manager import CameraManager
+from viki.capture.calibration import CalibrationManager
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -22,6 +23,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.manager = CameraManager()
+    app.state.calibrator = CalibrationManager()
     yield
     app.state.manager.stop_all()
 
@@ -104,6 +106,98 @@ def depth_stream(device_id: str):
         media_type="multipart/x-mixed-replace; boundary=frame",
         headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
     )
+
+
+# ── Calibration Endpoints ───────────────────────────────────────────────────────
+
+@app.get("/api/calibrate/stream")
+def calibration_stream():
+    return StreamingResponse(
+        _calibration_gen(app.state.manager),
+        media_type="multipart/x-mixed-replace; boundary=frame",
+        headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"},
+    )
+
+
+@app.post("/api/calibrate/capture")
+async def capture_calibration_sample():
+    mgr = app.state.manager
+    cal = app.state.calibrator
+    
+    active_ids = mgr.active_device_ids()
+    if not active_ids:
+        raise HTTPException(status_code=400, detail="No cameras active")
+        
+    frames = {}
+    for dev_id in active_ids:
+        frame = mgr.latest_frame(dev_id)
+        if frame is None:
+            raise HTTPException(status_code=500, detail=f"Failed to get frame from {dev_id}")
+        frames[dev_id] = frame
+        
+    success = cal.add_sample(frames)
+    return {"success": success, "sample_count": cal.sample_count}
+
+
+@app.post("/api/calibrate/run")
+async def run_calibration():
+    try:
+        result = app.state.calibrator.run_calibration()
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/calibrate/status")
+async def calibration_status():
+    return {"sample_count": app.state.calibrator.sample_count}
+
+
+@app.post("/api/calibrate/clear")
+async def clear_calibration():
+    app.state.calibrator.clear()
+    return {"status": "cleared"}
+
+
+def _calibration_gen(mgr: CameraManager):
+    last_ts = -1
+    while True:
+        active_ids = mgr.active_device_ids()
+        if not active_ids:
+            yield _mjpeg_frame(_placeholder(640, 480, "No cameras active"))
+            time.sleep(0.1)
+            continue
+
+        frames = {}
+        for dev_id in active_ids:
+            frame = mgr.latest_frame(dev_id)
+            if frame:
+                frames[dev_id] = frame.color
+        
+        if not frames:
+            time.sleep(0.01)
+            continue
+
+        # Create a mosaic
+        imgs = list(frames.values())
+        # Simple horizontal stack, resizing to 480p for the mosaic
+        resized = [cv2.resize(img, (640, 480)) for img in imgs]
+        combined = np.hstack(resized)
+        
+        yield _mjpeg_frame(combined)
+        time.sleep(0.03)
+
+
+def _mjpeg_frame(img: np.ndarray) -> bytes:
+    _, jpeg = cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 80])
+    data = jpeg.tobytes()
+    return (
+        b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
+        + str(len(data)).encode()
+        + b"\r\n\r\n" + data + b"\r\n"
+    )
+
+# ── Helpers ────────────────────────────────────────────────────────────────────
 
 _DEPTH_EMA_ALPHA = 0.05  # range settles over ~20 frames (~0.67 s at 30 fps)
 # Minimum fraction of pixels that must be valid for a depth frame to be displayed.
