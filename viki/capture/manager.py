@@ -183,14 +183,18 @@ class CameraManager:
             with np.load(path, allow_pickle=True) as data:
                 intrinsics = data["intrinsics"].item()
                 dist_coeffs = data["dist_coeffs"].item()
-                for dev_id in intrinsics:
-                    self.calibration[dev_id] = {
-                        "mtx": intrinsics[dev_id],
-                        "dist": dist_coeffs[dev_id],
-                    }
+                self.update_calibration(intrinsics, dist_coeffs)
             print(f"Loaded calibration for: {list(self.calibration.keys())}")
         except Exception as e:
             print(f"Could not load calibration from {path}: {e}")
+    
+    def update_calibration(self, intrinsics: dict, dist_coeffs: dict) -> None:
+        """Update the running calibration state."""
+        for dev_id in intrinsics:
+            self.calibration[dev_id] = {
+                "mtx": intrinsics[dev_id],
+                "dist": dist_coeffs[dev_id],
+            }
 
     def get_calibration(self, device_id: str) -> Optional[dict]:
         """Return the calibration data for a device."""

@@ -474,11 +474,22 @@ async function captureSample() {
   log('Capturing calibration sample...');
   try {
     const res = await api('POST', '/api/calibrate/capture');
-    if (res.success) {
-      log(`Sample added. Total: ${res.sample_count}`, 'ok');
-    } else {
-      log('Sample rejected: Chessboard not found in all cameras', 'error');
+    
+    let success_count = 0;
+    for (const [id, success] of Object.entries(res.success_map)) {
+      if (success) {
+        success_count++;
+      } else {
+        log(`Sample rejected for ${id}: Chessboard not found`, 'error');
+      }
     }
+    
+    if (success_count > 0) {
+      log(`Sample added for ${success_count} camera(s). Total events: ${res.sample_count}`, 'ok');
+    } else {
+      log('Sample rejected: Chessboard not found in any camera', 'error');
+    }
+    
     updateCalibStatus();
   } catch (e) {
     log(`Capture failed: ${e}`, 'error');
@@ -489,10 +500,18 @@ async function runCalibration() {
   log('Running calibration... please wait...');
   try {
     const res = await api('POST', '/api/calibrate/run');
-    log(`Calibration complete! ${res.cameras.length} cameras calibrated.`, 'ok');
-    if (res.stereo_calibrated) {
-      log('Stereo calibration successful!', 'ok');
+    
+    for (const id of res.cameras) {
+      const err = res.errors[id];
+      log(`Calibration ${id}: RMS Error = ${err.toFixed(4)}px`, err < 0.5 ? 'ok' : 'error');
     }
+    
+    if (res.stereo_calibrated) {
+      const serr = res.stereo_error;
+      log(`Stereo Calibration: RMS Error = ${serr.toFixed(4)}px`, serr < 0.5 ? 'ok' : 'error');
+    }
+    
+    log(`Calibration complete! ${res.cameras.length} cameras calibrated.`, 'ok');
   } catch (e) {
     log(`Calibration failed: ${e}`, 'error');
   }

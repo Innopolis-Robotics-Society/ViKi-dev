@@ -136,15 +136,26 @@ async def capture_calibration_sample():
             raise HTTPException(status_code=500, detail=f"Failed to get frame from {dev_id}")
         frames[dev_id] = frame
         
-    success = cal.add_sample(frames)
-    return {"success": success, "sample_count": cal.sample_count}
+    success_map = cal.add_sample(frames)
+    return {"success_map": success_map, "sample_count": cal.sample_count}
 
 
 @app.post("/api/calibrate/run")
 async def run_calibration():
     try:
         result = app.state.calibrator.run_calibration()
-        return result
+        
+        # Immediately apply the new calibration to the running manager
+        app.state.manager.update_calibration(
+            result["intrinsics"], 
+            result["dist_coeffs"]
+        )
+        
+        # Remove the large matrices from the response to keep it clean
+        resp = result.copy()
+        resp.pop("intrinsics", None)
+        resp.pop("dist_coeffs", None)
+        return resp
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
