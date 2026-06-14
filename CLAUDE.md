@@ -38,19 +38,34 @@ For Kinect depth engine (OpenGL via llvmpipe): add `xhost +local: > /dev/null 2>
 
 ```
 viki/
+  config.py          # Centralised tunables (stream/depth/encoding constants, start defaults)
   capture/
-    base.py        # CameraBackend ABC + Frame/CameraIntrinsics dataclasses
-    realsense.py   # RealSenseBackend (pyrealsense2)
-    kinect.py      # KinectBackend (ctypes over libk4a.so — no pyk4a)
-    manager.py     # CameraManager: device discovery, start/stop, per-camera worker threads
+    base.py          # CameraBackend ABC + Frame/CameraIntrinsics/SyncedFrameGroup dataclasses
+    realsense.py     # RealSenseBackend (pyrealsense2)
+    kinect.py        # KinectBackend (ctypes over libk4a.so — no pyk4a)
+    manager.py       # CameraManager: device discovery, start/stop, per-camera worker threads
+    calibration.py   # CalibrationManager: chessboard detection, intrinsics + stereo solve
+    sync.py          # MultiCameraSync: cross-camera frame alignment by host timestamp
+  viz/               # Pure pixel helpers (numpy/cv2) — no FastAPI, no camera, no I/O
+    mjpeg.py         # encode_jpeg / mjpeg_chunk / placeholder
+    depth.py         # DepthColorizer (EMA-normalised depth → BGR), Undistorter (cached remap)
   server/
-    app.py         # FastAPI app: /api/devices, /api/cameras/{id}/start|stop|stream|depth
-    static/        # index.html UI
+    app.py           # App assembly only: lifespan, static mount, include_router
+    deps.py          # FastAPI DI: get_manager / get_calibrator (resolve from app.state)
+    streams.py       # MJPEG stream generators: poll manager + timing, delegate pixels to viz
+    routes/
+      cameras.py     # APIRouter: /api/devices, /api/cameras/{id}/start|stop|info|stream|depth
+      calibration.py # APIRouter: /api/calibrate/stream|capture|run|status|clear
+    static/          # index.html UI
 ```
 
-**Data flow:** `CameraManager` owns one `_CameraWorker` (daemon thread) per active camera. Each worker calls `backend.get_frame()` in a tight loop and stores the result under a lock. The MJPEG streamers in `app.py` poll `manager.latest_frame()` at 30 fps — never blocking the FastAPI event loop.
+**Layering (server):** `routes/` (thin handlers) → `deps.py` (DI) → `streams.py` (poll + timing) → `viz/` (pure pixel work) → `config.py` (constants). `viz/` depends on neither FastAPI nor the camera layer, so it is reusable (e.g. Phase 2 overlays) and testable without hardware. `app.py` only wires these together.
+
+**Data flow:** `CameraManager` owns one `_CameraWorker` (daemon thread) per active camera. Each worker calls `backend.get_frame()` in a tight loop and stores the result in a per-camera ring buffer (`deque`, last-value cache) under a lock. The MJPEG generators in `streams.py` poll `manager.latest_frame()` at ~30 fps — never blocking the FastAPI event loop. All consumers (colour/depth streams, calibration preview, calibration capture) read this one shared source; there is no push pub/sub, and frames are pulled independently (a captured frame may be 1–2 frames newer than the displayed one — fine for the static-board calibration workflow).
 
 **Adding a new camera backend:** subclass `CameraBackend` (implement `start`, `stop`, `get_frame`, `device_id`, `is_running`), then add detection in `CameraManager.list_devices()` and routing in `CameraManager._make_backend()`.
+
+**Adding a new endpoint:** put the handler in the relevant `server/routes/*.py` router (resolve `manager`/`calibrator` via `Depends` from `deps.py`); keep streaming/timing logic in `streams.py` and any pixel processing in `viz/`. Handlers should stay thin — delegate, don't compute.
 
 **Frame format:** `Frame.color` is HxWx3 uint8 BGR (OpenCV convention). `Frame.depth` is HxW uint16 in millimetres.
 

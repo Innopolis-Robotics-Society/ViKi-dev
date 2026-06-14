@@ -18,6 +18,7 @@ Human demo (RGB-D video)
   3D skeleton extraction    ← MediaPipe + depth fusion
         │
         ▼
+        
   Trajectory optimisation   ← Object-relative IK via PINK / Pinocchio
         │
         ▼
