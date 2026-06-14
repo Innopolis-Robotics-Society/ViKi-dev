@@ -1,0 +1,85 @@
+"""
+viki.viz.depth
+--------------
+Image preparation for the camera streams:
+
+- ``DepthColorizer`` — turns a uint16 depth frame into a colour-mapped BGR
+  image, with an EMA-smoothed display range and last-good-frame hold.
+- ``Undistorter`` — applies cached intrinsic undistortion to a colour image.
+
+Both hold per-stream state, so create one instance per stream.
+"""
+from __future__ import annotations
+
+from typing import Optional
+
+import cv2
+import numpy as np
+
+from viki.config import DEPTH_EMA_ALPHA, DEPTH_MIN_VALID_FRACTION
+
+
+class DepthColorizer:
+    """Stateful uint16-depth → BGR turbo colour map for a single stream."""
+
+    def __init__(
+        self,
+        alpha: float = DEPTH_EMA_ALPHA,
+        min_valid_fraction: float = DEPTH_MIN_VALID_FRACTION,
+    ) -> None:
+        self.alpha = alpha
+        self.min_valid_fraction = min_valid_fraction
+        self.d_min: float = 0.0
+        self.d_max: float = 1.0
+        self._ema_initialised = False
+        self._last_good: Optional[np.ndarray] = None
+
+    def colorize(self, depth: np.ndarray) -> Optional[np.ndarray]:
+        """
+        Return a BGR colour-mapped depth image, or ``None`` if the frame should
+        be skipped (mostly-empty depth with no prior good frame to hold).
+
+        Mostly-empty frames (SDK dropped the depth capture) hold the last good
+        image so the stream doesn't flash black.
+        """
+        valid = depth[depth > 0]
+        valid_fraction = valid.size / max(depth.size, 1)
+
+        if valid_fraction < self.min_valid_fraction:
+            return self._last_good  
+        
+        # Update EMA range using 2nd/98th percentile to ignore outliers.
+        p2 = float(np.percentile(valid, 2))
+        p98 = float(np.percentile(valid, 98))
+        if not self._ema_initialised:
+            self.d_min, self.d_max = p2, p98
+            self._ema_initialised = True
+        else:
+            self.d_min = self.alpha * p2 + (1 - self.alpha) * self.d_min
+            self.d_max = self.alpha * p98 + (1 - self.alpha) * self.d_max
+
+        norm = np.clip(
+            (depth.astype(np.float32) - self.d_min) / (self.d_max - self.d_min + 1e-6), 0, 1
+        )
+        img = cv2.applyColorMap((norm * 255).astype(np.uint8), cv2.COLORMAP_TURBO)
+        self._last_good = img
+        return img
+
+
+class Undistorter:
+    """Apply intrinsic undistortion to colour images, caching the remap tables."""
+
+    def __init__(self, mtx: np.ndarray, dist: np.ndarray) -> None:
+        self.mtx = mtx
+        self.dist = dist
+        self._map1: Optional[np.ndarray] = None
+        self._map2: Optional[np.ndarray] = None
+
+    def apply(self, img: np.ndarray) -> np.ndarray:
+        h, w = img.shape[:2]
+        if self._map1 is None:
+            # Precompute the mapping once for performance.
+            self._map1, self._map2 = cv2.initUndistortRectifyMap(
+                self.mtx, self.dist, None, self.mtx, (w, h), cv2.CV_32FC1
+            )
+        return cv2.remap(img, self._map1, self._map2, cv2.INTER_LINEAR)
