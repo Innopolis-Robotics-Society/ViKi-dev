@@ -83,6 +83,8 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
 
     for i in range(LM.N):
         u, v = detection.px[i, 0], detection.px[i, 1]
+        if u is np.nan or v is np.nan:
+            continue
         ui, vi = int(round(u)), int(round(v))
 
         # Skip landmarks that projected outside the image boundary

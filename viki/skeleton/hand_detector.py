@@ -121,25 +121,11 @@ class HandDetector:
         else:
             running_mode = vision.RunningMode.IMAGE
 
-        # For live mode
-        # self._lock = threading.Lock()
-        # self._live_hand_result  = None
-        # self._live_pose_result  = None
-        # # Немножко русского зачем эти переменные нужны
-        # # Ниже глобальные счетчик, который увеличивается когда ОБА результата (т.е. рука и поза) обновились
-        # # В базовой работе отдельных моделей в лайв режиме, они обновляются в разное время, и мы не хотим возвращать результат, пока не обновятся обе модели
-        # self._live_version      = 0   
-        # # Последняя версия детекции руки, которую мы отдали пользователю
-        # self._live_hand_version = 0   
-        # # Последняя версия детекции позы, которую мы отдали пользователю
-        # self._live_pose_version = 0  
-        # # Версия детекции, которую мы отдали пользователю в последний раз. Больше не обновляется, пока не обновятся обе модели и не увеличится self._live_version
-        # self._last_ret_version  = -1
-        
+
         
         self._lock = threading.Lock()
         self._live_hand_result = None
-        self._live_pose_result = None
+        self._live_pose_result = None 
         self._live_last_ts_ms  = -1  # timestamp of last result returned to caller
 
         def _hand_cb(result, _img, _ts):
@@ -149,22 +135,7 @@ class HandDetector:
         def _pose_cb(result, _img, _ts):
             with self._lock:
                 self._live_pose_result = result
-
-
-        # def _hand_cb(result, _img, _ts):
-        #     with self._lock:
-        #         self._live_hand_result  = result
-        #         self._live_hand_version += 1
-        #         # Bump shared version only when both models have updated
-        #         if self._live_hand_version == self._live_pose_version:
-        #             self._live_version += 1
-
-        # def _pose_cb(result, _img, _ts):
-        #     with self._lock:
-        #         self._live_pose_result  = result
-        #         self._live_pose_version += 1
-        #         if self._live_pose_version == self._live_hand_version:
-        #             self._live_version += 1
+                
 
         hand_opts = vision.HandLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=hand_path),
@@ -210,12 +181,13 @@ class HandDetector:
         if self._mode == "video":
             hand_result = self._hands.detect_for_video(mp_image, timestamp_ms)
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
-
+            
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
             self._hands.detect_async(mp_image, timestamp_ms)
             self._pose.detect_async(mp_image, timestamp_ms)
             with self._lock:
+                
                 hand_result = self._live_hand_result
                 pose_result = self._live_pose_result
                 last_ts     = self._live_last_ts_ms
@@ -313,8 +285,8 @@ class HandDetector:
         z  = hand_z.copy()
 
         if pose_px is not None:
-            px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
-            z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
+            # px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
+            # z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
             elbow_px    = pose_px[1]
             shoulder_px = pose_px[2]
             elbow_z     = pose_z[1]
