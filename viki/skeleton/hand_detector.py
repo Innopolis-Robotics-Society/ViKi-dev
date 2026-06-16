@@ -4,33 +4,16 @@ viki.skeleton.hand_detector
 MediaPipe Tasks API wrapper for hand + pose detection.
 Produces 23-landmark HandDetection: 21 hand landmarks + elbow + shoulder.
 
-Requires model files (downloaded automatically on first use):
-  models/hand_landmarker.task
-  models/pose_landmarker.task
-
 Running modes
 -------------
-IMAGE  — each frame detected independently. No temporal state.
-         Use for single images or random-access processing.
-         Call: detector.detect(frame)
-
+IMAGE  - per-image detection.  
 VIDEO  — uses temporal coherence between frames (tracking).
-         Faster than IMAGE on video streams.
-         Timestamps must be strictly monotonically increasing.
-         Call: detector.detect(frame)  — timestamp taken from frame.timestamp_us
-
-LIVE   — fully asynchronous, non-blocking. Results arrive via internal
-         callback and are stored as the latest detection. detect() submits
-         the frame and returns the PREVIOUS result immediately (one frame lag).
-         Designed for real-time camera loops where latency matters.
-         Call: detector.detect(frame)  — same API, non-blocking
+LIVE   — fully asynchronous, non-blocking.
 
 Handedness
 ----------
 MediaPipe was trained on selfie (mirrored) images.
-On a mirrored camera: person's right hand → label "Left".
-On a non-mirrored camera (Kinect, phone rear cam): person's right hand → label "Right".
-Control this with the `mirrored` parameter (default False).
+So two modes implemented for test is mirrored=True and mirrored=False for main usage
 """
 
 from __future__ import annotations
@@ -78,7 +61,7 @@ def _ensure_model(filename: str, models_dir: str | Path = "models") -> str:
 
 class HandDetector:
     """
-    Runs MediaPipe HandLandmarker + PoseLandmarker (Tasks API) and merges
+    Runs MediaPipe HandLandmarker + PoseLandmarker and merges
     results into 23 pixel-space landmarks.
 
     Parameters
@@ -101,8 +84,8 @@ class HandDetector:
     min_pose_confidence : float
         Detection/tracking confidence threshold for pose [0, 1].
     mirrored : bool
-        True  — selfie/front camera. Person's right hand → label "Left".
-        False — rear/fixed camera (Kinect, phone rear cam). Person's right hand → label "Right".
+        True  — selfie/front camera.
+        False — rear/fixed camera (Kinect)
     """
 
     def __init__(
@@ -138,19 +121,35 @@ class HandDetector:
         else:
             running_mode = vision.RunningMode.IMAGE
 
-        # LIVE_STREAM: store latest callback results under a lock
+        # For live mode
         self._lock = threading.Lock()
-        self._live_hand_result = None
-        self._live_pose_result = None
-        self._live_last_ts_ms  = -1  # timestamp of last result returned to caller
+        self._live_hand_result  = None
+        self._live_pose_result  = None
+        # Немножко русского зачем эти переменные нужны
+        # Ниже глобальные счетчик, который увеличивается когда ОБА результата (т.е. рука и поза) обновились
+        # В базовой работе отдельных моделей в лайв режиме, они обновляются в разное время, и мы не хотим возвращать результат, пока не обновятся обе модели
+        self._live_version      = 0   
+        # Последняя версия детекции руки, которую мы отдали пользователю
+        self._live_hand_version = 0   
+        # Последняя версия детекции позы, которую мы отдали пользователю
+        self._live_pose_version = 0  
+        # Версия детекции, которую мы отдали пользователю в последний раз. Больше не обновляется, пока не обновятся обе модели и не увеличится self._live_version
+        self._last_ret_version  = -1
 
         def _hand_cb(result, _img, _ts):
             with self._lock:
-                self._live_hand_result = result
+                self._live_hand_result  = result
+                self._live_hand_version += 1
+                # Bump shared version only when both models have updated
+                if self._live_hand_version == self._live_pose_version:
+                    self._live_version += 1
 
         def _pose_cb(result, _img, _ts):
             with self._lock:
-                self._live_pose_result = result
+                self._live_pose_result  = result
+                self._live_pose_version += 1
+                if self._live_pose_version == self._live_hand_version:
+                    self._live_version += 1
 
         hand_opts = vision.HandLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=hand_path),
@@ -198,20 +197,24 @@ class HandDetector:
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
 
         elif self._mode == "live":
-            # Submit async — results arrive in callbacks, return last known result
+            # Submit both async — non-blocking
             self._hands.detect_async(mp_image, timestamp_ms)
             self._pose.detect_async(mp_image, timestamp_ms)
+
             with self._lock:
-                hand_result = self._live_hand_result
-                pose_result = self._live_pose_result
-                last_ts     = self._live_last_ts_ms
+                current_version = self._live_version
+                hand_result     = self._live_hand_result
+                pose_result     = self._live_pose_result
+
+            # No callback has fired yet (first frames)
             if hand_result is None or pose_result is None:
-                return None  # no result yet (first frame)
-            # Callback hasn't fired for this frame yet — stale result, skip
-            if last_ts == timestamp_ms:
                 return None
-            with self._lock:
-                self._live_last_ts_ms = timestamp_ms
+
+            # Version hasn't changed, so both models haven't updated yet
+            if current_version == self._last_ret_version:
+                return None
+
+            self._last_ret_version = current_version
 
         else:  # image
             hand_result = self._hands.detect(mp_image)
@@ -243,8 +246,6 @@ class HandDetector:
     def __exit__(self, *_) -> None:
         self.close()
 
-    # ── Private helpers ───────────────────────────────────────────────────────
-
     def _extract_hand(
         self, result, w: int, h: int
     ) -> tuple[Optional[np.ndarray], Optional[np.ndarray], float]:
@@ -252,13 +253,14 @@ class HandDetector:
         if not result.hand_landmarks:
             return None, None, 0.0
 
+        # mark: handedness list of lists, one arm, so single inner list interesting for us
         for i, handedness_list in enumerate(result.handedness):
             label = handedness_list[0].category_name
             score = handedness_list[0].score
             if label == self._target_label:
-                lms = result.hand_landmarks[i]
+                lms = result.hand_landmarks[i] # here 21 landmarks
                 px = np.array([[lm.x * w, lm.y * h] for lm in lms], dtype=np.float32)
-                z  = np.array([lm.z for lm in lms], dtype=np.float32)
+                z  = np.array([lm.z for lm in lms], dtype=np.float32) # relative z
                 return px, z, float(score)
 
         return None, None, 0.0
@@ -270,7 +272,7 @@ class HandDetector:
         if not result.pose_landmarks:
             return None, None
 
-        lms = result.pose_landmarks[0]
+        lms = result.pose_landmarks[0] # take only one person; 33 points
 
         if self._hand == "right":
             indices = [_POSE_RIGHT_WRIST, _POSE_RIGHT_ELBOW, _POSE_RIGHT_SHOULDER]
@@ -292,7 +294,7 @@ class HandDetector:
         Build final (23, 2) px and (23,) z_rel arrays.
 
           [0]     WRIST     — overridden with Pose wrist if Pose available
-          [1–20]  hand landmarks unchanged
+          [1-20]  hand landmarks unchanged
           [21]    ELBOW     — from Pose, or nan if Pose not detected
           [22]    SHOULDER  — from Pose, or nan if Pose not detected
         """
@@ -300,8 +302,8 @@ class HandDetector:
         z  = hand_z.copy()
 
         if pose_px is not None:
-            px[LM.WRIST] = pose_px[0]
-            z[LM.WRIST]  = pose_z[0]
+            px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
+            z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
             elbow_px    = pose_px[1]
             shoulder_px = pose_px[2]
             elbow_z     = pose_z[1]

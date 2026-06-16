@@ -83,17 +83,13 @@ class Landmarks3D:
     """
     23 landmarks lifted into 3-D camera space for one camera.
 
-    Indices 0–20: hand landmarks (MediaPipe Hands convention).
+    Indices 0-20: hand landmarks (MediaPipe Hands convention).
     Index 21: elbow  (from MediaPipe Pose; overrides nothing, adds arm context).
     Index 22: shoulder (from MediaPipe Pose).
     WRIST (index 0) is overridden by the body model wrist for arm–hand continuity.
 
     points[i]  — (X, Y, Z) in metres, in the coordinate frame of device_id.
     source[i]  — how point i was obtained (see LandmarkSource).
-
-    To transform into a common frame (kinect_0), apply:
-        P_cam0 = R @ points[i].reshape(3,1) + T
-    where R, T come from calibration_results.npz extrinsic_data.
     """
     points:       np.ndarray    # (23, 3) float32, metres, local camera frame
     source:       np.ndarray    # (23,)   LandmarkSource
@@ -113,7 +109,7 @@ class Landmarks3D:
 # Public api
 #
 
-# MediaPipe Hands landmark indices — avoids magic numbers downstream.
+# MediaPipe Hands landmark indices
 class LM:
     WRIST       = 0
     THUMB_CMC   = 1
@@ -158,7 +154,6 @@ class SkeletonFrame:
     Index 21     : elbow  (MediaPipe Pose).
     Index 22     : shoulder (MediaPipe Pose).
 
-    This is the public output of SkeletonPipeline.process().
     All coordinates are in metres in the kinect_0 coordinate system.
 
     Fields
@@ -173,17 +168,6 @@ class SkeletonFrame:
                   ("kinect_0", "kinect_1", "fallback").
                   Useful for debugging and dataset quality annotation.
     timestamp_us: int — sync_timestamp_us from the SyncedFrameGroup.
-
-    Usage
-    -----
-    frame = pipeline.process(synced_group)
-    if frame is None:
-        # hand not visible in any camera — skip
-        ...
-
-    wrist = frame.landmarks[LM.WRIST]          # (3,) xyz metres
-    tip   = frame.landmarks[LM.INDEX_TIP]
-    good  = frame.source[LM.INDEX_TIP] == LandmarkSource.DEPTH
     """
     landmarks:    np.ndarray    # (23, 3) float32, metres, kinect_0 frame
     source:       np.ndarray    # (23,)   LandmarkSource

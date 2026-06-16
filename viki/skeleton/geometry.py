@@ -1,20 +1,12 @@
 """
 viki.skeleton.geometry
 ----------------------
-Pure-math lifting of 2-D pixel landmarks into 3-D camera space.
+Mapping 2D points to 3D space using depth and camera intrinsics.
 
 MediaPipe z fallback
 --------------------
 When depth_m[v, u] is nan (no depth data), we estimate Z using MediaPipe's
-relative z coordinate.  MediaPipe z is relative to the wrist (index 0) and
-is expressed in units proportional to hand size, not metres.
-
-We scale it using the wrist anchor:
-    scale = depth_m[v_wrist, u_wrist] / lm_z_rel[WRIST]
-    Z_i   = lm_z_rel[i] * scale
-
-This only works when the wrist itself has valid depth.  If the wrist depth is
-also nan the point is marked MISSING.
+relative z coordinate.
 """
 
 from __future__ import annotations
@@ -41,6 +33,7 @@ def _wrist_scale(
 ) -> float | None:
     """
     Compute the scale factor to convert MediaPipe relative z to metres.
+    This method is needed only as a fallback if we don't get valid depth.
 
     Returns None if the wrist depth pixel is nan or out of bounds.
     """
@@ -58,12 +51,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     """
     Deproject all 23 pixel landmarks into 3-D camera space.
 
-    For each landmark:
-      1. Sample depth_m at the landmark pixel.
-      2. If depth is valid, it gets DEPTH source, full metric deprojection.
-      3. If depth is nan and wrist has valid depth, it gets approximate MP_Z source, z scaled
-         from MediaPipe relative z using wrist as anchor.
-      4. Otherwise is MISSING, point set to (nan, nan, nan).
+    For each landmark, it's checkeed whether depth_m has a valid value.
 
     Parameters
     ----------
@@ -104,19 +92,16 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
         Z = depth_m[vi, ui]
 
         if not np.isnan(Z):
-            # Valid depth — full metric deprojection
+            # Valid depth
             points[i] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
             source[i] = LandmarkSource.DEPTH
 
         elif mp_z_scale is not None:
-            # No depth — estimate Z from MediaPipe relative z and wrist scale
+            # No depth, we estimate Z
             Z_approx = float(detection.lm_z_rel[i]) * mp_z_scale
             if Z_approx > 0:
                 points[i] = _pixel_to_3d(u, v, Z_approx, fx, fy, cx, cy)
                 source[i] = LandmarkSource.MP_Z
-            # Negative or zero estimated depth → leave as MISSING
-
-        # Wrist depth unknown → leave as MISSING
 
     return Landmarks3D(
         points=points,
