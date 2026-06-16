@@ -19,20 +19,9 @@ from viki.skeleton.models import PreparedFrame
 class UndistortCache:
     """
     Caches cv2.initUndistortRectifyMap results per device_id.
-
-    Computing the remap maps is expensive (~1ms). At 30fps across two cameras
-    that is 60ms/s wasted if recomputed every frame. This cache computes each
-    map exactly once and reuses it for the lifetime of the pipeline.
-
-    Usage
-    -----
-    cache = UndistortCache()
-    map1, map2 = cache.get(device_id, K, dist, (w, h))
-    undistorted = cv2.remap(img, map1, map2, cv2.INTER_LINEAR)
     """
 
     def __init__(self) -> None:
-        # device_id → (map1, map2)
         self._maps: dict[str, tuple[np.ndarray, np.ndarray]] = {}
 
     def get(
@@ -44,6 +33,7 @@ class UndistortCache:
     ) -> tuple[np.ndarray, np.ndarray]:
         if device_id not in self._maps:
             w, h = shape
+            # единожды вычисляем карту выпрямления и кэшируем её для повторного использования
             map1, map2 = cv2.initUndistortRectifyMap(
                 K, dist, None, K, (w, h), cv2.CV_32FC1
             )

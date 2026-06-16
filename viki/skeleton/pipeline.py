@@ -26,9 +26,9 @@ class SkeletonPipeline:
     Parameters
     ----------
     manager : CameraManager
-        Running manager — used to read calibration (intrinsics) per camera.
+        Running manager. Used to read calibration (intrinsics) per camera.
     calib_path : str
-        Path to calibration_results.npz — used to load extrinsics R, T.
+        Path to calibration_results.npz
     master_id : str
         Device ID of the master camera (world frame origin). Default: "kinect_0".
     subordinate_id : str
@@ -88,7 +88,6 @@ class SkeletonPipeline:
     ) -> Optional[Landmarks3D]:
         """Run stages 1–3 for one camera. Returns None if any stage fails."""
 
-        # Camera not in this group (e.g. not connected)
         frame = group.frames.get(device_id)
         if frame is None:
             return None
