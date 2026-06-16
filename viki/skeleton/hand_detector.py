@@ -122,34 +122,49 @@ class HandDetector:
             running_mode = vision.RunningMode.IMAGE
 
         # For live mode
+        # self._lock = threading.Lock()
+        # self._live_hand_result  = None
+        # self._live_pose_result  = None
+        # # Немножко русского зачем эти переменные нужны
+        # # Ниже глобальные счетчик, который увеличивается когда ОБА результата (т.е. рука и поза) обновились
+        # # В базовой работе отдельных моделей в лайв режиме, они обновляются в разное время, и мы не хотим возвращать результат, пока не обновятся обе модели
+        # self._live_version      = 0   
+        # # Последняя версия детекции руки, которую мы отдали пользователю
+        # self._live_hand_version = 0   
+        # # Последняя версия детекции позы, которую мы отдали пользователю
+        # self._live_pose_version = 0  
+        # # Версия детекции, которую мы отдали пользователю в последний раз. Больше не обновляется, пока не обновятся обе модели и не увеличится self._live_version
+        # self._last_ret_version  = -1
+        
+        
         self._lock = threading.Lock()
-        self._live_hand_result  = None
-        self._live_pose_result  = None
-        # Немножко русского зачем эти переменные нужны
-        # Ниже глобальные счетчик, который увеличивается когда ОБА результата (т.е. рука и поза) обновились
-        # В базовой работе отдельных моделей в лайв режиме, они обновляются в разное время, и мы не хотим возвращать результат, пока не обновятся обе модели
-        self._live_version      = 0   
-        # Последняя версия детекции руки, которую мы отдали пользователю
-        self._live_hand_version = 0   
-        # Последняя версия детекции позы, которую мы отдали пользователю
-        self._live_pose_version = 0  
-        # Версия детекции, которую мы отдали пользователю в последний раз. Больше не обновляется, пока не обновятся обе модели и не увеличится self._live_version
-        self._last_ret_version  = -1
+        self._live_hand_result = None
+        self._live_pose_result = None
+        self._live_last_ts_ms  = -1  # timestamp of last result returned to caller
 
         def _hand_cb(result, _img, _ts):
             with self._lock:
-                self._live_hand_result  = result
-                self._live_hand_version += 1
-                # Bump shared version only when both models have updated
-                if self._live_hand_version == self._live_pose_version:
-                    self._live_version += 1
+                self._live_hand_result = result
 
         def _pose_cb(result, _img, _ts):
             with self._lock:
-                self._live_pose_result  = result
-                self._live_pose_version += 1
-                if self._live_pose_version == self._live_hand_version:
-                    self._live_version += 1
+                self._live_pose_result = result
+
+
+        # def _hand_cb(result, _img, _ts):
+        #     with self._lock:
+        #         self._live_hand_result  = result
+        #         self._live_hand_version += 1
+        #         # Bump shared version only when both models have updated
+        #         if self._live_hand_version == self._live_pose_version:
+        #             self._live_version += 1
+
+        # def _pose_cb(result, _img, _ts):
+        #     with self._lock:
+        #         self._live_pose_result  = result
+        #         self._live_pose_version += 1
+        #         if self._live_pose_version == self._live_hand_version:
+        #             self._live_version += 1
 
         hand_opts = vision.HandLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=hand_path),
@@ -197,24 +212,20 @@ class HandDetector:
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
 
         elif self._mode == "live":
-            # Submit both async — non-blocking
+            # Submit async — results arrive in callbacks, return last known result
             self._hands.detect_async(mp_image, timestamp_ms)
             self._pose.detect_async(mp_image, timestamp_ms)
-
             with self._lock:
-                current_version = self._live_version
-                hand_result     = self._live_hand_result
-                pose_result     = self._live_pose_result
-
-            # No callback has fired yet (first frames)
+                hand_result = self._live_hand_result
+                pose_result = self._live_pose_result
+                last_ts     = self._live_last_ts_ms
             if hand_result is None or pose_result is None:
+                return None  # no result yet (first frame)
+            # Callback hasn't fired for this frame yet — stale result, skip
+            if last_ts == timestamp_ms:
                 return None
-
-            # Version hasn't changed, so both models haven't updated yet
-            if current_version == self._last_ret_version:
-                return None
-
-            self._last_ret_version = current_version
+            with self._lock:
+                self._live_last_ts_ms = timestamp_ms
 
         else:  # image
             hand_result = self._hands.detect(mp_image)
