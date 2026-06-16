@@ -2,7 +2,7 @@
 Smoke-test for the skeleton pipeline.
 
 Run inside Docker:
-    docker compose run --rm terminal python scripts/test_skeleton.py
+    docker compose run --rm terminal python skeleton_tests/test_skeleton.py
 
 What it checks
 --------------
@@ -13,15 +13,17 @@ What it checks
 5. Landmarks3D has at least some DEPTH points
 6. SkeletonFrame is produced and landmarks are in plausible metric range
 7. fusion origin fields are set correctly
+8. SkeletonStats accumulates and reports correctly
 
 Expected output with hand in front of cameras:
-    [1/7] cameras OK
-    [2/7] calibration OK
-    [3/7] prepare_frame OK  rgb=(720,1280,3) depth_m=(720,1280)
-    [4/7] hand detected on kinect_0  confidence=0.97
-    [5/7] DEPTH=18  MP_Z=2  MISSING=3  (kinect_0)
-    [6/7] SkeletonFrame OK  wrist=[0.012, -0.043, 0.521]
-    [7/7] origin counts: kinect_0=19  kinect_1=3  missing=1
+    [1/8] cameras OK
+    [2/8] calibration OK
+    [3/8] prepare_frame OK  rgb=(720,1280,3) depth_m=(720,1280)
+    [4/8] hand detected on kinect_0  confidence=0.97
+    [5/8] DEPTH=18  MP_Z=2  MISSING=3  (kinect_0)  wrist_Z=0.521m
+    [6/8] SkeletonFrame OK  wrist=[0.012, -0.043, 0.521]
+    [7/8] origin counts: kinect_0=19  kinect_1=3  missing=1
+    [8/8] SkeletonStats OK  detection_rate=0.50  landmarks=23
     PASS
 """
 
@@ -39,6 +41,7 @@ from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.fusion import fuse, load_extrinsics
 from viki.skeleton.models import LM, LandmarkSource
 from viki.skeleton.pipeline import SkeletonPipeline
+from viki.skeleton.stats import SkeletonStats, pretty_print
 
 CALIB_PATH = "viki/capture/calibration_results.npz"
 MASTER_ID  = "kinect_0"
@@ -71,7 +74,7 @@ for _ in range(30):
 else:
     fail("Timed out waiting for frames")
 
-print(f"[1/7] cameras OK  "
+print(f"[1/8] cameras OK  "
       f"kinect_0={f0.color.shape}  kinect_1={f1.color.shape}")
 
 # ── 2. Calibration ────────────────────────────────────────────────────────────
@@ -84,7 +87,7 @@ R, T = load_extrinsics(CALIB_PATH)
 if abs(np.linalg.det(R) - 1.0) > 1e-4:
     fail(f"det(R) = {np.linalg.det(R):.6f}, expected 1.0")
 
-print(f"[2/7] calibration OK  det(R)={np.linalg.det(R):.6f}  "
+print(f"[2/8] calibration OK  det(R)={np.linalg.det(R):.6f}  "
       f"|T|={np.linalg.norm(T)*100:.1f}cm")
 
 # ── 3. prepare_frame ──────────────────────────────────────────────────────────
@@ -103,7 +106,7 @@ if prep.depth_m.dtype != np.float32:
 
 valid_depth = np.sum(~np.isnan(prep.depth_m))
 total = prep.depth_m.size
-print(f"[3/7] prepare_frame OK  "
+print(f"[3/8] prepare_frame OK  "
       f"rgb={prep.rgb.shape}  depth_m={prep.depth_m.shape}  "
       f"valid_depth={valid_depth/total*100:.1f}%")
 
@@ -128,7 +131,7 @@ if detection.px.shape != (23, 2):
 if detection.lm_z_rel.shape != (23,):
     fail(f"lm_z_rel.shape={detection.lm_z_rel.shape}, expected (23,)")
 
-print(f"[4/7] hand detected on kinect_0  confidence={detection.confidence:.2f}  "
+print(f"[4/8] hand detected on kinect_0  confidence={detection.confidence:.2f}  "
       f"wrist_px=({detection.px[LM.WRIST,0]:.0f}, {detection.px[LM.WRIST,1]:.0f})")
 
 # ── 5. lift_to_3d ─────────────────────────────────────────────────────────────
@@ -147,10 +150,11 @@ wrist_z = lm3d.points[LM.WRIST, 2]
 if np.isnan(wrist_z) or not (0.1 < wrist_z < 2.0):
     fail(f"Wrist Z={wrist_z:.3f}m out of plausible range [0.1, 2.0]")
 
-print(f"[5/7] DEPTH={n_depth}  MP_Z={n_mpz}  MISSING={n_missing}  (kinect_0)  "
+print(f"[5/8] DEPTH={n_depth}  MP_Z={n_mpz}  MISSING={n_missing}  (kinect_0)  "
       f"wrist_Z={wrist_z:.3f}m")
 
 # ── 6. SkeletonFrame via full pipeline ────────────────────────────────────────
+detector.close()
 sync = MultiCameraSync(manager, sync_fps=15)
 pipeline = SkeletonPipeline(manager, calib_path=CALIB_PATH)
 
@@ -174,18 +178,51 @@ wrist = skeleton.landmarks[LM.WRIST]
 if np.isnan(wrist).any():
     fail(f"Wrist is nan in fused SkeletonFrame")
 
-print(f"[6/7] SkeletonFrame OK  "
+print(f"[6/8] SkeletonFrame OK  "
       f"wrist={wrist.tolist()}  "
       f"ts={skeleton.timestamp_us}")
 
 # ── 7. Fusion origin ──────────────────────────────────────────────────────────
 from collections import Counter
 origin_counts = Counter(skeleton.origin.tolist())
-print(f"[7/7] origin counts: "
+print(f"[7/8] origin counts: "
       + "  ".join(f"{k}={v}" for k, v in sorted(origin_counts.items())))
 
 if origin_counts.get("missing", 0) == 23:
     fail("All 23 points are missing — fusion produced empty frame")
+
+# ── 8. SkeletonStats ─────────────────────────────────────────────────────────
+stats = SkeletonStats(window=150)
+
+# One real frame + one missed frame
+stats.update(skeleton)
+stats.update(None)
+
+summary = stats.summary()
+
+
+# Эти ограничения могут быть too strict, так что можно закомменить есч
+if summary["frame_count"] != 2:
+    fail(f"frame_count={summary['frame_count']}, expected 2")
+if summary["detected_count"] != 1:
+    fail(f"detected_count={summary['detected_count']}, expected 1")
+if abs(summary["detection_rate"] - 0.5) > 1e-4:
+    fail(f"detection_rate={summary['detection_rate']}, expected 0.5")
+if len(summary["landmarks"]) != LM.N:
+    fail(f"landmarks list len={len(summary['landmarks'])}, expected {LM.N}")
+if "confidence" not in summary or not summary["confidence"]:
+    fail("summary missing confidence stats")
+
+# reset() clears all counters
+stats.reset()
+summary2 = stats.summary()
+if summary2["frame_count"] != 0 or summary2["detected_count"] != 0:
+    fail(f"after reset: frame_count={summary2['frame_count']} detected={summary2['detected_count']}")
+
+print(f"[8/8] SkeletonStats OK  "
+      f"detection_rate={summary['detection_rate']:.2f}  "
+      f"landmarks={len(summary['landmarks'])}")
+pretty_print(summary)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────
 pipeline.close()
