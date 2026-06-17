@@ -18,8 +18,8 @@ MISSED_DIR.mkdir(exist_ok=True)
 MAX_SAVED = 50
 missed_frames: list[np.ndarray] = []
 
-cap = cv2.VideoCapture("/Users/tomatocoder/Desktop/video_5.mp4")
-detector = HandDetector(hand="right", mirrored=False, mode="video")
+cap = cv2.VideoCapture("/home/tomatocoder/Desktop/ViKi-dev/skeleton_tests/move_open.mp4")
+detector = HandDetector(hand="left", mirrored=True, mode="video")
 stats = SkeletonStats(window=150)
 cache = UndistortCache()
 
@@ -67,6 +67,52 @@ missed_count = 0
 # (N, 23, 3) — all landmarks per detected frame
 all_points: list[np.ndarray] = []
 
+
+def _post_analysis(
+    stats: SkeletonStats,
+    landmarks: list[int],
+    save_anim: str | None,
+    plots_dir: str | None,
+) -> None:
+    """Display position/speed/acceleration plots and 3-D skeleton viz after recording."""
+    import os
+    import matplotlib.pyplot as plt
+
+    pos, t, _ = stats.position_over_time(landmarks)
+    if pos.shape[0] < 3:
+        print("Not enough detected frames for post-analysis (need ≥ 3).")
+        return
+
+    print(f"\nPost-analysis: {pos.shape[0]} detected frames over {t[-1]:.1f}s "
+          f"— {len(landmarks)} landmarks selected.")
+
+    if plots_dir is not None:
+        os.makedirs(plots_dir, exist_ok=True)
+        print(f"Saving plots to {plots_dir}/\n")
+    else:
+        print("Close each plot window to advance to the next one.\n")
+
+    for fig, title, filename in [
+        (stats.plot_position(landmarks, axes="xyz"), "Position over time",    "position.png"),
+        (stats.plot_speed(landmarks),                "Speed over time",       "speed.png"),
+        (stats.plot_acceleration(landmarks),         "Acceleration over time","acceleration.png"),
+        (stats.plot_3d_trace(landmarks),             "3-D landmark traces",  "trace_3d.png"),
+    ]:
+        if plots_dir is not None:
+            path = os.path.join(plots_dir, filename)
+            fig.savefig(path, dpi=150, bbox_inches="tight")
+            print(f"  saved {filename}")
+            plt.close(fig)
+        else:
+            plt.show()
+
+    print("3-D animation — close the window to exit.")
+    anim = stats.animate_3d(landmarks, fps=30.0, save_path=save_anim)
+    if anim is not None:
+        plt.show()
+    elif save_anim:
+        print(f"Animation saved → {save_anim}")
+
 while True:
     ret, bgr = cap.read()
     if not ret:
@@ -85,7 +131,7 @@ while True:
         timestamp_us=frame_idx * 33333,
         device_id="phone",
     )
-    stats.update(frame)
+    
     prepared = prepare_frame(frame, K_proc, dist, cache)
     detection = detector.detect(prepared)
 
@@ -105,6 +151,8 @@ while True:
     lm3d = lift_to_3d(detection, prepared)
     all_points.append(lm3d.points.copy())  # (23, 3)
 
+    stats.update(lm3d)
+
     wrist = lm3d.points[LM.WRIST]
     n_depth   = sum(s == "depth"   for s in lm3d.source)
     n_mp_z    = sum(s == "mp_z"    for s in lm3d.source)
@@ -115,98 +163,98 @@ cap.release()
 detector.close()
 print(f"\nDone: {detected}/{frame_idx} frames detected")
 
-for i, img in enumerate(missed_frames):
-    cv2.imwrite(str(MISSED_DIR / f"missed_{i:03d}.jpg"), img)
-print(f"Saved {len(missed_frames)} missed frames to {MISSED_DIR}/")
 
 # ── 3D visualisation ──────────────────────────────────────────────────────────
 
-if not all_points:
-    print("No detections to visualise.")
-    exit()
+_post_analysis(stats, landmarks=[0, 16, 20], save_anim="skeleton_animation", plots_dir="post_analysis_plots")
 
-pts = np.array(all_points)  # (N, 23, 3)
 
-# Finger chains: thumb, index, middle, ring, pinky + arm chain
-CHAINS = [
-    [LM.WRIST, LM.THUMB_CMC,  LM.THUMB_MCP,  LM.THUMB_IP,   LM.THUMB_TIP],
-    [LM.WRIST, LM.INDEX_MCP,  LM.INDEX_PIP,  LM.INDEX_DIP,  LM.INDEX_TIP],
-    [LM.WRIST, LM.MIDDLE_MCP, LM.MIDDLE_PIP, LM.MIDDLE_DIP, LM.MIDDLE_TIP],
-    [LM.WRIST, LM.RING_MCP,   LM.RING_PIP,   LM.RING_DIP,   LM.RING_TIP],
-    [LM.WRIST, LM.PINKY_MCP,  LM.PINKY_PIP,  LM.PINKY_DIP,  LM.PINKY_TIP],
-    [LM.SHOULDER, LM.ELBOW, LM.WRIST],
-]
+# if not all_points:
+#     print("No detections to visualise.")
+#     exit()
 
-fig = plt.figure(figsize=(12, 6))
+# pts = np.array(all_points)  # (N, 23, 3)
 
-# Left: last detected frame skeleton
-ax1 = fig.add_subplot(121, projection="3d")
-ax1.set_title("Last frame skeleton")
-last = pts[-1]  # (23, 3)
-for chain in CHAINS:
-    chain_pts = last[chain]
-    # skip chains with nan
-    if np.isnan(chain_pts).any():
-        continue
-    ax1.plot(chain_pts[:, 0], chain_pts[:, 2], -chain_pts[:, 1],
-             "o-", linewidth=2, markersize=4)
-ax1.set_xlabel("X (m)")
-ax1.set_ylabel("Z (m)")
-ax1.set_zlabel("-Y (m)")
+# # Finger chains: thumb, index, middle, ring, pinky + arm chain
+# CHAINS = [
+#     [LM.WRIST, LM.THUMB_CMC,  LM.THUMB_MCP,  LM.THUMB_IP,   LM.THUMB_TIP],
+#     [LM.WRIST, LM.INDEX_MCP,  LM.INDEX_PIP,  LM.INDEX_DIP,  LM.INDEX_TIP],
+#     [LM.WRIST, LM.MIDDLE_MCP, LM.MIDDLE_PIP, LM.MIDDLE_DIP, LM.MIDDLE_TIP],
+#     [LM.WRIST, LM.RING_MCP,   LM.RING_PIP,   LM.RING_DIP,   LM.RING_TIP],
+#     [LM.WRIST, LM.PINKY_MCP,  LM.PINKY_PIP,  LM.PINKY_DIP,  LM.PINKY_TIP],
+#     [LM.SHOULDER, LM.ELBOW, LM.WRIST],
+# ]
 
-# Right: wrist trace with time-based heatmap
-ax2 = fig.add_subplot(122, projection="3d")
-ax2.set_title("Wrist trace — colour = time (cool→warm)")
+# fig = plt.figure(figsize=(12, 6))
 
-cmap = plt.get_cmap("plasma")
-N = len(pts)
+# # Left: last detected frame skeleton
+# ax1 = fig.add_subplot(121, projection="3d")
+# ax1.set_title("Last frame skeleton")
+# last = pts[-1]  # (23, 3)
+# for chain in CHAINS:
+#     chain_pts = last[chain]
+#     # skip chains with nan
+#     if np.isnan(chain_pts).any():
+#         continue
+#     ax1.plot(chain_pts[:, 0], chain_pts[:, 2], -chain_pts[:, 1],
+#              "o-", linewidth=2, markersize=4)
+# ax1.set_xlabel("X (m)")
+# ax1.set_ylabel("Z (m)")
+# ax1.set_zlabel("-Y (m)")
 
-# Draw all landmark traces faintly
-for lm_idx in range(LM.N):
-    if lm_idx == LM.WRIST:
-        continue
-    xs = pts[:, lm_idx, 0]
-    ys = pts[:, lm_idx, 2]
-    zs = -pts[:, lm_idx, 1]
-    valid = ~np.isnan(xs)
-    if not valid.any():
-        continue
-    ax2.plot(xs[valid], ys[valid], zs[valid],
-             color="silver", linewidth=0.4, alpha=0.2)
+# # Right: wrist trace with time-based heatmap
+# ax2 = fig.add_subplot(122, projection="3d")
+# ax2.set_title("Wrist trace — colour = time (cool→warm)")
 
-# Wrist trace: colour segments by time index
-wx = pts[:, LM.WRIST, 0]
-wy = pts[:, LM.WRIST, 2]
-wz = -pts[:, LM.WRIST, 1]
-valid = ~np.isnan(wx)
-idx = np.where(valid)[0]
+# cmap = plt.get_cmap("plasma")
+# N = len(pts)
 
-for k in range(len(idx) - 1):
-    i, j = idx[k], idx[k + 1]
-    t = k / max(len(idx) - 2, 1)   # 0 → 1
-    ax2.plot([wx[i], wx[j]], [wy[i], wy[j]], [wz[i], wz[j]],
-             color=cmap(t), linewidth=2)
+# # Draw all landmark traces faintly
+# for lm_idx in range(LM.N):
+#     if lm_idx == LM.WRIST:
+#         continue
+#     xs = pts[:, lm_idx, 0]
+#     ys = pts[:, lm_idx, 2]
+#     zs = -pts[:, lm_idx, 1]
+#     valid = ~np.isnan(xs)
+#     if not valid.any():
+#         continue
+#     ax2.plot(xs[valid], ys[valid], zs[valid],
+#              color="silver", linewidth=0.4, alpha=0.2)
 
-# Start (blue) and end (red) markers
-if len(idx) >= 1:
-    ax2.scatter([wx[idx[0]]],  [wy[idx[0]]],  [wz[idx[0]]],
-                color=cmap(0.0), s=60, zorder=5, label="start")
-    ax2.scatter([wx[idx[-1]]], [wy[idx[-1]]], [wz[idx[-1]]],
-                color=cmap(1.0), s=60, marker="*", zorder=5, label="end")
+# # Wrist trace: colour segments by time index
+# wx = pts[:, LM.WRIST, 0]
+# wy = pts[:, LM.WRIST, 2]
+# wz = -pts[:, LM.WRIST, 1]
+# valid = ~np.isnan(wx)
+# idx = np.where(valid)[0]
 
-# Colourbar
-sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, N))
-sm.set_array([])
-plt.colorbar(sm, ax=ax2, label="frame index", shrink=0.6, pad=0.1)
+# for k in range(len(idx) - 1):
+#     i, j = idx[k], idx[k + 1]
+#     t = k / max(len(idx) - 2, 1)   # 0 → 1
+#     ax2.plot([wx[i], wx[j]], [wy[i], wy[j]], [wz[i], wz[j]],
+#              color=cmap(t), linewidth=2)
 
-ax2.set_xlabel("X (m)")
-ax2.set_ylabel("Z (m)")
-ax2.set_zlabel("-Y (m)")
-ax2.legend()
+# # Start (blue) and end (red) markers
+# if len(idx) >= 1:
+#     ax2.scatter([wx[idx[0]]],  [wy[idx[0]]],  [wz[idx[0]]],
+#                 color=cmap(0.0), s=60, zorder=5, label="start")
+#     ax2.scatter([wx[idx[-1]]], [wy[idx[-1]]], [wz[idx[-1]]],
+#                 color=cmap(1.0), s=60, marker="*", zorder=5, label="end")
 
-plt.tight_layout()
-plt.savefig("skeleton_trace.png", dpi=150)
-print("Saved skeleton_trace.png")
-plt.show()
+# # Colourbar
+# sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, N))
+# sm.set_array([])
+# plt.colorbar(sm, ax=ax2, label="frame index", shrink=0.6, pad=0.1)
+
+# ax2.set_xlabel("X (m)")
+# ax2.set_ylabel("Z (m)")
+# ax2.set_zlabel("-Y (m)")
+# ax2.legend()
+
+# plt.tight_layout()
+# plt.savefig("skeleton_trace.png", dpi=150)
+# print("Saved skeleton_trace.png")
+# plt.show()
 
 print(stats.summary())

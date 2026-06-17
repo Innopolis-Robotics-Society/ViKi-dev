@@ -25,6 +25,10 @@ def _pixel_to_3d(
     Y = (v - cy) * Z / fy
     return np.array([X, Y, Z], dtype=np.float32)
 
+# So this is only needed if we don't get anything from depth cameras
+# in real case not needed
+_FALLBACK_WRIST_Z_M = 0.7  # assumed wrist depth (metres) when no real depth sensor
+
 
 def _wrist_scale(
     wrist_px: np.ndarray,   # (2,) [u, v]
@@ -71,19 +75,18 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     depth_m = frame.depth_m
     h, w = depth_m.shape
 
-    # Precompute wrist scale for MP_Z fallback
-    mp_z_scale = _wrist_scale(
-        detection.px[LM.WRIST],
-        float(detection.lm_z_rel[LM.WRIST]),
-        depth_m,
-    )
+    mp_z_scale = _wrist_scale(detection.px[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
+    if mp_z_scale is None:
+        z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
+        if z_rel_wrist != 0.0:
+            mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
 
     points = np.full((LM.N, 3), np.nan, dtype=np.float32)
     source = np.array([LandmarkSource.MISSING] * LM.N, dtype=object)
 
     for i in range(LM.N):
         u, v = detection.px[i, 0], detection.px[i, 1]
-        if u is np.nan or v is np.nan:
+        if np.isnan(u) or np.isnan(v):
             continue
         ui, vi = int(round(u)), int(round(v))
 

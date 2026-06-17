@@ -23,6 +23,10 @@ from viki.skeleton.hand_detector import HandDetector
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
 
+# Default landmarks for post-analysis: wrist + all fingertips
+_DEFAULT_ANALYSIS_LM = [LM.WRIST, LM.THUMB_TIP, LM.INDEX_TIP,
+                         LM.MIDDLE_TIP, LM.RING_TIP, LM.PINKY_TIP]
+
 
 # Finger chains for drawing skeleton overlay
 CHAINS = [
@@ -68,13 +72,75 @@ def draw_skeleton(frame_bgr: np.ndarray, detection) -> np.ndarray:
     return img
 
 
+def _post_analysis(
+    stats: SkeletonStats,
+    landmarks: list[int],
+    save_anim: str | None,
+    plots_dir: str | None,
+) -> None:
+    """Display position/speed/acceleration plots and 3-D skeleton viz after recording."""
+    import os
+    import matplotlib.pyplot as plt
+
+    pos, t, _ = stats.position_over_time(landmarks)
+    if pos.shape[0] < 3:
+        print("Not enough detected frames for post-analysis (need ≥ 3).")
+        return
+
+    print(f"\nPost-analysis: {pos.shape[0]} detected frames over {t[-1]:.1f}s "
+          f"— {len(landmarks)} landmarks selected.")
+
+    if plots_dir is not None:
+        os.makedirs(plots_dir, exist_ok=True)
+        print(f"Saving plots to {plots_dir}/\n")
+    else:
+        print("Close each plot window to advance to the next one.\n")
+
+    for fig, title, filename in [
+        (stats.plot_position(landmarks, axes="xyz"), "Position over time",    "position.png"),
+        (stats.plot_speed(landmarks),                "Speed over time",       "speed.png"),
+        (stats.plot_acceleration(landmarks),         "Acceleration over time","acceleration.png"),
+        (stats.plot_3d_trace(),                      "3-D landmark traces",  "trace_3d.png"),
+    ]:
+        if plots_dir is not None:
+            path = os.path.join(plots_dir, filename)
+            fig.savefig(path, dpi=150, bbox_inches="tight")
+            print(f"  saved {filename}")
+            plt.close(fig)
+        else:
+            plt.show()
+
+    print("3-D animation — close the window to exit.")
+    anim = stats.animate_3d(fps=30.0, save_path=save_anim)
+    if anim is not None:
+        plt.show()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--hand",   default="right", choices=["right", "left"])
     parser.add_argument("--width",  type=int, default=640)
     parser.add_argument("--mirrored", action="store_true")
+    parser.add_argument(
+        "--landmarks",
+        default=",".join(str(i) for i in _DEFAULT_ANALYSIS_LM),
+        help="Comma-separated landmark indices for post-analysis plots "
+             f"(default: wrist + fingertips = {_DEFAULT_ANALYSIS_LM})",
+    )
+    parser.add_argument("--no-plots", action="store_true",
+                        help="Skip post-analysis plots after recording ends.")
+    parser.add_argument("--save-anim", metavar="PATH", default=None,
+                        help="Save the 3-D skeleton animation to this MP4 path.")
+    parser.add_argument("--save-plots", metavar="DIR", default=None,
+                        help="Save all post-analysis plots as PNGs to this folder "
+                             "(created if it does not exist). Skips interactive display.")
     args = parser.parse_args()
+
+    try:
+        analysis_landmarks = [int(x) for x in args.landmarks.split(",") if x.strip()]
+    except ValueError:
+        parser.error("--landmarks must be comma-separated integers, e.g. '0,8,12'")
 
     cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
@@ -167,6 +233,9 @@ def main():
     detector.close()
     cv2.destroyAllWindows()
     pretty_print(stats.summary())
+
+    if not args.no_plots:
+        _post_analysis(stats, analysis_landmarks, args.save_anim, args.save_plots)
 
 
 if __name__ == "__main__":
