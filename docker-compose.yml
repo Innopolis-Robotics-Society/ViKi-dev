@@ -10,6 +10,7 @@ x-common: &common
     - /tmp/.X11-unix:/tmp/.X11-unix
     - ./viki:/app/viki
     - ./pyproject.toml:/app/pyproject.toml:ro
+    - ./skeleton_tests/:/app/skeleton_tests
   environment:
     - PYTHONUNBUFFERED=1
     - PYTHONPATH=/app

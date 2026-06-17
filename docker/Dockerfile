@@ -10,6 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget ca-certificates gnupg2 apt-transport-https \
     libusb-1.0-0 libgl1 libglib2.0-0 \
     libgl1-mesa-dri mesa-vulkan-drivers \
+    libgles2-mesa \
+    libegl1-mesa \
+    libglvnd0 \
     python3 python3-pip \
     && rm -rf /var/lib/apt/lists/*
 
@@ -45,10 +48,14 @@ RUN echo 'libk4a1.4 libk4a1.4/accepted-eula-hash string 0f5d5c5de396e4fee4c0753a
 # No pyk4a — we use our own ctypes wrapper over libk4a.so
 WORKDIR /app
 COPY pyproject.toml .
-RUN pip3 install --no-cache-dir \
-    fastapi "uvicorn[standard]" \
-    pyrealsense2 \
-    opencv-python-headless numpy
+COPY viki/ .
+COPY skeleton_tests/ .
+# RUN pip3 install --no-cache-dir \
+#     fastapi "uvicorn[standard]" \
+#     pyrealsense2 \
+#     opencv-python-headless numpy \
+#     mediapipe
+RUN pip install .
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh

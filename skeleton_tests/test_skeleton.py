@@ -2,7 +2,7 @@
 Smoke-test for the skeleton pipeline.
 
 Run inside Docker:
-    docker compose run --rm terminal python skeleton_tests/test_skeleton.py
+    docker compose run --rm terminal python3 skeleton_tests/test_skeleton.py
 
 What it checks
 --------------
