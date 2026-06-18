@@ -47,15 +47,15 @@ RUN echo 'libk4a1.4 libk4a1.4/accepted-eula-hash string 0f5d5c5de396e4fee4c0753a
 # ── Python deps ───────────────────────────────────────────────────────────────
 # No pyk4a — we use our own ctypes wrapper over libk4a.so
 WORKDIR /app
+
 COPY pyproject.toml .
-COPY viki/ .
-COPY skeleton_tests/ .
-# RUN pip3 install --no-cache-dir \
-#     fastapi "uvicorn[standard]" \
-#     pyrealsense2 \
-#     opencv-python-headless numpy \
-#     mediapipe
-RUN pip install .
+RUN pip install --no-cache-dir pip-tools && \
+    pip-compile pyproject.toml -o requirements.txt && \
+    pip install --no-cache-dir -r requirements.txt
+
+COPY ./viki/ ./viki/
+COPY ./skeleton_tests/ ./skeleton_tests/
+RUN pip install --no-deps .
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh

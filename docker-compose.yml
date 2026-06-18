@@ -8,9 +8,7 @@ x-common: &common
     - /dev:/dev
     - /run/udev:/run/udev:ro
     - /tmp/.X11-unix:/tmp/.X11-unix
-    - ./viki:/app/viki
-    - ./pyproject.toml:/app/pyproject.toml:ro
-    - ./skeleton_tests/:/app/skeleton_tests
+    - ./data:/app/data
   environment:
     - PYTHONUNBUFFERED=1
     - PYTHONPATH=/app
