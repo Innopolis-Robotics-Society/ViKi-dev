@@ -5,6 +5,7 @@ CameraManager: detects, starts, and owns camera backends.
 Each camera runs in a background thread; the latest frame is always
 available for non-blocking reads by the MJPEG streamer.
 """
+
 from __future__ import annotations
 
 import threading
@@ -46,7 +47,9 @@ class _CameraWorker:
         with self._lock:
             if not self._buffer:
                 return None
-            return min(self._buffer, key=lambda f: abs(f.host_timestamp_us - host_timestamp_us))
+            return min(
+                self._buffer, key=lambda f: abs(f.host_timestamp_us - host_timestamp_us)
+            )
 
     def _loop(self) -> None:
         while not self._stop_event.is_set():
@@ -85,12 +88,14 @@ class CameraManager:
 
         try:
             from .realsense import RealSenseBackend
+
             devices["realsense"] = RealSenseBackend.list_devices()
         except Exception as e:
             devices["realsense_error"] = str(e)
 
         try:
             from .kinect import KinectBackend
+
             count = KinectBackend.device_count()
             devices["kinect"] = [f"kinect_{i}" for i in range(count)]
         except Exception as e:
@@ -112,7 +117,9 @@ class CameraManager:
         if device_id in self._workers:
             return  # already running
 
-        backend = self._make_backend(device_id, fps, color_width, color_height, depth_mode, **kwargs)
+        backend = self._make_backend(
+            device_id, fps, color_width, color_height, depth_mode, **kwargs
+        )
         worker = _CameraWorker(backend)
         worker.start()
         self._workers[device_id] = worker
@@ -177,7 +184,9 @@ class CameraManager:
         for device_id in list(self._workers):
             self.stop(device_id)
 
-    def load_calibration(self, path: str = "viki/capture/calibration_results.npz") -> None:
+    def load_calibration(
+        self, path: str = "viki/capture/calibration_results.npz"
+    ) -> None:
         """Load intrinsics and distortion coefficients from a file."""
         try:
             with np.load(path, allow_pickle=True) as data:
@@ -187,7 +196,7 @@ class CameraManager:
             print(f"Loaded calibration for: {list(self.calibration.keys())}")
         except Exception as e:
             print(f"Could not load calibration from {path}: {e}")
-    
+
     def update_calibration(self, intrinsics: dict, dist_coeffs: dict) -> None:
         """Update the running calibration state."""
         for dev_id in intrinsics:
@@ -228,9 +237,12 @@ class CameraManager:
             if frame.color_intrinsics:
                 ci = frame.color_intrinsics
                 info["color_intrinsics"] = {
-                    "fx": ci.fx, "fy": ci.fy,
-                    "cx": ci.cx, "cy": ci.cy,
-                    "width": ci.width, "height": ci.height,
+                    "fx": ci.fx,
+                    "fy": ci.fy,
+                    "cx": ci.cx,
+                    "cy": ci.cy,
+                    "width": ci.width,
+                    "height": ci.height,
                 }
         return info
 
@@ -247,6 +259,7 @@ class CameraManager:
     ) -> CameraBackend:
         if device_id.startswith("kinect_"):
             from .kinect import KinectBackend
+
             idx = int(device_id.split("_")[1])
             return KinectBackend(
                 device_index=idx,
@@ -257,9 +270,11 @@ class CameraManager:
             )
         else:
             from .realsense import RealSenseBackend
+
             return RealSenseBackend(
                 serial=device_id,
                 color_resolution=(color_width, color_height),
                 depth_resolution=(color_width, color_height),
                 fps=fps,
             )
+

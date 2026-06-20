@@ -7,34 +7,46 @@ yield multipart JPEG chunks, delegating all pixel work to ``viki.viz``.
 Kept separate from the route handlers so the endpoints stay thin and the
 transport/timing logic lives in one place.
 """
+
 from __future__ import annotations
 
+import logging
 import time
 from typing import Iterator
 
 import cv2
 import numpy as np
 
+from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.config import JPEG_QUALITY, PLACEHOLDER_SIZE, STREAM_IDLE_SLEEP
 from viki.viz.depth import DepthColorizer, Undistorter
 from viki.viz.mjpeg import mjpeg_chunk, placeholder
 
 
-def camera_stream(mgr: CameraManager, device_id: str, kind: str) -> Iterator[bytes]:
+def camera_stream(
+    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
+) -> Iterator[bytes]:
     """
     Yield MJPEG chunks for one camera.
 
-    ``kind`` is ``"color"`` (optionally undistorted) or ``"depth"`` (colour-mapped).
+    ``mode`` is ``"color"`` (optionally undistorted) or ``"depth"`` (colour-mapped).
     Ends when the device is no longer active.
     """
     pw, ph = PLACEHOLDER_SIZE
     last_ts = -1
 
     # Fetch calibration once; build an undistorter only if it exists.
-    calib = mgr.get_calibration(device_id)
-    undistorter = Undistorter(calib["mtx"], calib["dist"]) if calib is not None else None
+    intrinsics = cal.get_intrinsics(device_id)
+    if not intrinsics:
+        msg = f"Could not create camera stream: No intrinsics available for {device_id}"
+        logging.warning(msg)
+        undistorter = None
+    else:
+        undistorter = Undistorter(intrinsics.camera_matrix, intrinsics.dist_coeffs)
     colorizer = DepthColorizer()
+
+    color_mode = mode == "color"
 
     while True:
         frame = mgr.latest_frame(device_id)
@@ -49,7 +61,7 @@ def camera_stream(mgr: CameraManager, device_id: str, kind: str) -> Iterator[byt
             continue
         else:
             last_ts = frame.host_timestamp_us
-            if kind == "color":
+            if color_mode:
                 img = frame.color
                 if undistorter is not None:
                     img = undistorter.apply(img)

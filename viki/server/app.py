@@ -4,6 +4,7 @@ viki.server.app
 Application assembly only: lifespan resources, static files, router wiring.
 All request logic lives in ``viki.server.routes`` and ``viki.server.streams``.
 """
+
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from viki.capture.calibration import CalibrationManager
+from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.server.routes import calibration, cameras
 
@@ -23,8 +24,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.manager = CameraManager()
-    app.state.manager.load_calibration()
-    app.state.calibrator = CalibrationManager()
+    app.state.calibrator = CalibrationManager(app.state.manager)
     yield
     app.state.manager.stop_all()
 

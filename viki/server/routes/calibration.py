@@ -4,24 +4,37 @@ viki.server.routes.calibration
 Calibration endpoints: live mosaic preview, sample capture, running the
 calibration solve, status, and clearing collected samples.
 """
+
 from __future__ import annotations
+from logging import disable
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+from typing import Optional
 
-from viki.capture.calibration import CalibrationManager
+from viki.calibration.manager import CalibrationManager
+from viki.calibration.models import (
+    CalibrationSample,
+    CalibrationIntrinsics,
+    CalibrationExtrinsics,
+)
 from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
+from viki.server.routes.models import (
+    ChessboardParams,
+    IntrinsicsResponse,
+    ExtrinsicsResponse,
+)
 from viki.server.streams import calibration_mosaic
 
-router = APIRouter(prefix="/api/calibrate", tags=["calibration"])
+router = APIRouter(prefix="/api/calibration", tags=["calibration"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
 
 @router.get("/stream")
-def calibration_stream(mgr: CameraManager = Depends(get_manager)):
+def stream(mgr: CameraManager = Depends(get_manager)):
     return StreamingResponse(
         calibration_mosaic(mgr),
         media_type=_MJPEG_MEDIA,
@@ -29,52 +42,86 @@ def calibration_stream(mgr: CameraManager = Depends(get_manager)):
     )
 
 
+@router.post("/capture/{device_id}")
+async def capture(
+    device_id: str,
+    cal: CalibrationManager = Depends(get_calibrator),
+):
+    cal.capture(device_id)
+
+
 @router.post("/capture")
-async def capture_calibration_sample(
-    mgr: CameraManager = Depends(get_manager),
+async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
-    active_ids = mgr.active_device_ids()
-    if not active_ids:
-        raise HTTPException(status_code=400, detail="No cameras active")
-
-    frames = {}
-    for dev_id in active_ids:
-        frame = mgr.latest_frame(dev_id)
-        if frame is None:
-            raise HTTPException(status_code=500, detail=f"Failed to get frame from {dev_id}")
-        frames[dev_id] = frame
-
-    success_map = cal.add_sample(frames)
-    return {"success_map": success_map, "sample_count": cal.sample_count}
+    cal.capture_all()
 
 
-@router.post("/run")
-async def run_calibration(
-    mgr: CameraManager = Depends(get_manager),
+@router.post("/start/{device_id}")
+async def start_worker(
+    device_id: str,
+    mode: str = "auto",
+    params: Optional[ChessboardParams] = None,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
-    try:
-        result = cal.run_calibration()
-
-        # Immediately apply the new calibration to the running manager.
-        mgr.update_calibration(result["intrinsics"], result["dist_coeffs"])
-
-        # Remove the large matrices from the response to keep it clean.
-        resp = result.copy()
-        resp.pop("intrinsics", None)
-        resp.pop("dist_coeffs", None)
-        return resp
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    if not params:
+        chessboard_size = (8, 6)
+        square_size = 1.0
+    else:
+        chessboard_size = params.chessboard_size
+        square_size = params.square_size
+    cal.start(device_id, chessboard_size, square_size, mode)
 
 
-@router.get("/status")
-async def calibration_status(cal: CalibrationManager = Depends(get_calibrator)):
-    return {"sample_count": cal.sample_count}
+@router.get("/status/{device_id}")
+async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    return {"status": cal.status(device_id)}
 
 
-@router.post("/clear")
-async def clear_calibration(cal: CalibrationManager = Depends(get_calibrator)):
-    cal.clear()
+@router.get("/samples_count/{device_id}")
+async def samples_count(
+    device_id: str, cal: CalibrationManager = Depends(get_calibrator)
+):
+    return {"samples_count": cal.samples_count(device_id)}
+
+
+@router.get("/is_device_active/{device_id}")
+async def is_device_active(
+    device_id: str, cal: CalibrationManager = Depends(get_calibrator)
+):
+    return {"is_device_active": cal.is_device_active(device_id)}
+
+
+@router.post("/clear/{device_id}")
+async def clear(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    cal.clear(device_id)
     return {"status": "cleared"}
+
+
+@router.get("/intrinsics/{device_id}", response_model=IntrinsicsResponse)
+async def intrinsics(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    intrinsics = cal.get_intrinsics(device_id)
+    if not intrinsics:
+        raise HTTPException(
+            status_code=404, detail="Intrinsics not found for this device"
+        )
+    return IntrinsicsResponse(
+        fx=intrinsics.fx,
+        fy=intrinsics.fy,
+        cx=intrinsics.cx,
+        cy=intrinsics.cy,
+        dist_coeffs=intrinsics.dist_coeffs.tolist(),
+    )
+
+
+@router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)
+async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    extrinsics = cal.get_extrinsics(device_id)
+    if not extrinsics:
+        raise HTTPException(
+            status_code=404, detail="Extrinsics not found for this device"
+        )
+    return ExtrinsicsResponse(
+        rvec=extrinsics.rvec.tolist(),
+        tvec=extrinsics.tvec.tolist(),
+    )

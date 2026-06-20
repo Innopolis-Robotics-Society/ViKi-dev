@@ -5,6 +5,7 @@ Camera device endpoints: discovery, start/stop, info, and colour/depth
 MJPEG streams. Handlers stay thin — they delegate to the CameraManager
 and to ``viki.server.streams``.
 """
+
 from __future__ import annotations
 
 import traceback
@@ -14,8 +15,9 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from viki import config
+from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
-from viki.server.deps import get_manager
+from viki.server.deps import get_calibrator, get_manager
 from viki.server.streams import camera_stream
 
 router = APIRouter(prefix="/api", tags=["cameras"])
@@ -82,18 +84,26 @@ async def camera_info(device_id: str, mgr: CameraManager = Depends(get_manager))
 
 
 @router.get("/cameras/{device_id}/stream")
-def colour_stream(device_id: str, mgr: CameraManager = Depends(get_manager)):
+def colour_stream(
+    device_id: str,
+    mgr: CameraManager = Depends(get_manager),
+    cal: CalibrationManager = Depends(get_calibrator),
+):
     return StreamingResponse(
-        camera_stream(mgr, device_id, "color"),
+        camera_stream(mgr, cal, device_id, "color"),
         media_type=_MJPEG_MEDIA,
         headers=_STREAM_HEADERS,
     )
 
 
 @router.get("/cameras/{device_id}/depth")
-def depth_stream(device_id: str, mgr: CameraManager = Depends(get_manager)):
+def depth_stream(
+    device_id: str,
+    mgr: CameraManager = Depends(get_manager),
+    cal: CalibrationManager = Depends(get_calibrator),
+):
     return StreamingResponse(
-        camera_stream(mgr, device_id, "depth"),
+        camera_stream(mgr, cal, device_id, "depth"),
         media_type=_MJPEG_MEDIA,
         headers=_STREAM_HEADERS,
     )

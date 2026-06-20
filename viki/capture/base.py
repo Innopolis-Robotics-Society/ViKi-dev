@@ -18,7 +18,6 @@ import numpy as np
 
 @dataclass
 class CameraIntrinsics:
-    """Pinhole camera intrinsic parameters."""
     fx: float
     fy: float
     cx: float
@@ -46,6 +45,7 @@ class Frame:
     color_intrinsics : CameraIntrinsics | None
     depth_intrinsics : CameraIntrinsics | None
     """
+
     color: np.ndarray
     depth: np.ndarray
     timestamp_us: int
@@ -66,6 +66,7 @@ class SyncedFrameGroup:
     offsets_us[device_id] = frame.host_timestamp_us - sync_timestamp_us
     Negative means the frame arrived before the tick (early); positive means after (late).
     """
+
     frames: dict
     sync_timestamp_us: int
     offsets_us: dict
