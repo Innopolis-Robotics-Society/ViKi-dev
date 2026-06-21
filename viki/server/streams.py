@@ -46,8 +46,6 @@ def camera_stream(
         undistorter = Undistorter(intrinsics.camera_matrix, intrinsics.dist_coeffs)
     colorizer = DepthColorizer()
 
-    color_mode = mode == "color"
-
     while True:
         frame = mgr.latest_frame(device_id)
 
@@ -61,7 +59,7 @@ def camera_stream(
             continue
         else:
             last_ts = frame.host_timestamp_us
-            if color_mode:
+            if mode == "color":
                 img = frame.color
                 if undistorter is not None:
                     img = undistorter.apply(img)

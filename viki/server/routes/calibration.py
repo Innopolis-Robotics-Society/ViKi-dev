@@ -6,18 +6,12 @@ calibration solve, status, and clearing collected samples.
 """
 
 from __future__ import annotations
-from logging import disable
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from typing import Optional
 
 from viki.calibration.manager import CalibrationManager
-from viki.calibration.models import (
-    CalibrationSample,
-    CalibrationIntrinsics,
-    CalibrationExtrinsics,
-)
 from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
 from viki.server.routes.models import (

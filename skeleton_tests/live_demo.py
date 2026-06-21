@@ -24,26 +24,32 @@ from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
 
 # Default landmarks for post-analysis: wrist + all fingertips
-_DEFAULT_ANALYSIS_LM = [LM.WRIST, LM.THUMB_TIP, LM.INDEX_TIP,
-                         LM.MIDDLE_TIP, LM.RING_TIP, LM.PINKY_TIP]
+_DEFAULT_ANALYSIS_LM = [
+    LM.WRIST,
+    LM.THUMB_TIP,
+    LM.INDEX_TIP,
+    LM.MIDDLE_TIP,
+    LM.RING_TIP,
+    LM.PINKY_TIP,
+]
 
 
 # Finger chains for drawing skeleton overlay
 CHAINS = [
-    [LM.WRIST, LM.THUMB_CMC,  LM.THUMB_MCP,  LM.THUMB_IP,   LM.THUMB_TIP],
-    [LM.WRIST, LM.INDEX_MCP,  LM.INDEX_PIP,  LM.INDEX_DIP,  LM.INDEX_TIP],
+    [LM.WRIST, LM.THUMB_CMC, LM.THUMB_MCP, LM.THUMB_IP, LM.THUMB_TIP],
+    [LM.WRIST, LM.INDEX_MCP, LM.INDEX_PIP, LM.INDEX_DIP, LM.INDEX_TIP],
     [LM.WRIST, LM.MIDDLE_MCP, LM.MIDDLE_PIP, LM.MIDDLE_DIP, LM.MIDDLE_TIP],
-    [LM.WRIST, LM.RING_MCP,   LM.RING_PIP,   LM.RING_DIP,   LM.RING_TIP],
-    [LM.WRIST, LM.PINKY_MCP,  LM.PINKY_PIP,  LM.PINKY_DIP,  LM.PINKY_TIP],
+    [LM.WRIST, LM.RING_MCP, LM.RING_PIP, LM.RING_DIP, LM.RING_TIP],
+    [LM.WRIST, LM.PINKY_MCP, LM.PINKY_PIP, LM.PINKY_DIP, LM.PINKY_TIP],
     [LM.SHOULDER, LM.ELBOW, LM.WRIST],
 ]
 
 CHAIN_COLORS = [
-    (0,   165, 255),  # thumb   — orange
-    (0,   255,   0),  # index   — green
-    (255, 255,   0),  # middle  — yellow
-    (255,   0, 255),  # ring    — magenta
-    (0,   255, 255),  # pinky   — cyan
+    (0, 165, 255),  # thumb   — orange
+    (0, 255, 0),  # index   — green
+    (255, 255, 0),  # middle  — yellow
+    (255, 0, 255),  # ring    — magenta
+    (0, 255, 255),  # pinky   — cyan
     (255, 100, 100),  # arm     — light blue
 ]
 
@@ -87,8 +93,10 @@ def _post_analysis(
         print("Not enough detected frames for post-analysis (need ≥ 3).")
         return
 
-    print(f"\nPost-analysis: {pos.shape[0]} detected frames over {t[-1]:.1f}s "
-          f"— {len(landmarks)} landmarks selected.")
+    print(
+        f"\nPost-analysis: {pos.shape[0]} detected frames over {t[-1]:.1f}s "
+        f"— {len(landmarks)} landmarks selected."
+    )
 
     if plots_dir is not None:
         os.makedirs(plots_dir, exist_ok=True)
@@ -97,10 +105,18 @@ def _post_analysis(
         print("Close each plot window to advance to the next one.\n")
 
     for fig, title, filename in [
-        (stats.plot_position(landmarks, axes="xyz"), "Position over time",    "position.png"),
-        (stats.plot_speed(landmarks),                "Speed over time",       "speed.png"),
-        (stats.plot_acceleration(landmarks),         "Acceleration over time","acceleration.png"),
-        (stats.plot_3d_trace(),                      "3-D landmark traces",  "trace_3d.png"),
+        (
+            stats.plot_position(landmarks, axes="xyz"),
+            "Position over time",
+            "position.png",
+        ),
+        (stats.plot_speed(landmarks), "Speed over time", "speed.png"),
+        (
+            stats.plot_acceleration(landmarks),
+            "Acceleration over time",
+            "acceleration.png",
+        ),
+        (stats.plot_3d_trace(), "3-D landmark traces", "trace_3d.png"),
     ]:
         if plots_dir is not None:
             path = os.path.join(plots_dir, filename)
@@ -119,22 +135,33 @@ def _post_analysis(
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--camera", type=int, default=0)
-    parser.add_argument("--hand",   default="right", choices=["right", "left"])
-    parser.add_argument("--width",  type=int, default=640)
+    parser.add_argument("--hand", default="right", choices=["right", "left"])
+    parser.add_argument("--width", type=int, default=640)
     parser.add_argument("--mirrored", action="store_true")
     parser.add_argument(
         "--landmarks",
         default=",".join(str(i) for i in _DEFAULT_ANALYSIS_LM),
         help="Comma-separated landmark indices for post-analysis plots "
-             f"(default: wrist + fingertips = {_DEFAULT_ANALYSIS_LM})",
+        f"(default: wrist + fingertips = {_DEFAULT_ANALYSIS_LM})",
     )
-    parser.add_argument("--no-plots", action="store_true",
-                        help="Skip post-analysis plots after recording ends.")
-    parser.add_argument("--save-anim", metavar="PATH", default=None,
-                        help="Save the 3-D skeleton animation to this MP4 path.")
-    parser.add_argument("--save-plots", metavar="DIR", default=None,
-                        help="Save all post-analysis plots as PNGs to this folder "
-                             "(created if it does not exist). Skips interactive display.")
+    parser.add_argument(
+        "--no-plots",
+        action="store_true",
+        help="Skip post-analysis plots after recording ends.",
+    )
+    parser.add_argument(
+        "--save-anim",
+        metavar="PATH",
+        default=None,
+        help="Save the 3-D skeleton animation to this MP4 path.",
+    )
+    parser.add_argument(
+        "--save-plots",
+        metavar="DIR",
+        default=None,
+        help="Save all post-analysis plots as PNGs to this folder "
+        "(created if it does not exist). Skips interactive display.",
+    )
     args = parser.parse_args()
 
     try:
@@ -149,7 +176,7 @@ def main():
 
     detector = HandDetector(hand=args.hand, mode="live", mirrored=args.mirrored)
     stats = SkeletonStats(window=150)
-    cache    = UndistortCache()
+    cache = UndistortCache()
 
     ret, bgr = cap.read()
     if not ret:
@@ -159,26 +186,29 @@ def main():
     h, w = bgr.shape[:2]
     # Downscale if needed
     if w > args.width:
-        scale  = args.width / w
+        scale = args.width / w
         proc_w = args.width
         proc_h = int(h * scale)
     else:
-        scale  = 1.0
+        scale = 1.0
         proc_w, proc_h = w, h
 
-    K = np.array([[proc_w * 0.8, 0, proc_w / 2],
-                  [0, proc_w * 0.8, proc_h / 2],
-                  [0, 0, 1]], dtype=np.float32)
-    dist       = np.zeros(5, dtype=np.float32)
+    K = np.array(
+        [[proc_w * 0.8, 0, proc_w / 2], [0, proc_w * 0.8, proc_h / 2], [0, 0, 1]],
+        dtype=np.float32,
+    )
+    dist = np.zeros(5, dtype=np.float32)
     depth_fake = np.full((proc_h, proc_w), 700, dtype=np.uint16)
 
     frame_idx = 0
-    t0        = time.perf_counter()
+    t0 = time.perf_counter()
     fps_display = 0.0
 
     print("Running — press q or Esc to quit")
 
-    while True:
+    counter = 100
+    while counter:
+        counter -= 1
         ret, bgr = cap.read()
         if not ret:
             break
@@ -196,7 +226,7 @@ def main():
             timestamp_us=frame_idx * 33333,
             device_id="webcam",
         )
-        prepared  = prepare_frame(frame, K, dist, cache)
+        prepared = prepare_frame(frame, K, dist, cache)
         detection = detector.detect(prepared)
 
         if detection is not None:
@@ -214,15 +244,38 @@ def main():
         if detection is not None:
             display = draw_skeleton(display, detection)
             wrist = detection.px[LM.WRIST]
-            cv2.putText(display, f"conf={detection.confidence:.2f}",
-                        (10, proc_h - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.5, (0, 255, 0), 1, cv2.LINE_AA)
+            cv2.putText(
+                display,
+                f"conf={detection.confidence:.2f}",
+                (10, proc_h - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 255, 0),
+                1,
+                cv2.LINE_AA,
+            )
         else:
-            cv2.putText(display, "no hand", (10, proc_h - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1, cv2.LINE_AA)
+            cv2.putText(
+                display,
+                "no hand",
+                (10, proc_h - 10),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.5,
+                (0, 0, 255),
+                1,
+                cv2.LINE_AA,
+            )
 
-        cv2.putText(display, f"FPS {fps_display:.1f}", (10, 20),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+        cv2.putText(
+            display,
+            f"FPS {fps_display:.1f}",
+            (10, 20),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
 
         cv2.imshow("ViKi live demo", display)
         key = cv2.waitKey(1) & 0xFF
@@ -240,4 +293,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    

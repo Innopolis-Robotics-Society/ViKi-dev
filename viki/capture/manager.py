@@ -83,6 +83,7 @@ class CameraManager:
         devices: dict = {
             "realsense": [],
             "kinect": [],
+            "web_camera": [],
             "active": list(self._workers.keys()),
         }
 
@@ -100,6 +101,13 @@ class CameraManager:
             devices["kinect"] = [f"kinect_{i}" for i in range(count)]
         except Exception as e:
             devices["kinect_error"] = str(e)
+
+        try:
+            from .web_camera import WebCameraBackend
+
+            devices["web_camera"] = WebCameraBackend.list_devices()
+        except Exception as e:
+            devices["web_camera_error"] = str(e)
 
         return devices
 
@@ -184,31 +192,6 @@ class CameraManager:
         for device_id in list(self._workers):
             self.stop(device_id)
 
-    def load_calibration(
-        self, path: str = "viki/capture/calibration_results.npz"
-    ) -> None:
-        """Load intrinsics and distortion coefficients from a file."""
-        try:
-            with np.load(path, allow_pickle=True) as data:
-                intrinsics = data["intrinsics"].item()
-                dist_coeffs = data["dist_coeffs"].item()
-                self.update_calibration(intrinsics, dist_coeffs)
-            print(f"Loaded calibration for: {list(self.calibration.keys())}")
-        except Exception as e:
-            print(f"Could not load calibration from {path}: {e}")
-
-    def update_calibration(self, intrinsics: dict, dist_coeffs: dict) -> None:
-        """Update the running calibration state."""
-        for dev_id in intrinsics:
-            self.calibration[dev_id] = {
-                "mtx": intrinsics[dev_id],
-                "dist": dist_coeffs[dev_id],
-            }
-
-    def get_calibration(self, device_id: str) -> Optional[dict]:
-        """Return the calibration data for a device."""
-        return self.calibration.get(device_id)
-
     # ── Frame access ──────────────────────────────────────────────────────────
 
     def nearest_frame(self, device_id: str, host_timestamp_us: int) -> Optional[Frame]:
@@ -267,6 +250,13 @@ class CameraManager:
                 depth_mode=depth_mode,
                 fps=fps,
                 **kwargs,
+            )
+        elif device_id.startswith("web_camera_"):
+            from .web_camera import WebCameraBackend
+
+            idx = int(device_id.split("_")[-1])
+            return WebCameraBackend(
+                idx, width=color_width, height=color_height, fps=fps
             )
         else:
             from .realsense import RealSenseBackend

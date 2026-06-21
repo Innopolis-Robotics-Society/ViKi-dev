@@ -458,10 +458,11 @@
       log('Scanning for devices...');
       try {
         const data = await api('GET', '/api/devices');
-        log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
+        log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect, ${data.web_camera.length} WebCamera`, 'ok');
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
+          ...data.web_camera.map(id => ({id, type: 'web_camera'})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {
@@ -703,7 +704,7 @@
           const height = parseInt(document.getElementById("board-height").value, 10);
           const square_size = parseFloat(document.getElementById("square-size").value);
           await api('POST', `/api/calibration/start/${id}?mode=auto`, {
-            chessboard_size: {width, height},
+            chessboard_size: [width, height],
             square_size: square_size,
           });
         } catch (e) {
