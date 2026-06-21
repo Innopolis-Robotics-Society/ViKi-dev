@@ -75,7 +75,7 @@ def prepare_frame(
     """
     h, w = frame.color.shape[:2]
 
-    # Undistort 
+    # Undistort
     map1, map2 = cache.get(frame.device_id, K, dist, (w, h))
     color_undist = cv2.remap(frame.color, map1, map2, cv2.INTER_LINEAR)
 

@@ -45,11 +45,11 @@ class SkeletonPipeline:
         subordinate_id: str = "kinect_1",
         hand: str = "right",
     ) -> None:
-        self._manager       = manager
-        self._master_id     = master_id
+        self._manager = manager
+        self._master_id = master_id
         self._subordinate_id = subordinate_id
 
-        self._cache    = UndistortCache()
+        self._cache = UndistortCache()
         self._detector = HandDetector(hand=hand)
         self._R, self._T = load_extrinsics(calib_path)
 
@@ -96,7 +96,7 @@ class SkeletonPipeline:
         calib = self._manager.get_calibration(device_id)
         if calib is None:
             return None
-        K    = np.asarray(calib["mtx"], dtype=np.float32)
+        K = np.asarray(calib["mtx"], dtype=np.float32)
         dist = np.asarray(calib["dist"], dtype=np.float32)
 
         # Stage 1: camera_prep

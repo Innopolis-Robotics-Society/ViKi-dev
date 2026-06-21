@@ -277,4 +277,3 @@ class CameraManager:
                 depth_resolution=(color_width, color_height),
                 fps=fps,
             )
-

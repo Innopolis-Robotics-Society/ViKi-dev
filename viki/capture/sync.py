@@ -38,7 +38,6 @@ import time
 from typing import Callable, Optional
 
 from .base import SyncedFrameGroup
-from .kinect import K4A_WIRED_SYNC_MODE_MASTER, K4A_WIRED_SYNC_MODE_SUBORDINATE
 from .manager import CameraManager
 
 

@@ -11,9 +11,7 @@ from __future__ import annotations
 
 import ctypes
 import cv2
-import ctypes.util
 import numpy as np
-from typing import Optional
 
 from .base import CameraBackend, CameraIntrinsics, Frame
 
@@ -463,4 +461,3 @@ class KinectBackend(CameraBackend):
     def device_count() -> int:
         """Return number of connected Kinect devices."""
         return int(_lib.k4a_device_get_installed_count())
-

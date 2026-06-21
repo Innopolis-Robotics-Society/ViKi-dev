@@ -409,4 +409,3 @@ class CalibrationManager:
 
     def status(self, device_id: str) -> int:
         return self.samples_count(device_id)
-
