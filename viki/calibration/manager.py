@@ -1,7 +1,6 @@
 import threading
 import cv2
 import numpy as np
-import json
 import logging
 from typing import Dict, List, Tuple
 from viki.capture.base import Frame
@@ -13,7 +12,6 @@ from viki.calibration.models import (
 )
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 from viki.calibration.file import read_device_intrinsics, read_device_extrinsics, write_device_intrinsics, write_device_extrinsics
-from viki.server.routes.calibration import extrinsics, intrinsics
 
 
 class _CalibrationWorker:
