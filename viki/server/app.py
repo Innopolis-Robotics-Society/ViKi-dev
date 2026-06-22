@@ -18,6 +18,10 @@ from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.server.routes import calibration, cameras
 
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
 STATIC_DIR = Path(__file__).parent / "static"
 
 

@@ -69,7 +69,7 @@ async def start_worker(
 
 @router.get("/status/{device_id}")
 async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
-    return {"status": cal.status(device_id)}
+    return {"samples_count": cal.status(device_id)}
 
 
 @router.get("/samples_count/{device_id}")

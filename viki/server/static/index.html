@@ -319,7 +319,8 @@
       padding: 14px;
     }
 
-    .calib-stream {
+    /*
+    .calib-streams {
       flex: 1;
       background: #000;
       border-radius: 4px;
@@ -329,10 +330,57 @@
       justify-content: center;
     }
 
-    .calib-stream img {
+    .calib-streams img {
       max-width: 100%;
       height: auto;
       display: block;
+    }
+    */
+    /* Calibration panel streams container */
+    .calib-streams {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 12px;
+      width: 100%;
+      flex: 1;
+    }
+
+    /* Each stream wrapper */
+    .calib-stream-wrapper {
+      position: relative;
+      background: #000;
+      aspect-ratio: 4/3;
+      overflow: hidden;
+      border-radius: 4px;
+    }
+
+    /* Stream image */
+    .calib-stream-wrapper img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    /* Device label overlay */
+    .calib-stream-label {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.7);
+      background: rgba(0, 0, 0, 0.5);
+      padding: 2px 6px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+
+    .calib-stream-label .calib-count {
+      font-weight: 400;
+      opacity: 0.7;
+      margin-left: 4px;
+      font-size: 9px;
     }
 
     .calib-controls {
@@ -372,11 +420,10 @@
       <button class="danger" onclick="toggleCalibration()">✕ Close</button>
     </div>
     <div class="calib-body">
-      <div class="calib-stream">
-        <img id="calib-stream-img" src="" alt="Calibration Stream">
+      <div id="calib-streams" class="calib-streams">
+        <!-- streams -->
       </div>
       <div class="calib-controls">
-        <div class="calib-stats" id="calib-status">Samples: 0</div>
         <div class="board-params">
           <label>Chessboard width</label>
           <input type="number" id="board-width" value="8" min="1" />
@@ -669,20 +716,62 @@
       panel.style.display = isVisible ? 'none' : 'block';
 
       if (!isVisible) {
-        const img = document.getElementById('calib-stream-img');
-        img.src = `/api/calibration/stream?t=${Date.now()}`;
+        populateCalibrationStreams();
         updateCalibStatus();
       } else {
-        document.getElementById('calib-stream-img').src = '';
+        clearCalibrationStreams();
+        document.getElementById('calib-streams').innerHTML = '';
       }
     }
 
+    function populateCalibrationStreams() {
+      const container = document.getElementById('calib-streams');
+      container.innerHTML = '';
+      const deviceIds = Object.keys(state);
+      if (deviceIds.length === 0) {
+        container.innerHTML = '<div style="color:var(--muted);padding:20px;">No cameras detected</div>';
+        return;
+      }
+
+      container.className = 'calib-streams';
+      deviceIds.forEach(id => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'calib-stream-wrapper'
+        wrapper.dataset.deviceId = id;
+
+        const img = document.createElement('img');
+        img.src = `/api/cameras/${id}/stream?mode=color&t=${Date.now()}`;
+        wrapper.appendChild(img);
+
+        const label = document.createElement('span');
+        label.className = 'calib-stream-label';
+        label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(…)</span>`;
+        wrapper.appendChild(label);
+
+        container.appendChild(wrapper);
+      });
+
+      updateCalibStatus();
+    }
+
+    function clearCalibrationStreams() {
+      const container = document.getElementById('calib-streams');
+      container.querySelectorAll('img').forEach(img => img.src = '');
+      container.innerHTML = '';
+    }
+
     async function updateCalibStatus() {
-      try {
-        const data = await api('GET', '/api/calibration/status');
-        document.getElementById('calib-status').textContent = `Samples: ${data.sample_count}`;
-      } catch (e) {
-        log('Status check failed', 'error');
+      const deviceIds = Object.keys(state);
+      for (const id of deviceIds) {
+        const countEl = document.getElementById(`calib-count-${id}`);
+        if (!countEl) continue;
+        try {
+          const data = await api('GET', `/api/calibration/status/${id}`);
+          countEl.textContent = `(${data.samples_count} samples)`;
+        } catch (e) {
+          countEl.textContent = `(error)`;
+          log(`Status check for ${id} failed`, 'error');
+        }
       }
     }
 

@@ -74,7 +74,7 @@ class _CalibrationWorker:
         ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None)
         if not ret:
             self._logger.debug(
-                f"{self.device_id} add sample: cv2.findChessboardCorners failed"
+                f"{self.device_id} add sample: cv2.findChessboardCorners failed, chessboard_size: {chessboard_size}"
             )
             return
 
