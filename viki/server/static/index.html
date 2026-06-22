@@ -425,12 +425,40 @@
       </div>
       <div class="calib-controls">
         <div class="board-params">
-          <label>Chessboard width</label>
-          <input type="number" id="board-width" value="8" min="1" />
-          <label>Chessboard height</label>
-          <input type="number" id="board-height" value="6" min="1" />
-          <label>Square size (m)</label>
-          <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
+          <!-- Board type selector -->
+          <div class="field-row">
+            <label for="board-type">Board type</label>
+            <select id="board-type" onchange="toggleBoardFields()">
+              <option value="chess">Chessboard</option>
+              <option value="aruco">ChArUco</option>
+            </select>
+          </div>
+
+          <!-- Common fields (always visible) -->
+          <div class="field-row">
+            <label>Board width</label>
+            <input type="number" id="board-width" value="8" min="1" />
+          </div>
+          <div class="field-row">
+            <label>Board height</label>
+            <input type="number" id="board-height" value="6" min="1" />
+          </div>
+          <div class="field-row">
+            <label>Square size (m)</label>
+            <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
+          </div>
+
+          <!-- Aruco‑specific fields (hidden by default) -->
+          <div id="aruco-fields" style="display: none;">
+            <div class="field-row">
+              <label>Marker size (m)</label>
+              <input type="number" id="marker-size" value="0.8" step="0.001" min="0.01" />
+            </div>
+            <div class="field-row">
+              <label>Dictionary</label>
+              <select id="aruco-dict"></select>
+            </div>
+          </div>
         </div>
         <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="startCalibrationSession()">Start Calibration</button>
@@ -470,6 +498,31 @@
         depthModeMaxFps: {'WFOV_UNBINNED': 15},
       },
     };
+
+    const ARUCO_DICTS = [
+      'DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
+      'DICT_5X5_50', 'DICT_5X5_100', 'DICT_5X5_250', 'DICT_5X5_1000',
+      'DICT_6X6_50', 'DICT_6X6_100', 'DICT_6X6_250', 'DICT_6X6_1000',
+      'DICT_7X7_50', 'DICT_7X7_100', 'DICT_7X7_250', 'DICT_7X7_1000',
+      'DICT_ARUCO_ORIGINAL'
+    ];
+
+    function populateArucoDicts() {
+      const select = document.getElementById("aruco-dict");
+      select.innerHTML = "";
+      ARUCO_DICTS.forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        if (name == "DICT_5X5_50") opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
+
+    function toggleBoardFields() {
+      const boardType = document.getElementById("board-type").value;
+      document.getElementById('aruco-fields').style.display = boardType === 'aruco' ? 'block' : 'none';
+    }
 
     const state = {};    // device_id -> { running, type, infoInterval }
 
@@ -792,20 +845,40 @@
     }
 
     async function startCalibrationSession() {
-      log('Starting calibration session...');
+      resetCalibration();
+      const boardType = document.getElementById('board-type').value;
+      log(`Starting calibration session (${boardType} board)...`);
+
+      const width = parseInt(document.getElementById('board-width').value, 10);
+      const height = parseInt(document.getElementById('board-height').value, 10);
+      const squareSize = parseFloat(document.getElementById('square-size').value);
+
+      if (boardType === 'chess') {
+        params = {
+          board_size: [width, height],
+          square_size: squareSize
+        };
+        endpoint = (id) => `/api/calibration/start/${id}`;
+      } else { // aruco
+        const markerSize = parseFloat(document.getElementById('marker-size').value);
+        const arucoDict = document.getElementById('aruco-dict').value;
+        params = {
+          board_size: [width, height],
+          square_size: squareSize,
+          marker_size: markerSize,
+          aruco_dict: arucoDict
+        };
+        endpoint = (id) => `/api/calibration/start/aruco/${id}`;
+      }
+
       for (const id of Object.keys(state)) {
         try {
-          const width = parseInt(document.getElementById("board-width").value, 10);
-          const height = parseInt(document.getElementById("board-height").value, 10);
-          const square_size = parseFloat(document.getElementById("square-size").value);
-          await api('POST', `/api/calibration/start/${id}?mode=manual`, {
-            chessboard_size: [width, height],
-            square_size: square_size,
-          });
+          await api('POST', endpoint(id) + "?mode=manual", params);
         } catch (e) {
           log(`Calibration session start failed: ${e}`, 'error');
         }
       }
+      updateCalibStatus();
     }
 
     async function intrinsicsCalibration() {
@@ -830,6 +903,8 @@
     checkServer();
     setInterval(checkServer, 5000);
     scanDevices();
+    populateArucoDicts();
+    toggleBoardFields();
   </script>
 </body>
 
