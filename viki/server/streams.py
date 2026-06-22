@@ -38,11 +38,7 @@ def camera_stream(
     last_ts = -1
 
     # Fetch calibration once; build an undistorter only if it exists.
-    try:
-        cal.load_intrinsics(device_id, INTRINSICS_FILENAME)
-    except:
-        pass
-    intrinsics = cal.get_intrinsics(device_id)
+    intrinsics = cal.get_intrinsics(device_id, path=INTRINSICS_FILENAME)
     if not intrinsics:
         msg = f"Could not create camera stream: No intrinsics available for {device_id}"
         logging.warning(msg)

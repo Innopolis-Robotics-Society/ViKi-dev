@@ -12,7 +12,8 @@ from viki.calibration.models import (
     CalibrationExtrinsics,
 )
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
-from viki.calibration.file import write_device_intrinsics, write_device_extrinsics
+from viki.calibration.file import read_device_intrinsics, read_device_extrinsics, write_device_intrinsics, write_device_extrinsics
+from viki.server.routes.calibration import extrinsics, intrinsics
 
 
 class _CalibrationWorker:
@@ -294,27 +295,26 @@ class CalibrationManager:
 
         return intrinsics
 
+    def write_intrinsics(self, device_id: str, intrinsics: CalibrationIntrinsics, path: str = INTRINSICS_FILENAME):
+        write_device_intrinsics(device_id, intrinsics, path)
+
     def load_intrinsics(
         self, device_id: str, path: str = INTRINSICS_FILENAME
     ) -> None:
 
-        with open(path, "r") as f:
-            data = json.load(f)
-
-            fx = data["fx"]
-            fy = data["fy"]
-            cx = data["cx"]
-            cy = data["cy"]
-
-            dist_coeffs = np.array(data["dist_coeffs"])
-
-            intrinsics = CalibrationIntrinsics(fx, fy, cx, cy, dist_coeffs)
-            self._intrinsics[device_id] = intrinsics
-
-    def set_intrinsics(self, device_id: str, intrinsics: CalibrationIntrinsics) -> None:
+        intrinsics = read_device_intrinsics(device_id, path)
+        if not intrinsics:
+            return
         self._intrinsics[device_id] = intrinsics
 
-    def get_intrinsics(self, device_id: str) -> CalibrationIntrinsics | None:
+    def set_intrinsics(self, device_id: str, intrinsics: CalibrationIntrinsics, path: str = "") -> None:
+        if path != "":
+            self.write_intrinsics(device_id, intrinsics, path)
+        self._intrinsics[device_id] = intrinsics
+
+    def get_intrinsics(self, device_id: str, path: str = "") -> CalibrationIntrinsics | None:
+        if path != "":
+            self.load_intrinsics(device_id, path)
         intrinsics = self._intrinsics.get(device_id)
         if not intrinsics:
             self._logger.debug(
@@ -363,22 +363,26 @@ class CalibrationManager:
 
         return extrinsics
 
+    def write_extrinsics(self, device_id: str, extrinsics: CalibrationExtrinsics, path: str = EXTRINSICS_FILENAME):
+        write_device_extrinsics(device_id, extrinsics, path)
+
     def load_extrinsics(
         self, device_id: str, path: str = EXTRINSICS_FILENAME
     ) -> None:
 
-        with open(path, "r") as f:
-            data = json.load(f)
-
-            rvec = np.ndarray(data["rvec"])
-            tvec = np.ndarray(data["tvec"])
-            extrinsics = CalibrationExtrinsics(rvec, tvec)
-            self._extrinsics[device_id] = extrinsics
-
-    def set_extrinsics(self, device_id: str, extrinsics: CalibrationExtrinsics) -> None:
+        extrinsics = read_device_extrinsics(device_id, path)
+        if not extrinsics:
+            return
         self._extrinsics[device_id] = extrinsics
 
-    def get_extrinsics(self, device_id: str) -> CalibrationExtrinsics | None:
+    def set_extrinsics(self, device_id: str, extrinsics: CalibrationExtrinsics, path: str = "") -> None:
+        if path != "":
+            self.write_extrinsics(device_id, extrinsics, path)
+        self._extrinsics[device_id] = extrinsics
+
+    def get_extrinsics(self, device_id: str, path: str = "") -> CalibrationExtrinsics | None:
+        if path != "":
+            self.load_extrinsics(device_id, path)
         extrinsics = self._extrinsics.get(device_id)
         if not extrinsics:
             self._logger.debug(
