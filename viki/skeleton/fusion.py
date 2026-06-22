@@ -7,7 +7,6 @@ based on simple priority rules.
 In the future we could experiment with complex fusion strategies (per mark stuff etc)
 e.g. Kalman Filter, or just weighted sum, or confidence based approaches 
 
-
 Current Fusion strategy (per landmark)
 -------------------------------
 Priority 1 — kinect_0 DEPTH     : best quality, no transform needed.
@@ -43,18 +42,22 @@ _PRIORITY = [
 
 def load_extrinsics(path: str | Path = "viki/capture/calibration_results.npz") -> tuple[np.ndarray, np.ndarray]:
     """
-    Load R and T from the calibration npz file.
+    Load R and T from the calibration npz file. Returns identity R and zero T if file missing.
 
     Returns
     -------
     R : (3, 3) float64
     T : (3, 1) float64
     """
-    data = np.load(path, allow_pickle=True)
-    ext = data["extrinsic_data"].item()
-    R = np.asarray(ext["R"], dtype=np.float64)
-    T = np.asarray(ext["T"], dtype=np.float64).reshape(3, 1)
-    return R, T
+    try:
+        data = np.load(path, allow_pickle=True)
+        ext = data["extrinsic_data"].item()
+        R = np.asarray(ext["R"], dtype=np.float64)
+        T = np.asarray(ext["T"], dtype=np.float64).reshape(3, 1)
+        return R, T
+    except (FileNotFoundError, KeyError, AttributeError):
+        # Return identity and zero if calibration is missing or corrupt
+        return np.eye(3, dtype=np.float64), np.zeros((3, 1), dtype=np.float64)
 
 
 def _transform_to_cam0(points: np.ndarray, R: np.ndarray, T: np.ndarray) -> np.ndarray:

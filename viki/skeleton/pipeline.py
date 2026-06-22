@@ -11,7 +11,7 @@ from typing import Optional
 import numpy as np
 
 from viki.capture.base import SyncedFrameGroup
-from viki.capture.manager import CameraManager
+from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
 from viki.skeleton.fusion import fuse, load_extrinsics
 from viki.skeleton.geometry import lift_to_3d
@@ -25,8 +25,8 @@ class SkeletonPipeline:
 
     Parameters
     ----------
-    manager : CameraManager
-        Running manager. Used to read calibration (intrinsics) per camera.
+    calibrator : CalibrationManager
+        Running calibrator. Used to read intrinsics per camera.
     calib_path : str
         Path to calibration_results.npz
     master_id : str
@@ -39,13 +39,13 @@ class SkeletonPipeline:
 
     def __init__(
         self,
-        manager: CameraManager,
+        calibrator: CalibrationManager,
         calib_path: str = "viki/capture/calibration_results.npz",
         master_id: str = "kinect_0",
         subordinate_id: str = "kinect_1",
         hand: str = "right",
     ) -> None:
-        self._manager = manager
+        self._calibrator = calibrator
         self._master_id = master_id
         self._subordinate_id = subordinate_id
 
@@ -93,11 +93,11 @@ class SkeletonPipeline:
             return None
 
         # Intrinsics required for undistort and deprojection
-        calib = self._manager.get_calibration(device_id)
-        if calib is None:
+        intrinsics = self._calibrator.get_intrinsics(device_id)
+        if intrinsics is None:
             return None
-        K = np.asarray(calib["mtx"], dtype=np.float32)
-        dist = np.asarray(calib["dist"], dtype=np.float32)
+        K = intrinsics.camera_matrix
+        dist = intrinsics.dist_coeffs
 
         # Stage 1: camera_prep
         prepared = prepare_frame(frame, K, dist, self._cache)

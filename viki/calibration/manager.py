@@ -12,7 +12,12 @@ from viki.calibration.models import (
     CalibrationExtrinsics,
 )
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
-from viki.calibration.file import write_device_intrinsics, write_device_extrinsics
+from viki.calibration.file import (
+    write_device_intrinsics,
+    write_device_extrinsics,
+    read_device_intrinsics,
+    read_device_extrinsics,
+)
 
 
 class _CalibrationWorker:
@@ -297,18 +302,8 @@ class CalibrationManager:
     def load_intrinsics(
         self, device_id: str, path: str = INTRINSICS_FILENAME
     ) -> None:
-
-        with open(path, "r") as f:
-            data = json.load(f)
-
-            fx = data["fx"]
-            fy = data["fy"]
-            cx = data["cx"]
-            cy = data["cy"]
-
-            dist_coeffs = np.array(data["dist_coeffs"])
-
-            intrinsics = CalibrationIntrinsics(fx, fy, cx, cy, dist_coeffs)
+        intrinsics = read_device_intrinsics(device_id, path)
+        if intrinsics:
             self._intrinsics[device_id] = intrinsics
 
     def set_intrinsics(self, device_id: str, intrinsics: CalibrationIntrinsics) -> None:
@@ -366,13 +361,8 @@ class CalibrationManager:
     def load_extrinsics(
         self, device_id: str, path: str = EXTRINSICS_FILENAME
     ) -> None:
-
-        with open(path, "r") as f:
-            data = json.load(f)
-
-            rvec = np.ndarray(data["rvec"])
-            tvec = np.ndarray(data["tvec"])
-            extrinsics = CalibrationExtrinsics(rvec, tvec)
+        extrinsics = read_device_extrinsics(device_id, path)
+        if extrinsics:
             self._extrinsics[device_id] = extrinsics
 
     def set_extrinsics(self, device_id: str, extrinsics: CalibrationExtrinsics) -> None:
