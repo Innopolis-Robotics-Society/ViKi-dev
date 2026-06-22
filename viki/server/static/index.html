@@ -658,7 +658,7 @@ async function toggleEstimation(enable) {
 async function toggleRecording(enable) {
   log(`Turning skeleton recording ${enable ? 'ON' : 'OFF'}...`);
   try {
-    await api('POST', '/api/skeleton/record', { enabled });
+    await api('POST', '/api/skeleton/record', { enabled: enable });
     updateSkelStatus();
   } catch (e) {
     log('Recording toggle failed: ' + e, 'error');

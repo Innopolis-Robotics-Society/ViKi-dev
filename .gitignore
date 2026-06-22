@@ -224,3 +224,5 @@ __marimo__/
 skeleton_models/
 skeleton_tests/
 models/
+
+AGENTS.md

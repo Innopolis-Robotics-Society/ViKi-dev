@@ -6,7 +6,7 @@ Public orchestrator for the skeleton detection pipeline.a
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, Literal
 
 import numpy as np
 
@@ -43,7 +43,7 @@ class SkeletonPipeline:
         calib_path: str = "viki/capture/calibration_results.npz",
         master_id: str = "kinect_0",
         subordinate_id: str = "kinect_1",
-        hand: str = "right",
+        hand: Literal["right", "left"] = "right",
     ) -> None:
         self._calibrator = calibrator
         self._master_id = master_id
@@ -87,6 +87,8 @@ class SkeletonPipeline:
         self, device_id: str, group: SyncedFrameGroup
     ) -> Optional[Landmarks3D]:
         """Run stages 1–3 for one camera. Returns None if any stage fails."""
+        import logging
+        logger = logging.getLogger(__name__)
 
         frame = group.frames.get(device_id)
         if frame is None:
@@ -95,6 +97,9 @@ class SkeletonPipeline:
         # Intrinsics required for undistort and deprojection
         intrinsics = self._calibrator.get_intrinsics(device_id)
         if intrinsics is None:
+            # Log only occasionally to avoid spamming
+            if np.random.random() < 0.01:
+                logger.warning(f"SkeletonPipeline: Missing intrinsics for {device_id}. Skipping processing.")
             return None
         K = intrinsics.camera_matrix
         dist = intrinsics.dist_coeffs

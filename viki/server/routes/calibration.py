@@ -22,7 +22,7 @@ from viki.server.routes.models import (
 from viki.server.streams import calibration_mosaic
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 
-router = APIRouter(prefix="/api/calibration", tags=["calibration"])
+router = APIRouter(prefix="/api/calibrate", tags=["calibration"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
@@ -55,7 +55,8 @@ async def capture(
 async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
-    cal.capture_all()
+    res = cal.capture_all()
+    return res if res is not None else {"success_map": {}, "sample_count": 0}
 
 
 @router.post("/start/{device_id}")
@@ -67,7 +68,7 @@ async def start_worker(
 ):
     if not params:
         chessboard_size = (8, 6)
-        square_size = 1.0
+        square_size = 0.025
     else:
         chessboard_size = params.chessboard_size
         square_size = params.square_size

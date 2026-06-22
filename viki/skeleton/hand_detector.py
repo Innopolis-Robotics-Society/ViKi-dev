@@ -275,7 +275,7 @@ class HandDetector:
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Build final (23, 2) px and (23,) z_rel arrays.
-
+        
           [0]     WRIST     — overridden with Pose wrist if Pose available
           [1-20]  hand landmarks unchanged
           [21]    ELBOW     — from Pose, or nan if Pose not detected
@@ -284,7 +284,7 @@ class HandDetector:
         px = hand_px.copy()
         z  = hand_z.copy()
 
-        if pose_px is not None:
+        if pose_px is not None and pose_z is not None:
             # px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
             # z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
             elbow_px    = pose_px[1]

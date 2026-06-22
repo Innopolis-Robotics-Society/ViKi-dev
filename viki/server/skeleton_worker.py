@@ -87,22 +87,36 @@ class SkeletonWorker:
 
     def _run(self) -> None:
         """Main loop of the worker thread."""
+        import logging
+        logger = logging.getLogger(__name__)
         while not self._stop_event.is_set():
             start_time = time.monotonic()
             
             if self._enabled:
-                # 1. Get synced frames
-                group = self._sync.get_synced_frame()
-                if group:
-                    # 2. Process skeleton
-                    frame = self._pipeline.process(group)
-                    
-                    with self._lock:
-                        self._latest_frame = frame
-                    
-                    # 3. Record if enabled
-                    if self._recording and frame:
-                        self._recorder.record(frame)
+                try:
+                    # 1. Get synced frames
+                    group = self._sync.get_synced_frame()
+                    if group:
+                        # 2. Process skeleton
+                        frame = self._pipeline.process(group)
+                        
+                        if frame is None:
+                            # Log occasionally that we got frames but no detection
+                            if np.random.random() < 0.01:
+                                logger.debug("SkeletonWorker: Received synced frames but pipeline returned None (no detection or missing calib).")
+                        else:
+                            with self._lock:
+                                self._latest_frame = frame
+                            
+                            # 3. Record if enabled
+                            if self._recording:
+                                self._recorder.record(frame)
+                    else:
+                        # This happens if cameras aren't producing frames or sync is failing
+                        if np.random.random() < 0.01:
+                            logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
+                except Exception as e:
+                    logger.exception(f"Skeleton worker pipeline error: {e}")
             
             # Maintain target FPS
             elapsed = time.monotonic() - start_time
