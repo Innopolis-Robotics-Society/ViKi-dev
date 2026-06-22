@@ -8,18 +8,21 @@ Keeping them here makes the streaming/visualisation behaviour easy to
 tweak without hunting through request handlers.
 """
 
+INTRINSICS_FILENAME = "intrinsics_calibration.json"
+EXTRINSICS_FILENAME = "extrinsics_calibration.json"
+
 # ── Camera-start defaults (mirror StartRequest)
 DEFAULT_FPS = 30
 DEFAULT_COLOR_WIDTH = 640
 DEFAULT_COLOR_HEIGHT = 480
 DEFAULT_DEPTH_MODE = "NFOV_UNBINNED"
 
-# ── Depth visualisation 
+# ── Depth visualisation
 DEPTH_EMA_ALPHA = 0.05
 
 DEPTH_MIN_VALID_FRACTION = 0.05
 
-# ── Streaming / encoding 
+# ── Streaming / encoding
 JPEG_QUALITY = 80
-STREAM_IDLE_SLEEP = 0.005  
-PLACEHOLDER_SIZE = (640, 480)  
+STREAM_IDLE_SLEEP = 0.005
+PLACEHOLDER_SIZE = (640, 480)

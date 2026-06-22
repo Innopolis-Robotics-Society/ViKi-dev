@@ -433,7 +433,8 @@
           <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
         </div>
         <button class="primary" onclick="captureSample()">Capture Sample</button>
-        <button onclick="startCalibration()">Start Calibration</button>
+        <button onclick="startCalibrationSession()">Start Calibration</button>
+        <button onclick="intrinsicsCalibration()">Start Intrinsics</button>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
       </div>
     </div>
@@ -720,8 +721,13 @@
         updateCalibStatus();
       } else {
         clearCalibrationStreams();
+        resetCalibration();
         document.getElementById('calib-streams').innerHTML = '';
       }
+    }
+
+    async function resetCalibration() {
+      await api('POST', `/api/calibration/reset`);
     }
 
     function populateCalibrationStreams() {
@@ -785,19 +791,30 @@
       }
     }
 
-    async function startCalibration() {
-      log('Starting calibration...');
+    async function startCalibrationSession() {
+      log('Starting calibration session...');
       for (const id of Object.keys(state)) {
         try {
           const width = parseInt(document.getElementById("board-width").value, 10);
           const height = parseInt(document.getElementById("board-height").value, 10);
           const square_size = parseFloat(document.getElementById("square-size").value);
-          await api('POST', `/api/calibration/start/${id}?mode=auto`, {
+          await api('POST', `/api/calibration/start/${id}?mode=manual`, {
             chessboard_size: [width, height],
             square_size: square_size,
           });
         } catch (e) {
-          log(`Calibration start failed: ${e}`, 'error');
+          log(`Calibration session start failed: ${e}`, 'error');
+        }
+      }
+    }
+
+    async function intrinsicsCalibration() {
+      log('Intrinsics calibration strated...')
+      for (const id of Object.keys(state)) {
+        try {
+          await api('POST', `/api/calibration/intrinsics/${id}`);
+        } catch (e) {
+          log(`Intrinsics calibration for ${id} failed: ${e}`, error)
         }
       }
     }

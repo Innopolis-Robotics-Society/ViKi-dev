@@ -11,6 +11,8 @@ from viki.calibration.models import (
     CalibrationIntrinsics,
     CalibrationExtrinsics,
 )
+from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
+from viki.calibration.file import write_device_intrinsics, write_device_extrinsics
 
 
 class _CalibrationWorker:
@@ -141,8 +143,9 @@ class _CalibrationWorker:
         self._logger.debug(f"{self.device_id} intrinsics calibration: success")
         return {
             "status": "success",
-            "camera_matrix": mtx,
-            "dist_coeffs": dist,
+            "intrinsics": CalibrationIntrinsics(
+                fx=mtx[0,0], fy=mtx[1,1], cx=mtx[0,2], cy=mtx[1,2], dist_coeffs=dist.flatten()
+            ),
             "reprojection_error": float(ret),
             "samples_used": count,
             "resolution": (w, h),
@@ -183,8 +186,7 @@ class _CalibrationWorker:
 
         return {
             "status": "success",
-            "rvec": rvec,
-            "tvec": tvec,
+            "extrinsics": CalibrationExtrinsics(rvec=rvec, tvec=tvec)
         }
 
     def clear(self):
@@ -216,7 +218,7 @@ class CalibrationManager:
         self._workers: Dict[str, _CalibrationWorker] = {}
 
     def start(
-        self, device_id: str, chessboard_size=(8, 6), square_size=0.025, mode="auto"
+        self, device_id: str, chessboard_size=(8, 6), square_size=0.025, mode="manual"
     ) -> None:
         """
         mode: str = ["auto", "manual"], manual - capture image manually, via add_sample(), auto - worker will try to capture image itself
@@ -262,15 +264,15 @@ class CalibrationManager:
     def intrinsics_calibration(
         self,
         device_id: str,
-        results_path: str = "data/intrinsics.json",
+        results_path: str = INTRINSICS_FILENAME,
         samples: List[CalibrationSample] | None = None,
-    ) -> Dict:
+    ) -> CalibrationIntrinsics:
 
         worker = self._workers.get(device_id)
         if not worker:
             msg = f"CalibrationManager intrinsics_calibration: {device_id} is not in worker list"
             self._logger.warning(msg)
-            return {"status": "failed", "msg": msg}
+            raise RuntimeError(msg)
 
         result = (
             worker.intrinsics_calibration(samples)
@@ -280,28 +282,29 @@ class CalibrationManager:
         if result.get("status", "failed") != "success":
             msg = f"CalibrationManager intrinsics_calibration: worker calibration failed: {result.get('msg', 'no message')}"
             self._logger.debug(msg)
-            return {"status": "failed", "msg": msg}
+            raise RuntimeError(msg)
 
-        data = {
-            "device_id": device_id,
-            "camera_matrix": result.get("camera_matrix"),
-            "dist_coeffs": result.get("dist_coeffs"),
-        }
+        intrinsics = result.get("intrinsics")
+        if not intrinsics:
+            msg = f"CalibrationManager intrinsics_calibration: intrinsics is None for some reason"
+            self._logger.debug(msg)
+            raise RuntimeError(msg)
 
-        with open(results_path, "w") as f:
-            json.dump(data, f)
+        write_device_intrinsics(device_id, intrinsics, results_path)
 
-        return result
+        return intrinsics
 
     def load_intrinsics(
-        self, device_id: str, path: str = "data/intrinsics_calibration.json"
+        self, device_id: str, path: str = INTRINSICS_FILENAME
     ) -> None:
 
         with open(path, "r") as f:
             data = json.load(f)
 
-            mtx = np.array(data["camera_matrix"])
-            fx, fy, cx, cy = mtx[0, 0], mtx[1, 1], mtx[0, 2], mtx[1, 2]
+            fx = data["fx"]
+            fy = data["fy"]
+            cx = data["cx"]
+            cy = data["cy"]
 
             dist_coeffs = np.array(data["dist_coeffs"])
 
@@ -322,23 +325,23 @@ class CalibrationManager:
     def extrinsics_calibration(
         self,
         device_id: str,
-        results_path: str = "data/extrinsics.json",
+        results_path: str = EXTRINSICS_FILENAME,
         sample: CalibrationSample | None = None,
         intrinsics: CalibrationIntrinsics | None = None,
-    ) -> Dict:
+    ) -> CalibrationExtrinsics:
 
         worker = self._workers.get(device_id)
         if not worker:
             msg = f"CalibrationManager extrinsics_calibration: {device_id} is not in worker list"
             self._logger.warning(msg)
-            return {"status": "failed", "msg": msg}
+            raise RuntimeError(msg)
 
         if not intrinsics:
             intrinsics = self.get_intrinsics(device_id)
             if not intrinsics:
                 msg = f"CalibrationManager extrinsics_calibration: no intrinsics"
                 self._logger.warning(msg)
-                return {"status": "failed", "msg": msg}
+                raise RuntimeError(msg)
 
         result = (
             worker.extrinsics_calibration(intrinsics, sample)
@@ -348,21 +351,20 @@ class CalibrationManager:
         if result.get("status", "failed") != "success":
             msg = f"CalibrationManager extrinsics_calibration: worker calibration failed: {result.get('msg', 'no message')}"
             self._logger.debug(msg)
-            return {"status": "failed", "msg": msg}
+            raise RuntimeError(msg)
 
-        data = {
-            "device_id": device_id,
-            "rvec": result.get("rvec"),
-            "tvec": result.get("tvec"),
-        }
+        extrinsics = result.get("extrinsics")
+        if not extrinsics:
+            msg = f"CalibrationManager extrinsics_calibration: extrinsics is None for some reason"
+            self._logger.debug(msg)
+            raise RuntimeError(msg)
 
-        with open(results_path, "w") as f:
-            json.dump(data, f)
+        write_device_extrinsics(device_id, extrinsics, results_path)
 
-        return result
+        return extrinsics
 
     def load_extrinsics(
-        self, device_id: str, path: str = "data/extrinsics_calibration.json"
+        self, device_id: str, path: str = EXTRINSICS_FILENAME
     ) -> None:
 
         with open(path, "r") as f:

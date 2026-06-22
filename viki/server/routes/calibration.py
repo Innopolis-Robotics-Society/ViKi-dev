@@ -20,6 +20,7 @@ from viki.server.routes.models import (
     ExtrinsicsResponse,
 )
 from viki.server.streams import calibration_mosaic
+from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 
 router = APIRouter(prefix="/api/calibration", tags=["calibration"])
 
@@ -34,6 +35,12 @@ def stream(mgr: CameraManager = Depends(get_manager)):
         media_type=_MJPEG_MEDIA,
         headers=_STREAM_HEADERS,
     )
+
+
+@router.post("/reset")
+async def reset(cal: CalibrationManager = Depends(get_calibrator)):
+    cal.stop_all()
+    return {"status": "success"}
 
 
 @router.post("/capture/{device_id}")
@@ -90,6 +97,20 @@ async def is_device_active(
 async def clear(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
     cal.clear(device_id)
     return {"status": "cleared"}
+
+
+@router.post("/intrinsics/{device_id}", response_model=IntrinsicsResponse)
+async def intrinsics_post(
+    device_id: str, cal: CalibrationManager = Depends(get_calibrator)
+):
+    intrinsics = cal.intrinsics_calibration(device_id, INTRINSICS_FILENAME)
+    return IntrinsicsResponse(
+        fx=intrinsics.fx,
+        fy=intrinsics.fy,
+        cx=intrinsics.cx,
+        cy=intrinsics.cy,
+        dist_coeffs=intrinsics.dist_coeffs.tolist(),
+    )
 
 
 @router.get("/intrinsics/{device_id}", response_model=IntrinsicsResponse)

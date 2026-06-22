@@ -206,9 +206,7 @@ def main():
 
     print("Running — press q or Esc to quit")
 
-    counter = 100
-    while counter:
-        counter -= 1
+    while True:
         ret, bgr = cap.read()
         if not ret:
             break

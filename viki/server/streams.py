@@ -22,6 +22,7 @@ from viki.capture.manager import CameraManager
 from viki.config import JPEG_QUALITY, PLACEHOLDER_SIZE, STREAM_IDLE_SLEEP
 from viki.viz.depth import DepthColorizer, Undistorter
 from viki.viz.mjpeg import mjpeg_chunk, placeholder
+from viki.config import INTRINSICS_FILENAME
 
 
 def camera_stream(
@@ -37,6 +38,10 @@ def camera_stream(
     last_ts = -1
 
     # Fetch calibration once; build an undistorter only if it exists.
+    try:
+        cal.load_intrinsics(device_id, INTRINSICS_FILENAME)
+    except:
+        pass
     intrinsics = cal.get_intrinsics(device_id)
     if not intrinsics:
         msg = f"Could not create camera stream: No intrinsics available for {device_id}"
