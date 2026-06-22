@@ -1,7 +1,7 @@
 """
 viki.server.routes.skeleton
 --------------------------
-Endpoints for controlling skeleton estimation and recording, 
+Endpoints for controlling skeleton estimation and recording,
 and a WebSocket for streaming the latest skeleton frame.
 """
 
@@ -17,18 +17,26 @@ from viki.server.skeleton_worker import SkeletonWorker
 
 router = APIRouter(prefix="/api/skeleton", tags=["skeleton"])
 
+
 class ToggleRequest(BaseModel):
     enabled: bool
 
+
 @router.post("/toggle")
-async def toggle_estimation(req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)):
+async def toggle_estimation(
+    req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
+):
     worker.set_enabled(req.enabled)
     return {"status": "updated", "enabled": worker.is_enabled}
 
+
 @router.post("/record")
-async def toggle_recording(req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)):
+async def toggle_recording(
+    req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
+):
     worker.set_recording(req.enabled)
     return {"status": "updated", "recording": worker.is_recording}
+
 
 @router.get("/status")
 async def get_status(worker: SkeletonWorker = Depends(get_worker)):
@@ -37,8 +45,11 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
         "recording": worker.is_recording,
     }
 
+
 @router.websocket("/stream")
-async def skeleton_stream(websocket: WebSocket, worker: SkeletonWorker = Depends(get_worker)):
+async def skeleton_stream(
+    websocket: WebSocket, worker: SkeletonWorker = Depends(get_worker)
+):
     await websocket.accept()
     try:
         while True:
@@ -53,9 +64,8 @@ async def skeleton_stream(websocket: WebSocket, worker: SkeletonWorker = Depends
                     "origin": [str(o) for o in frame.origin],
                 }
                 await websocket.send_json(data)
-            
+
             # Stream at ~20 fps
             await asyncio.sleep(0.05)
     except WebSocketDisconnect:
         pass
-

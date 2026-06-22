@@ -12,6 +12,7 @@ from fastapi import Request
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
+from viki.server.skeleton_worker import SkeletonWorker
 
 
 def get_manager(request: Request) -> CameraManager:
@@ -20,3 +21,7 @@ def get_manager(request: Request) -> CameraManager:
 
 def get_calibrator(request: Request) -> CalibrationManager:
     return request.app.state.calibrator
+
+
+def get_worker(request: Request) -> SkeletonWorker:
+    return request.app.state.skeleton_worker

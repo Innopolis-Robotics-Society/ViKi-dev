@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
-from viki.server.routes import calibration, cameras
+from viki.server.routes import calibration, cameras, skeleton
 
 import logging
 
@@ -37,6 +37,7 @@ app = FastAPI(title="ViKi Capture Server", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(cameras.router)
 app.include_router(calibration.router)
+app.include_router(skeleton.router)
 
 
 @app.get("/", response_class=HTMLResponse)
