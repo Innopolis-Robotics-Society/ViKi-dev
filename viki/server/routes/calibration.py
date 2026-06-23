@@ -21,22 +21,12 @@ from viki.server.routes.models import (
     IntrinsicsResponse,
     ExtrinsicsResponse,
 )
-from viki.server.streams import calibration_mosaic
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 
 router = APIRouter(prefix="/api/calibrate", tags=["calibration"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
-
-
-@router.get("/stream")
-def stream(mgr: CameraManager = Depends(get_manager)):
-    return StreamingResponse(
-        calibration_mosaic(mgr),
-        media_type=_MJPEG_MEDIA,
-        headers=_STREAM_HEADERS,
-    )
 
 
 @router.post("/reset")

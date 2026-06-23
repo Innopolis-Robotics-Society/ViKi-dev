@@ -71,30 +71,3 @@ def camera_stream(
                     continue
 
         yield mjpeg_chunk(img, JPEG_QUALITY)
-
-
-def calibration_mosaic(mgr: CameraManager) -> Iterator[bytes]:
-    """Yield MJPEG chunks of a horizontal mosaic of all active colour streams."""
-    pw, ph = PLACEHOLDER_SIZE
-
-    while True:
-        active_ids = mgr.active_device_ids()
-        if not active_ids:
-            yield mjpeg_chunk(placeholder(pw, ph, "No cameras active"), JPEG_QUALITY)
-            time.sleep(0.1)
-            continue
-
-        frames = {}
-        for dev_id in active_ids:
-            frame = mgr.latest_frame(dev_id)
-            if frame:
-                frames[dev_id] = frame.color
-
-        if not frames:
-            time.sleep(0.01)
-            continue
-
-        resized = [cv2.resize(img, (pw, ph)) for img in frames.values()]
-        combined = np.hstack(resized)
-        yield mjpeg_chunk(combined, JPEG_QUALITY)
-        time.sleep(0.03)
