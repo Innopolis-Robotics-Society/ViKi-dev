@@ -1,218 +1,24 @@
-import threading
 import cv2
-import numpy as np
-import json
 import logging
-from typing import Dict, List, Tuple
-from viki.capture.base import Frame
+from typing import Dict, List
 from viki.capture.manager import CameraManager
 from viki.calibration.models import (
+    ArucoBoardParameters,
+    BoardParameters,
     CalibrationSample,
     CalibrationIntrinsics,
     CalibrationExtrinsics,
 )
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 from viki.calibration.file import (
-    write_device_intrinsics,
-    write_device_extrinsics,
     read_device_intrinsics,
     read_device_extrinsics,
+    write_device_intrinsics,
+    write_device_extrinsics,
 )
-
-
-class _CalibrationWorker:
-    def __init__(
-        self,
-        mgr: CameraManager,
-        device_id: str,
-        chessboard_size: Tuple[int, int],
-        square_size: float,
-    ):
-        self._mgr = mgr
-        self.device_id = device_id
-        self._logger = logging.getLogger(__name__)
-        self._samples: List[CalibrationSample] = []
-        self._chessboard_size = chessboard_size
-        self._square_size = square_size
-
-        self._lock = threading.Lock()
-        self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._loop, daemon=True)
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop_event.set()
-
-    def set_board_params(
-        self, chessboard_size: Tuple[int, int], square_size: float
-    ) -> None:
-        with self._lock:
-            self._chessboard_size = chessboard_size
-            self._square_size = square_size
-
-    @property
-    def board_params(self) -> Tuple[Tuple[int, int], float]:
-        with self._lock:
-            return self._chessboard_size, self._square_size
-
-    @property
-    def samples_count(self) -> int:
-        with self._lock:
-            return len(self._samples)
-
-    @property
-    def samples(self) -> List[CalibrationSample]:
-        with self._lock:
-            return self._samples.copy()
-
-    def add_sample(self, frame: Frame) -> None:
-
-        chessboard_size, square_size = self.board_params
-
-        subpix_criteria = (
-            cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER,
-            30,
-            0.001,
-        )
-
-        gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-        flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_FAST_CHECK
-        ret, corners = cv2.findChessboardCorners(gray, chessboard_size, flags)
-        if not ret:
-            self._logger.debug(
-                f"{self.device_id} add sample: cv2.findChessboardCorners failed, chessboard_size: {chessboard_size}"
-            )
-            return
-
-        refined_corners = cv2.cornerSubPix(
-            gray, corners, (11, 11), (-1, -1), subpix_criteria
-        )
-
-        w, h = frame.color.shape[:2]
-
-        sample = CalibrationSample(
-            frame, refined_corners, (w, h), chessboard_size, square_size
-        )
-        with self._lock:
-            self._samples.append(sample)
-
-        self._logger.debug(f"{self.device_id} add sample: success")
-
-    def intrinsics_calibration(
-        self, samples: List[CalibrationSample] | None = None
-    ) -> Dict:
-
-        if not samples:
-            samples = self.samples
-        count = len(samples)
-
-        if count < 20:
-            msg = f"{self.device_id} intrinsics calibration: not enough samples"
-            self._logger.debug(msg)
-            return {"status": "failed", "msg": msg}
-
-        res = samples[0].resolution
-        if not all(res == sample.resolution for sample in samples):
-            msg = f"{self.device_id} intrinsics calibration: varying resolutions detected, expected same for all images, {set(sample.resolution for sample in self._samples)}"
-            self._logger.debug(msg)
-            return {
-                "status": "failed",
-                "msg": msg,
-            }
-
-        w, h = res
-        object_points = []
-        image_points = []
-
-        for sample in samples:
-            square_size = sample.square_size
-            w, h = sample.chessboard_size
-
-            objp = np.zeros((w * h, 3), np.float32)
-            objp[:, :2] = np.mgrid[0:w, 0:h].T.reshape(-1, 2)
-            objp *= square_size
-
-            object_points.append(objp)
-            image_points.append(sample.corners)
-
-        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
-            object_points, image_points, (w, h), None, None  # pyright: ignore
-        )
-
-        if not ret:
-            msg = f"{self.device_id} intrinsics calibration: cv2.calibrateCamera failed"
-            self._logger.debug(msg)
-            return {"status": "failed", "msg": msg}
-
-        self._logger.debug(f"{self.device_id} intrinsics calibration: success")
-        return {
-            "status": "success",
-            "intrinsics": CalibrationIntrinsics(
-                fx=mtx[0,0], fy=mtx[1,1], cx=mtx[0,2], cy=mtx[1,2], dist_coeffs=dist.flatten()
-            ),
-            "reprojection_error": float(ret),
-            "samples_used": count,
-            "resolution": (w, h),
-            "rvecs": rvecs,
-            "tvecs": tvecs,
-        }
-
-    def extrinsics_calibration(
-        self,
-        intrinsics: CalibrationIntrinsics,
-        sample: CalibrationSample | None = None,
-    ) -> Dict:
-
-        if not sample:
-            if self.samples_count < 1:
-                msg = f"{self.device_id} extrinsics_calibration: no sample"
-                self._logger.debug(msg)
-                return {"status": "failed", "msg": msg}
-            sample = self.samples[-1]
-
-        square_size = sample.square_size
-        w, h = sample.chessboard_size
-
-        objp = np.zeros((w * h, 3), np.float32)
-        objp[:, :2] = np.mgrid[0:w, 0:h].T.reshape(-1, 2)
-        objp *= square_size
-
-        camera_matrix = intrinsics.camera_matrix
-        dist_coeffs = intrinsics.dist_coeffs
-        ret, rvec, tvec = cv2.solvePnP(objp, sample.corners, camera_matrix, dist_coeffs)
-
-        if not ret:
-            msg = f"{self.device_id} extrinsics calibration: cv2.solvePnP failed"
-            self._logger.debug(msg)
-            return {"status": "failed", "msg": msg}
-
-        self._logger.debug(f"{self.device_id} extrinsics calibration: success")
-
-        return {
-            "status": "success",
-            "extrinsics": CalibrationExtrinsics(rvec=rvec, tvec=tvec)
-        }
-
-    def clear(self):
-        with self._lock:
-            self._samples = []
-
-    def capture(self) -> None:
-        frame = self._mgr.latest_frame(self.device_id)
-        if frame is None:
-            return
-        self.add_sample(frame)
-
-    def _loop(self) -> None:
-        while not self._stop_event.is_set():
-            try:
-                self.capture()
-            except TimeoutError:
-                pass
-            except Exception as e:
-                self._logger.error(f"{self.device_id} calibration worker error: {e}")
+from viki.calibration.worker import _CalibrationWorker
+from viki.calibration.chessboard_worker import ChessboardWorker
+from viki.calibration.aruco_worker import ArucoWorker
 
 
 class CalibrationManager:
@@ -224,7 +30,14 @@ class CalibrationManager:
         self._workers: Dict[str, _CalibrationWorker] = {}
 
     def start(
-        self, device_id: str, chessboard_size=(8, 6), square_size=0.025, mode="manual"
+        self,
+        device_id: str,
+        mode="manual",
+        board_type="chess",
+        board_size=(8, 6),
+        square_size=0.025,
+        marker_size=0.025,
+        aruco_dict=cv2.aruco.DICT_6X6_250,
     ) -> None:
         """
         mode: str = ["auto", "manual"], manual - capture image manually, via add_sample(), auto - worker will try to capture image itself
@@ -235,7 +48,14 @@ class CalibrationManager:
             )
             return
 
-        worker = _CalibrationWorker(self._mgr, device_id, chessboard_size, square_size)
+        if board_type == "chess":
+            board_params = BoardParameters(board_size, square_size)
+            worker = ChessboardWorker(self._mgr, device_id, board_params)
+        else:
+            board_params = ArucoBoardParameters(
+                board_size, square_size, marker_size, aruco_dict
+            )
+            worker = ArucoWorker(self._mgr, device_id, board_params)
         if mode == "auto":
             worker.start()
         self._workers[device_id] = worker
@@ -280,37 +100,43 @@ class CalibrationManager:
             self._logger.warning(msg)
             raise RuntimeError(msg)
 
-        result = (
+        intrinsics = (
             worker.intrinsics_calibration(samples)
             if samples
             else worker.intrinsics_calibration()
         )
-        if result.get("status", "failed") != "success":
-            msg = f"CalibrationManager intrinsics_calibration: worker calibration failed: {result.get('msg', 'no message')}"
-            self._logger.debug(msg)
-            raise RuntimeError(msg)
-
-        intrinsics = result.get("intrinsics")
-        if not intrinsics:
-            msg = f"CalibrationManager intrinsics_calibration: intrinsics is None for some reason"
-            self._logger.debug(msg)
-            raise RuntimeError(msg)
 
         write_device_intrinsics(device_id, intrinsics, results_path)
 
         return intrinsics
 
-    def load_intrinsics(
-        self, device_id: str, path: str = INTRINSICS_FILENAME
-    ) -> None:
-        intrinsics = read_device_intrinsics(device_id, path)
-        if intrinsics:
-            self._intrinsics[device_id] = intrinsics
+    def write_intrinsics(
+        self,
+        device_id: str,
+        intrinsics: CalibrationIntrinsics,
+        path: str = INTRINSICS_FILENAME,
+    ):
+        write_device_intrinsics(device_id, intrinsics, path)
 
-    def set_intrinsics(self, device_id: str, intrinsics: CalibrationIntrinsics) -> None:
+    def load_intrinsics(self, device_id: str, path: str = INTRINSICS_FILENAME) -> None:
+
+        intrinsics = read_device_intrinsics(device_id, path)
+        if not intrinsics:
+            return
         self._intrinsics[device_id] = intrinsics
 
-    def get_intrinsics(self, device_id: str) -> CalibrationIntrinsics | None:
+    def set_intrinsics(
+        self, device_id: str, intrinsics: CalibrationIntrinsics, path: str = ""
+    ) -> None:
+        if path != "":
+            self.write_intrinsics(device_id, intrinsics, path)
+        self._intrinsics[device_id] = intrinsics
+
+    def get_intrinsics(
+        self, device_id: str, path: str = ""
+    ) -> CalibrationIntrinsics | None:
+        if path != "":
+            self.load_intrinsics(device_id, path)
         intrinsics = self._intrinsics.get(device_id)
         if not intrinsics:
             self._logger.debug(
@@ -339,37 +165,43 @@ class CalibrationManager:
                 self._logger.warning(msg)
                 raise RuntimeError(msg)
 
-        result = (
+        extrinsics = (
             worker.extrinsics_calibration(intrinsics, sample)
             if sample
             else worker.extrinsics_calibration(intrinsics)
         )
-        if result.get("status", "failed") != "success":
-            msg = f"CalibrationManager extrinsics_calibration: worker calibration failed: {result.get('msg', 'no message')}"
-            self._logger.debug(msg)
-            raise RuntimeError(msg)
-
-        extrinsics = result.get("extrinsics")
-        if not extrinsics:
-            msg = f"CalibrationManager extrinsics_calibration: extrinsics is None for some reason"
-            self._logger.debug(msg)
-            raise RuntimeError(msg)
 
         write_device_extrinsics(device_id, extrinsics, results_path)
 
         return extrinsics
 
-    def load_extrinsics(
-        self, device_id: str, path: str = EXTRINSICS_FILENAME
-    ) -> None:
-        extrinsics = read_device_extrinsics(device_id, path)
-        if extrinsics:
-            self._extrinsics[device_id] = extrinsics
+    def write_extrinsics(
+        self,
+        device_id: str,
+        extrinsics: CalibrationExtrinsics,
+        path: str = EXTRINSICS_FILENAME,
+    ):
+        write_device_extrinsics(device_id, extrinsics, path)
 
-    def set_extrinsics(self, device_id: str, extrinsics: CalibrationExtrinsics) -> None:
+    def load_extrinsics(self, device_id: str, path: str = EXTRINSICS_FILENAME) -> None:
+
+        extrinsics = read_device_extrinsics(device_id, path)
+        if not extrinsics:
+            return
         self._extrinsics[device_id] = extrinsics
 
-    def get_extrinsics(self, device_id: str) -> CalibrationExtrinsics | None:
+    def set_extrinsics(
+        self, device_id: str, extrinsics: CalibrationExtrinsics, path: str = ""
+    ) -> None:
+        if path != "":
+            self.write_extrinsics(device_id, extrinsics, path)
+        self._extrinsics[device_id] = extrinsics
+
+    def get_extrinsics(
+        self, device_id: str, path: str = ""
+    ) -> CalibrationExtrinsics | None:
+        if path != "":
+            self.load_extrinsics(device_id, path)
         extrinsics = self._extrinsics.get(device_id)
         if not extrinsics:
             self._logger.debug(
@@ -385,28 +217,30 @@ class CalibrationManager:
             if frame is None:
                 success_map[device_id] = False
                 continue
-            
+
             # We use a simplified version of add_sample to check success immediately
             # instead of just calling worker.capture() which is void.
-            chessboard_size, square_size = worker.board_params
+            chessboard_size = worker.board_params.board_size
+            square_size = worker.board_params.square_size
             gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-            flags = cv2.CALIB_CB_ADAPTIVE_THRESH | cv2.CALIB_CB_NORMALIZE_IMAGE | cv2.CALIB_CB_FAST_CHECK
-            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, flags)
-            
+            flags = (
+                cv2.CALIB_CB_ADAPTIVE_THRESH
+                | cv2.CALIB_CB_NORMALIZE_IMAGE
+                | cv2.CALIB_CB_FAST_CHECK
+            )
+            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None, flags)
+
             if ret:
                 worker.add_sample(frame)
                 success_map[device_id] = True
             else:
                 success_map[device_id] = False
-        
+
         # Calculate total samples across all workers
         for device_id in self._workers:
             total_samples += self.samples_count(device_id)
-            
-        return {
-            "success_map": success_map,
-            "sample_count": total_samples
-        }
+
+        return {"success_map": success_map, "sample_count": total_samples}
 
     def capture(self, device_id: str) -> None:
         worker = self._workers.get(device_id)

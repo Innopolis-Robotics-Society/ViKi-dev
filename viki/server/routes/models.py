@@ -4,9 +4,14 @@ import numpy as np
 import cv2
 
 
-class ChessboardParams(BaseModel):
-    chessboard_size: Tuple[int, int]
+class BoardParametersData(BaseModel):
+    board_size: Tuple[int, int]
     square_size: float
+
+
+class ArucoBoardParametersData(BoardParametersData):
+    marker_size: float
+    aruco_dict: str
 
 
 class IntrinsicsResponse(BaseModel):

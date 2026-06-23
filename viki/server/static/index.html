@@ -1,208 +1,477 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ViKi — Capture</title>
-<style>
-  :root {
-    --bg: #0d0d0f;
-    --surface: #16161a;
-    --border: #2a2a30;
-    --accent: #5b7fff;
-    --text: #e8e8f0;
-    --muted: #6b6b80;
-    --green: #4ade80;
-    --red: #f87171;
-    --yellow: #fbbf24;
-  }
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: 'SF Mono', 'Fira Code', monospace; font-size: 13px; min-height: 100vh; }
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ViKi — Capture</title>
+  <style>
+    :root {
+      --bg: #0d0d0f;
+      --surface: #16161a;
+      --border: #2a2a30;
+      --accent: #5b7fff;
+      --text: #e8e8f0;
+      --muted: #6b6b80;
+      --green: #4ade80;
+      --red: #f87171;
+      --yellow: #fbbf24;
+    }
 
-  header {
-    display: flex; align-items: center; gap: 12px;
-    padding: 16px 24px; border-bottom: 1px solid var(--border);
-    background: var(--surface);
-  }
-  header h1 { font-size: 15px; font-weight: 600; letter-spacing: 0.08em; color: var(--accent); }
-  header .subtitle { color: var(--muted); font-size: 11px; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
-  .dot.alive { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
 
-  .toolbar {
-    display: flex; align-items: center; gap: 12px;
-    padding: 10px 24px; border-bottom: 1px solid var(--border);
-  }
-  .toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
-  button {
-    padding: 6px 14px; border: 1px solid var(--border); border-radius: 4px;
-    background: var(--surface); color: var(--text); cursor: pointer;
-    font-family: inherit; font-size: 12px; transition: all 0.15s;
-  }
-  button:hover { border-color: var(--accent); color: var(--accent); }
-  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-  button.primary:hover { opacity: 0.85; }
-  button.danger { border-color: var(--red); color: var(--red); }
-  button.danger:hover { background: var(--red); color: #fff; }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      min-height: 100vh;
+    }
 
-  select, input[type=number] {
-    padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px;
-    background: var(--surface); color: var(--text);
-    font-family: inherit; font-size: 12px;
-  }
-  label { color: var(--muted); font-size: 11px; }
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
 
-  .grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
-    gap: 16px; padding: 16px 24px;
-  }
+    header h1 {
+      font-size: 15px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+    }
 
-  .camera-card {
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    overflow: hidden; transition: border-color 0.2s;
-  }
-  .camera-card.running { border-color: var(--accent); }
+    header .subtitle {
+      color: var(--muted);
+      font-size: 11px;
+    }
 
-  .card-header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-  }
-  .card-header .name { font-weight: 600; font-size: 12px; flex: 1; }
-  .tag {
-    padding: 2px 7px; border-radius: 3px; font-size: 10px; font-weight: 600;
-    background: var(--border); color: var(--muted);
-  }
-  .tag.realsense { background: #1a2a4a; color: #5b9fff; }
-  .tag.kinect    { background: #1a3a2a; color: #4ade80; }
-  .tag.running   { background: #1a3a1a; color: var(--green); }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      flex-shrink: 0;
+    }
 
-  .card-controls {
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-    padding: 8px 14px; border-bottom: 1px solid var(--border);
-  }
-  .card-controls .sep {
-    width: 1px; height: 18px; background: var(--border); margin: 0 4px;
-  }
+    .dot.alive {
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+    }
 
-  .streams {
-    display: grid; grid-template-columns: 1fr 1fr;
-  }
-  .stream-panel { position: relative; background: #000; aspect-ratio: 4/3; overflow: hidden; }
-  .stream-panel img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .stream-label {
-    position: absolute; top: 6px; left: 8px;
-    font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.6);
-    background: rgba(0,0,0,0.5); padding: 2px 6px; border-radius: 3px;
-  }
-  .stream-divider { width: 1px; background: var(--border); }
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 24px;
+      border-bottom: 1px solid var(--border);
+    }
 
-  .card-footer {
-    display: flex; gap: 16px; padding: 8px 14px;
-    font-size: 11px; color: var(--muted);
-  }
+    .toolbar .sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin: 0 4px;
+    }
 
-  #log {
-    margin: 0 24px 24px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
-    padding: 10px 14px; font-size: 11px; color: var(--muted);
-    max-height: 120px; overflow-y: auto;
-  }
-  #log .entry { padding: 1px 0; }
-  #log .entry.error { color: var(--red); }
-  #log .entry.ok    { color: var(--green); }
-  
-  .empty-state { text-align: center; padding: 60px 24px; color: var(--muted); }
-  .empty-state h2 { font-size: 14px; margin-bottom: 8px; }
+    button {
+      padding: 6px 14px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 12px;
+      transition: all 0.15s;
+    }
 
-  .calib-panel {
-    display: none;
-    margin: 0 24px 24px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    overflow: hidden;
-  }
-  .calib-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-  }
-  .calib-header .title { font-weight: 600; font-size: 12px; color: var(--accent); }
-  .calib-body {
-    display: flex; gap: 20px; padding: 14px;
-  }
-  .calib-stream {
-    flex: 1; background: #000; border-radius: 4px; overflow: hidden;
-    display: flex; align-items: center; justify-content: center;
-  }
-  .calib-stream img { max-width: 100%; height: auto; display: block; }
-  .calib-controls {
-    width: 200px; display: flex; flex-direction: column; gap: 10px;
-  }
-  .calib-stats {
-    font-size: 11px; color: var(--muted); margin-bottom: 8px;
-  }
+    button:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
 
-  .skeleton-panel {
-    display: none;
-    margin: 0 24px 24px;
-    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
-    overflow: hidden;
-  }
-  .skeleton-header {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 14px; border-bottom: 1px solid var(--border);
-  }
-  .skeleton-header .title { font-weight: 600; font-size: 12px; color: var(--accent); }
-  .skeleton-body {
-    display: flex; gap: 20px; padding: 14px;
-  }
-  .skeleton-viz {
-    flex: 1; background: #000; border-radius: 4px; overflow: hidden;
-    position: relative; min-height: 400px;
-  }
-  .skeleton-controls {
-    width: 220px; display: flex; flex-direction: column; gap: 10px;
-  }
-  .skeleton-stats {
-    font-size: 11px; color: var(--muted); margin-bottom: 8px;
-  }
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
 
-</style>
+    button.primary:hover {
+      opacity: 0.85;
+    }
+
+    button.danger {
+      border-color: var(--red);
+      color: var(--red);
+    }
+
+    button.danger:hover {
+      background: var(--red);
+      color: #fff;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    select,
+    input[type=number] {
+      padding: 5px 8px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--surface);
+      color: var(--text);
+      font-family: inherit;
+      font-size: 12px;
+    }
+
+    label {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
+      gap: 16px;
+      padding: 16px 24px;
+    }
+
+    .camera-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      transition: border-color 0.2s;
+    }
+
+    .camera-card.running {
+      border-color: var(--accent);
+    }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-header .name {
+      font-weight: 600;
+      font-size: 12px;
+      flex: 1;
+    }
+
+    .tag {
+      padding: 2px 7px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      background: var(--border);
+      color: var(--muted);
+    }
+
+    .tag.realsense {
+      background: #1a2a4a;
+      color: #5b9fff;
+    }
+
+    .tag.kinect {
+      background: #1a3a2a;
+      color: #4ade80;
+    }
+
+    .tag.running {
+      background: #1a3a1a;
+      color: var(--green);
+    }
+
+    .card-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 8px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .card-controls .sep {
+      width: 1px;
+      height: 18px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .streams {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .stream-panel {
+      position: relative;
+      background: #000;
+      aspect-ratio: 4/3;
+      overflow: hidden;
+    }
+
+    .stream-panel img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+
+    .stream-label {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(0, 0, 0, 0.5);
+      padding: 2px 6px;
+      border-radius: 3px;
+    }
+
+    .stream-divider {
+      width: 1px;
+      background: var(--border);
+    }
+
+    .card-footer {
+      display: flex;
+      gap: 16px;
+      padding: 8px 14px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    #log {
+      margin: 0 24px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 11px;
+      color: var(--muted);
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    #log .entry {
+      padding: 1px 0;
+    }
+
+    #log .entry.error {
+      color: var(--red);
+    }
+
+    #log .entry.ok {
+      color: var(--green);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 24px;
+      color: var(--muted);
+    }
+
+    .empty-state h2 {
+      font-size: 14px;
+      margin-bottom: 8px;
+    }
+
+    .calib-panel {
+      display: none;
+      margin: 0 24px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .calib-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .calib-header .title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    .calib-body {
+      display: flex;
+      gap: 20px;
+      padding: 14px;
+    }
+
+    .calib-stream {
+      flex: 1;
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .calib-stream img {
+      max-width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .calib-controls {
+      width: 200px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .calib-stats {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .skeleton-panel {
+      display: none;
+      margin: 0 24px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .skeleton-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .skeleton-header .title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    .skeleton-body {
+      display: flex;
+      gap: 20px;
+      padding: 14px;
+    }
+
+    .skeleton-viz {
+      flex: 1;
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      position: relative;
+      min-height: 400px;
+    }
+
+    .skeleton-controls {
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .skeleton-stats {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+  </style>
 </head>
+
 <body>
 
-<header>
-  <div class="dot" id="server-dot"></div>
-  <h1>ViKi</h1>
-  <span class="subtitle">capture server</span>
-</header>
+  <header>
+    <div class="dot" id="server-dot"></div>
+    <h1>ViKi</h1>
+    <span class="subtitle">capture server</span>
+  </header>
 
-<div class="toolbar">
-  <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
-  <button onclick="startAll()">▶ Start all</button>
-  <button class="danger" onclick="stopAll()">■ Stop all</button>
-  <div class="sep"></div>
-  <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
-  <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
-</div>
+  <div class="toolbar">
+    <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
+    <button onclick="startAll()">▶ Start all</button>
+    <button class="danger" onclick="stopAll()">■ Stop all</button>
+    <div class="sep"></div>
+    <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
+    <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
+  </div>
 
-<div class="calib-panel" id="calib-panel">
-  <div class="calib-header">
-    <span class="title">Camera Calibration</span>
-    <button class="danger" onclick="toggleCalibration()">✕ Close</button>
-  </div>
-  <div class="calib-body">
-    <div class="calib-stream">
-      <img id="calib-stream-img" src="" alt="Calibration Stream">
+  <div class="calib-panel" id="calib-panel">
+    <div class="calib-header">
+      <span class="title">Camera Calibration</span>
+      <button class="danger" onclick="toggleCalibration()">✕ Close</button>
     </div>
-    <div class="calib-controls">
-      <div class="calib-stats" id="calib-status">Samples: 0</div>
-      <button class="primary" onclick="captureSample()">Capture Sample</button>
-      <button onclick="runCalibration()">Run Calibration</button>
-      <button class="danger" onclick="clearCalibration()">Clear Samples</button>
+    <div class="calib-body">
+      <div class="calib-stream">
+        <img id="calib-stream-img" src="" alt="Calibration Stream">
+      </div>
+      <div class="calib-controls">
+        <div class="board-params">
+          <!-- Board type selector -->
+          <div class="field-row">
+            <label for="board-type">Board type</label>
+            <select id="board-type" onchange="toggleBoardFields()">
+              <option value="chess">Chessboard</option>
+              <option value="aruco">ChArUco</option>
+            </select>
+          </div>
+
+          <!-- Common fields (always visible) -->
+          <div class="field-row">
+            <label>Board width</label>
+            <input type="number" id="board-width" value="8" min="1" />
+          </div>
+          <div class="field-row">
+            <label>Board height</label>
+            <input type="number" id="board-height" value="6" min="1" />
+          </div>
+          <div class="field-row">
+            <label>Square size (m)</label>
+            <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
+          </div>
+
+          <!-- Aruco‑specific fields (hidden by default) -->
+          <div id="aruco-fields" style="display: none;">
+            <div class="field-row">
+              <label>Marker size (m)</label>
+              <input type="number" id="marker-size" value="0.8" step="0.001" min="0.01" />
+            </div>
+            <div class="field-row">
+              <label>Dictionary</label>
+              <select id="aruco-dict"></select>
+            </div>
+          </div>
+        </div>
+        <button class="primary" onclick="captureSample()">Capture Sample</button>
+        <button onclick="startCalibrationSession()">Start Calibration</button>
+        <button onclick="intrinsicsCalibration()">Start Intrinsics</button>
+        <button class="danger" onclick="clearCalibration()">Clear Samples</button>
+      </div>
     </div>
   </div>
-</div>
 
   <div class="skeleton-panel" id="skeleton-panel">
     <div class="skeleton-header">
@@ -219,135 +488,161 @@
         <button id="btn-skel-stop" class="danger" onclick="toggleEstimation(false)" disabled>■ Stop Estimation</button>
         <div class="sep"></div>
         <button id="btn-skel-rec-start" onclick="toggleRecording(true)">🔴 Record</button>
-        <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop Recording</button>
+        <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop
+          Recording</button>
       </div>
     </div>
   </div>
 
-<div class="grid" id="grid">
-  <div class="empty-state">
-    <h2>No cameras detected</h2>
-    <p>Click "Scan devices" to discover connected cameras</p>
+  <div class="grid" id="grid">
+    <div class="empty-state">
+      <h2>No cameras detected</h2>
+      <p>Click "Scan devices" to discover connected cameras</p>
+    </div>
   </div>
-</div>
 
-<div id="log"></div>
+  <div id="log"></div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
   <script>
-// Per-camera config definitions
-const CAMERA_CONFIG = {
-  realsense: {
-    resolutions: ['640x480', '1280x720', '1920x1080'],
-    defaultRes:  '640x480',
-    fps:         [15, 30],
-    defaultFps:  30,
-    depthModes:  null,
-  },
-  kinect: {
-    resolutions: ['1280x720', '1920x1080', '2048x1536'],
-    defaultRes:  '1280x720',
-    fps:         [5, 15, 30],
-    defaultFps:  30,
-    depthModes:  ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
-    defaultDepth: 'NFOV_UNBINNED',
-    // WFOV_UNBINNED hardware limitation: max 15 fps
-    depthModeMaxFps: { 'WFOV_UNBINNED': 15 },
-  },
-};
+    // Per-camera config definitions
+    const CAMERA_CONFIG = {
+      realsense: {
+        resolutions: ['640x480', '1280x720', '1920x1080'],
+        defaultRes: '640x480',
+        fps: [15, 30],
+        defaultFps: 30,
+        depthModes: null,
+      },
+      kinect: {
+        resolutions: ['1280x720', '1920x1080', '2048x1536'],
+        defaultRes: '1280x720',
+        fps: [5, 15, 30],
+        defaultFps: 30,
+        depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
+        defaultDepth: 'NFOV_UNBINNED',
+        // WFOV_UNBINNED hardware limitation: max 15 fps
+        depthModeMaxFps: {'WFOV_UNBINNED': 15},
+      },
+    };
 
-const state = {};  // device_id -> { running, type, infoInterval }
-
-function log(msg, cls = '') {
-  const el = document.getElementById('log');
-  const e  = document.createElement('div');
-  e.className  = 'entry ' + cls;
-  e.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
-  el.prepend(e);
-  while (el.children.length > 40) el.removeChild(el.lastChild);
-}
-
-async function api(method, path, body) {
-  const opts = { method, headers: { 'Content-Type': 'application/json' } };
-  if (body) opts.body = JSON.stringify(body);
-  const r = await fetch(path, opts);
-  const data = await r.json();
-  if (!r.ok) {
-    throw new Error(data.detail || 'API request failed');
-  }
-  return data;
-}
-
-async function checkServer() {
-  try {
-    await fetch('/api/devices');
-    document.getElementById('server-dot').classList.add('alive');
-  } catch {
-    document.getElementById('server-dot').classList.remove('alive');
-  }
-}
-
-async function scanDevices() {
-  log('Scanning for devices...');
-  try {
-    const data = await api('GET', '/api/devices');
-    log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
-    const all = [
-      ...data.realsense.map(id => ({ id, type: 'realsense' })),
-      ...data.kinect.map(id  => ({ id, type: 'kinect' })),
+    const ARUCO_DICTS = [
+      'DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
+      'DICT_5X5_50', 'DICT_5X5_100', 'DICT_5X5_250', 'DICT_5X5_1000',
+      'DICT_6X6_50', 'DICT_6X6_100', 'DICT_6X6_250', 'DICT_6X6_1000',
+      'DICT_7X7_50', 'DICT_7X7_100', 'DICT_7X7_250', 'DICT_7X7_1000',
+      'DICT_ARUCO_ORIGINAL'
     ];
-    renderCards(all, data.active || []);
-  } catch (e) {
-    log('Scan failed: ' + e, 'error');
-  }
-}
 
-function renderCards(devices, active) {
-  const grid = document.getElementById('grid');
-  grid.innerHTML = '';
-  if (!devices.length) {
-    grid.innerHTML = `<div class="empty-state"><h2>No cameras detected</h2><p>Make sure cameras are connected and container has USB access.</p></div>`;
-    return;
-  }
-  devices.forEach(d => {
-    const isActive = active.includes(d.id);
-    state[d.id] = { running: isActive, type: d.type, ...(state[d.id] || {}) };
-    grid.appendChild(buildCard(d.id, d.type, isActive));
-    if (isActive) attachStreams(d.id);
-  });
-}
+    function populateArucoDicts() {
+      const select = document.getElementById("aruco-dict");
+      select.innerHTML = "";
+      ARUCO_DICTS.forEach(name => {
+        const opt = document.createElement("option");
+        opt.value = name;
+        opt.textContent = name;
+        if (name == "DICT_5X5_50") opt.selected = true;
+        select.appendChild(opt);
+      });
+    }
 
-function buildControls(id, type) {
-  const cfg = CAMERA_CONFIG[type] || CAMERA_CONFIG.realsense;
+    function toggleBoardFields() {
+      const boardType = document.getElementById("board-type").value;
+      document.getElementById('aruco-fields').style.display = boardType === 'aruco' ? 'block' : 'none';
+    }
 
-  const resOpts = cfg.resolutions.map(r =>
-    `<option value="${r}" ${r === cfg.defaultRes ? 'selected' : ''}>${r.replace('x', ' × ')}</option>`
-  ).join('');
+    const state = {};    // device_id -> { running, type, infoInterval }
 
-  const fpsOpts = cfg.fps.map(f =>
-    `<option value="${f}" ${f === cfg.defaultFps ? 'selected' : ''}>${f} fps</option>`
-  ).join('');
+    function log(msg, cls = '') {
+      const el = document.getElementById('log');
+      const e = document.createElement('div');
+      e.className = 'entry ' + cls;
+      e.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.prepend(e);
+      while (el.children.length > 40) el.removeChild(el.lastChild);
+    }
 
-  let depthPart = '';
-  if (cfg.depthModes) {
-    const dOpts = cfg.depthModes.map(m =>
-      `<option value="${m}" ${m === cfg.defaultDepth ? 'selected' : ''}>${m}</option>`
-    ).join('');
-    depthPart = `<div class="sep"></div><label>depth</label><select id="depthmode-${id}" onchange="updateFpsForDepthMode('${id}')">${dOpts}</select>`;
-  }
+    async function api(method, path, body) {
+      const opts = {method, headers: {'Content-Type': 'application/json'}};
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(path, opts);
+      const data = await r.json();
+      if (!r.ok) {
+        throw new Error(data.detail || 'API request failed');
+      }
+      return data;
+    }
 
-  return `
+    async function checkServer() {
+      try {
+        await fetch('/api/devices');
+        document.getElementById('server-dot').classList.add('alive');
+      } catch {
+        document.getElementById('server-dot').classList.remove('alive');
+      }
+    }
+
+    async function scanDevices() {
+      log('Scanning for devices...');
+      try {
+        const data = await api('GET', '/api/devices');
+        log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
+        const all = [
+          ...data.realsense.map(id => ({id, type: 'realsense'})),
+          ...data.kinect.map(id => ({id, type: 'kinect'})),
+        ];
+        renderCards(all, data.active || []);
+      } catch (e) {
+        log('Scan failed: ' + e, 'error');
+      }
+    }
+
+    function renderCards(devices, active) {
+      const grid = document.getElementById('grid');
+      grid.innerHTML = '';
+      if (!devices.length) {
+        grid.innerHTML = `<div class="empty-state"><h2>No cameras detected</h2><p>Make sure cameras are connected and container has USB access.</p></div>`;
+        return;
+      }
+      devices.forEach(d => {
+        const isActive = active.includes(d.id);
+        state[d.id] = {running: isActive, type: d.type, ...(state[d.id] || {})};
+        grid.appendChild(buildCard(d.id, d.type, isActive));
+        if (isActive) attachStreams(d.id);
+      });
+    }
+
+    function buildControls(id, type) {
+      const cfg = CAMERA_CONFIG[type] || CAMERA_CONFIG.realsense;
+
+      const resOpts = cfg.resolutions.map(r =>
+        `<option value="${r}" ${r === cfg.defaultRes ? 'selected' : ''}>${r.replace('x', ' × ')}</option>`
+      ).join('');
+
+      const fpsOpts = cfg.fps.map(f =>
+        `<option value="${f}" ${f === cfg.defaultFps ? 'selected' : ''}>${f} fps</option>`
+      ).join('');
+
+      let depthPart = '';
+      if (cfg.depthModes) {
+        const dOpts = cfg.depthModes.map(m =>
+          `<option value="${m}" ${m === cfg.defaultDepth ? 'selected' : ''}>${m}</option>`
+        ).join('');
+        depthPart = `<div class="sep"></div><label>depth</label><select id="depthmode-${id}" onchange="updateFpsForDepthMode('${id}')">${dOpts}</select>`;
+      }
+
+      return `
     <label>res</label><select id="res-${id}">${resOpts}</select>
     <label>fps</label><select id="fps-${id}">${fpsOpts}</select>
     ${depthPart}
   `;
-}
+    }
 
-function buildCard(id, type, running) {
-  const card = document.createElement('div');
-  card.className = 'camera-card' + (running ? ' running' : '');
-  card.id = 'card-' + id;
-  card.innerHTML = `
+    function buildCard(id, type, running) {
+      const card = document.createElement('div');
+      card.className = 'camera-card' + (running ? ' running' : '');
+      card.id = 'card-' + id;
+      card.innerHTML = `
     <div class="card-header">
       <div class="dot ${running ? 'alive' : ''}" id="dot-${id}"></div>
       <span class="name">${id}</span>
@@ -373,335 +668,394 @@ function buildCard(id, type, running) {
     </div>
     <div class="card-footer" id="footer-${id}"><span>—</span></div>
   `;
-  return card;
-}
-
-function updateFpsForDepthMode(id) {
-  const cfg = CAMERA_CONFIG[state[id]?.type] || CAMERA_CONFIG.realsense;
-  if (!cfg.depthModeMaxFps) return;
-  const depthMode = document.getElementById(`depthmode-${id}`)?.value;
-  const maxFps = cfg.depthModeMaxFps[depthMode] || 30;
-  const fpsSelect = document.getElementById(`fps-${id}`);
-  if (!fpsSelect) return;
-  for (const opt of fpsSelect.options) {
-    opt.disabled = parseInt(opt.value) > maxFps;
-    if (parseInt(opt.value) > maxFps && fpsSelect.value === opt.value) {
-      fpsSelect.value = maxFps;
-    }
-  }
-}
-
-function getCardConfig(id) {
-  const resVal = document.getElementById(`res-${id}`)?.value || '640x480';
-  const [w, h]  = resVal.split('x').map(Number);
-  const fps     = parseInt(document.getElementById(`fps-${id}`)?.value || '30');
-  const depth   = document.getElementById(`depthmode-${id}`)?.value || 'NFOV_UNBINNED';
-  return { color_width: w, color_height: h, fps, depth_mode: depth };
-}
-
-function attachStreams(id) {
-  const colorImg = document.getElementById('color-' + id);
-  const depthImg = document.getElementById('depth-' + id);
-  // Small delay to let the camera worker produce first frame before streaming
-  setTimeout(() => {
-    if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
-    if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
-  }, 1500);
-  if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
-  state[id].infoInterval = setInterval(() => updateInfo(id), 2000);
-}
-
-function detachStreams(id) {
-  const colorImg = document.getElementById('color-' + id);
-  const depthImg = document.getElementById('depth-' + id);
-  if (colorImg) colorImg.src = '';
-  if (depthImg) depthImg.src = '';
-  if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
-}
-
-async function updateInfo(id) {
-  try {
-    const info   = await api('GET', `/api/cameras/${id}/info`);
-    const footer = document.getElementById('footer-' + id);
-    if (!footer) return;
-
-    // Update color panel aspect ratio
-    if (info.color_shape) {
-      const [ch, cw] = info.color_shape;
-      const colorPanel = document.querySelector(`#card-${id} .stream-panel:first-child`);
-      if (colorPanel) colorPanel.style.aspectRatio = `${cw}/${ch}`;
+      return card;
     }
 
-    // Update depth panel aspect ratio
-    if (info.depth_shape) {
-      const [dh, dw] = info.depth_shape;
-      const depthPanel = document.querySelector(`#card-${id} .stream-panel:last-child`);
-      if (depthPanel) depthPanel.style.aspectRatio = `${dw}/${dh}`;
-    }
-
-    const shape = info.color_shape ? `${info.color_shape[1]}×${info.color_shape[0]}` : '—';
-    const dshape = info.depth_shape ? `depth: ${info.depth_shape[1]}×${info.depth_shape[0]}` : '';
-    const ci    = info.color_intrinsics;
-    const intr  = ci ? `fx=${ci.fx.toFixed(1)} fy=${ci.fy.toFixed(1)}` : '';
-    footer.innerHTML = `<span>color: ${shape}</span><span>${dshape}</span><span>${intr}</span>`;
-  } catch { /* camera stopped */ }
-}
-
-async function startCamera(id) {
-  const cfg = getCardConfig(id);
-  log(`Starting ${id} @ ${cfg.color_width}×${cfg.color_height} ${cfg.fps}fps...`);
-  try {
-    const res = await api('POST', `/api/cameras/${id}/start`, cfg);
-    if (res.detail) { log(`${id} error: ${res.detail}`, 'error'); return; }
-    log(`${id} started`, 'ok');
-    setRunning(id, true);
-  } catch (e) {
-    log(`Failed to start ${id}: ${e}`, 'error');
-  }
-}
-
-async function stopCamera(id) {
-  log(`Stopping ${id}...`);
-  await api('POST', `/api/cameras/${id}/stop`);
-  log(`${id} stopped`);
-  setRunning(id, false);
-}
-
-function setRunning(id, running) {
-  if (!state[id]) state[id] = {};
-  state[id].running = running;
-  const card    = document.getElementById('card-' + id);
-  const dot     = document.getElementById('dot-' + id);
-  const liveTag = document.getElementById('live-tag-' + id);
-  const btnStart = document.getElementById('btn-start-' + id);
-  const btnStop  = document.getElementById('btn-stop-' + id);
-  if (!card) return;
-  card.className = 'camera-card' + (running ? ' running' : '');
-  if (dot)     dot.className     = 'dot' + (running ? ' alive' : '');
-  if (liveTag) liveTag.style.display = running ? '' : 'none';
-  if (btnStart) btnStart.disabled = running;
-  if (btnStop)  btnStop.disabled  = !running;
-  if (running) attachStreams(id);
-  else         detachStreams(id);
-}
-
-async function startAll() {
-  for (const id of Object.keys(state))
-    if (!state[id].running) await startCamera(id);
-}
-
-async function stopAll() {
-  for (const id of Object.keys(state))
-    if (state[id].running) await stopCamera(id);
-}
-
-function toggleCalibration() {
-  const panel = document.getElementById('calib-panel');
-  const isVisible = panel.style.display === 'block';
-  panel.style.display = isVisible ? 'none' : 'block';
-  
-  if (!isVisible) {
-    const img = document.getElementById('calib-stream-img');
-    img.src = `/api/calibrate/stream?t=${Date.now()}`;
-    updateCalibStatus();
-  } else {
-    document.getElementById('calib-stream-img').src = '';
-  }
-}
-
-async function updateCalibStatus() {
-  try {
-    const data = await api('GET', '/api/calibrate/status');
-    document.getElementById('calib-status').textContent = `Samples: ${data.sample_count}`;
-  } catch (e) {
-    log('Status check failed', 'error');
-  }
-}
-
-async function captureSample() {
-  log('Capturing calibration sample...');
-  try {
-    const res = await api('POST', '/api/calibrate/capture');
-    
-    let success_count = 0;
-    for (const [id, success] of Object.entries(res.success_map)) {
-      if (success) {
-        success_count++;
-      } else {
-        log(`Sample rejected for ${id}: Chessboard not found`, 'error');
+    function updateFpsForDepthMode(id) {
+      const cfg = CAMERA_CONFIG[state[id]?.type] || CAMERA_CONFIG.realsense;
+      if (!cfg.depthModeMaxFps) return;
+      const depthMode = document.getElementById(`depthmode-${id}`)?.value;
+      const maxFps = cfg.depthModeMaxFps[depthMode] || 30;
+      const fpsSelect = document.getElementById(`fps-${id}`);
+      if (!fpsSelect) return;
+      for (const opt of fpsSelect.options) {
+        opt.disabled = parseInt(opt.value) > maxFps;
+        if (parseInt(opt.value) > maxFps && fpsSelect.value === opt.value) {
+          fpsSelect.value = maxFps;
+        }
       }
     }
-    
-    if (success_count > 0) {
-      log(`Sample added for ${success_count} camera(s). Total events: ${res.sample_count}`, 'ok');
-    } else {
-      log('Sample rejected: Chessboard not found in any camera', 'error');
+
+    function getCardConfig(id) {
+      const resVal = document.getElementById(`res-${id}`)?.value || '640x480';
+      const [w, h] = resVal.split('x').map(Number);
+      const fps = parseInt(document.getElementById(`fps-${id}`)?.value || '30');
+      const depth = document.getElementById(`depthmode-${id}`)?.value || 'NFOV_UNBINNED';
+      return {color_width: w, color_height: h, fps, depth_mode: depth};
     }
-    
-    updateCalibStatus();
-  } catch (e) {
-    log(`Capture failed: ${e}`, 'error');
-  }
-}
 
-async function runCalibration() {
-  log('Running calibration... please wait...');
-  try {
-    const res = await api('POST', '/api/calibrate/run');
-    
-    for (const id of res.cameras) {
-      const err = res.errors[id];
-      log(`Calibration ${id}: RMS Error = ${err.toFixed(4)}px`, err < 0.5 ? 'ok' : 'error');
+    function attachStreams(id) {
+      const colorImg = document.getElementById('color-' + id);
+      const depthImg = document.getElementById('depth-' + id);
+      // Small delay to let the camera worker produce first frame before streaming
+      setTimeout(() => {
+        if (colorImg) colorImg.src = `/api/cameras/${id}/stream?t=${Date.now()}`;
+        if (depthImg) depthImg.src = `/api/cameras/${id}/depth?t=${Date.now()}`;
+      }, 1500);
+      if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
+      state[id].infoInterval = setInterval(() => updateInfo(id), 2000);
     }
-    
-    if (res.stereo_calibrated) {
-      const serr = res.stereo_error;
-      log(`Stereo Calibration: RMS Error = ${serr.toFixed(4)}px`, serr < 0.5 ? 'ok' : 'error');
+
+    function detachStreams(id) {
+      const colorImg = document.getElementById('color-' + id);
+      const depthImg = document.getElementById('depth-' + id);
+      if (colorImg) colorImg.src = '';
+      if (depthImg) depthImg.src = '';
+      if (state[id]?.infoInterval) clearInterval(state[id].infoInterval);
     }
-    
-    log(`Calibration complete! ${res.cameras.length} cameras calibrated.`, 'ok');
-  } catch (e) {
-    log(`Calibration failed: ${e}`, 'error');
-  }
-}
 
-async function clearCalibration() {
-  await api('POST', '/api/calibrate/clear');
-  log('Calibration samples cleared');
-  updateCalibStatus();
-}
+    async function updateInfo(id) {
+      try {
+        const info = await api('GET', `/api/cameras/${id}/info`);
+        const footer = document.getElementById('footer-' + id);
+        if (!footer) return;
 
-// --- Skeleton Logic ---
-let skeletonWs = null;
-let skelScene, skelCamera, skelRenderer, skelPoints = [];
+        // Update color panel aspect ratio
+        if (info.color_shape) {
+          const [ch, cw] = info.color_shape;
+          const colorPanel = document.querySelector(`#card-${id} .stream-panel:first-child`);
+          if (colorPanel) colorPanel.style.aspectRatio = `${cw}/${ch}`;
+        }
 
-function initSkelViz() {
-  const container = document.getElementById('skeleton-viz');
-  if (container.children.length > 0) return;
+        // Update depth panel aspect ratio
+        if (info.depth_shape) {
+          const [dh, dw] = info.depth_shape;
+          const depthPanel = document.querySelector(`#card-${id} .stream-panel:last-child`);
+          if (depthPanel) depthPanel.style.aspectRatio = `${dw}/${dh}`;
+        }
 
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-
-  skelScene = new THREE.Scene();
-  skelCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10);
-  skelCamera.position.set(0, 0, 1);
-  skelCamera.up.set(0, 1, 0);
-
-  skelRenderer = new THREE.WebGLRenderer({ antialias: true });
-  skelRenderer.setSize(width, height);
-  skelRenderer.setClearColor(0x000000);
-  container.appendChild(skelRenderer.domElement);
-
-  const grid = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
-  grid.rotation.x = Math.PI / 2;
-  skelScene.add(grid);
-
-  const axes = new THREE.AxesHelper(0.2);
-  skelScene.add(axes);
-
-  // Create 23 points
-  const geo = new THREE.SphereGeometry(0.01);
-  for (let i = 0; i < 23; i++) {
-    const mat = new THREE.MeshBasicMaterial({ color: 0x5b7fff });
-    const mesh = new THREE.Mesh(geo, mat);
-    skelPoints.push(mesh);
-    skelScene.add(mesh);
-  }
-
-  function animate() {
-    requestAnimationFrame(animate);
-    skelRenderer.render(skelScene, skelCamera);
-  }
-  animate();
-}
-
-function toggleSkeleton() {
-  const panel = document.getElementById('skeleton-panel');
-  const isVisible = panel.style.display === 'block';
-  panel.style.display = isVisible ? 'none' : 'block';
-  if (!isVisible) {
-    initSkelViz();
-    updateSkelStatus();
-  }
-}
-
-async function updateSkelStatus() {
-  try {
-    const data = await api('GET', '/api/skeleton/status');
-    const statusEl = document.getElementById('skeleton-status');
-    statusEl.textContent = `Status: ${data.enabled ? 'Running' : 'Idle'} ${data.recording ? ' (RECORDING)' : ''}`;
-    
-    document.getElementById('btn-skel-start').disabled = data.enabled;
-    document.getElementById('btn-skel-stop').disabled = !data.enabled;
-    document.getElementById('btn-skel-rec-start').disabled = !data.enabled;
-    document.getElementById('btn-skel-rec-stop').disabled = !data.recording;
-  } catch (e) {
-    log('Skel status check failed', 'error');
-  }
-}
-
-async function toggleEstimation(enable) {
-  log(`Turning skeleton estimation ${enable ? 'ON' : 'OFF'}...`);
-  try {
-    await api('POST', '/api/skeleton/toggle', { enabled: enable });
-    updateSkelStatus();
-    if (enable) {
-      startSkelStream();
-    } else {
-      stopSkelStream();
+        const shape = info.color_shape ? `${info.color_shape[1]}×${info.color_shape[0]}` : '—';
+        const dshape = info.depth_shape ? `depth: ${info.depth_shape[1]}×${info.depth_shape[0]}` : '';
+        const ci = info.color_intrinsics;
+        const intr = ci ? `fx=${ci.fx.toFixed(1)} fy=${ci.fy.toFixed(1)}` : '';
+        footer.innerHTML = `<span>color: ${shape}</span><span>${dshape}</span><span>${intr}</span>`;
+      } catch { /* camera stopped */}
     }
-  } catch (e) {
-    log('Estimation toggle failed: ' + e, 'error');
-  }
-}
 
-async function toggleRecording(enable) {
-  log(`Turning skeleton recording ${enable ? 'ON' : 'OFF'}...`);
-  try {
-    await api('POST', '/api/skeleton/record', { enabled: enable });
-    updateSkelStatus();
-  } catch (e) {
-    log('Recording toggle failed: ' + e, 'error');
-  }
-}
-
-function startSkelStream() {
-  if (skeletonWs) return;
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsUrl = `${protocol}//${window.location.host}/api/skeleton/stream`;
-  skeletonWs = new WebSocket(wsUrl);
-  
-  skeletonWs.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    const pts = data.landmarks;
-    for (let i = 0; i < 23; i++) {
-      if (pts && pts[i]) {
-        // ViKi uses OpenCV BGR/XYZ convention. 
-        // If points are [X, Y, Z] in metres:
-        skelPoints[i].position.set(pts[i][0], pts[i][1], pts[i][2]);
-        skelPoints[i].visible = true;
-      } else {
-        skelPoints[i].visible = false;
+    async function startCamera(id) {
+      const cfg = getCardConfig(id);
+      log(`Starting ${id} @ ${cfg.color_width}×${cfg.color_height} ${cfg.fps}fps...`);
+      try {
+        const res = await api('POST', `/api/cameras/${id}/start`, cfg);
+        if (res.detail) {log(`${id} error: ${res.detail}`, 'error'); return;}
+        log(`${id} started`, 'ok');
+        setRunning(id, true);
+      } catch (e) {
+        log(`Failed to start ${id}: ${e}`, 'error');
       }
     }
-  };
-  
-  skeletonWs.onclose = () => {
-    skeletonWs = null;
-    log('Skeleton stream closed');
-  };
-}
 
-function stopSkelStream() {
-  if (skeletonWs) {
-    skeletonWs.close();
-    skeletonWs = null;
-  }
-}
+    async function stopCamera(id) {
+      log(`Stopping ${id}...`);
+      await api('POST', `/api/cameras/${id}/stop`);
+      log(`${id} stopped`);
+      setRunning(id, false);
+    }
 
-checkServer();
-setInterval(checkServer, 5000);
-scanDevices();
-</script>
+    function setRunning(id, running) {
+      if (!state[id]) state[id] = {};
+      state[id].running = running;
+      const card = document.getElementById('card-' + id);
+      const dot = document.getElementById('dot-' + id);
+      const liveTag = document.getElementById('live-tag-' + id);
+      const btnStart = document.getElementById('btn-start-' + id);
+      const btnStop = document.getElementById('btn-stop-' + id);
+      if (!card) return;
+      card.className = 'camera-card' + (running ? ' running' : '');
+      if (dot) dot.className = 'dot' + (running ? ' alive' : '');
+      if (liveTag) liveTag.style.display = running ? '' : 'none';
+      if (btnStart) btnStart.disabled = running;
+      if (btnStop) btnStop.disabled = !running;
+      if (running) attachStreams(id);
+      else detachStreams(id);
+    }
+
+    async function startAll() {
+      for (const id of Object.keys(state))
+        if (!state[id].running) await startCamera(id);
+    }
+
+    async function stopAll() {
+      for (const id of Object.keys(state))
+        if (state[id].running) await stopCamera(id);
+    }
+
+    function toggleCalibration() {
+      const panel = document.getElementById('calib-panel');
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+
+      if (!isVisible) {
+        const img = document.getElementById('calib-stream-img');
+        img.src = `/api/calibrate/stream?t=${Date.now()}`;
+        updateCalibStatus();
+      } else {
+        document.getElementById('calib-stream-img').src = '';
+      }
+    }
+
+    async function updateCalibStatus() {
+      try {
+        const data = await api('GET', '/api/calibrate/status');
+        document.getElementById('calib-status').textContent = `Samples: ${data.sample_count}`;
+      } catch (e) {
+        log('Status check failed', 'error');
+      }
+    }
+
+    async function captureSample() {
+      log('Capturing calibration sample...');
+      try {
+        const res = await api('POST', '/api/calibrate/capture');
+
+        let success_count = 0;
+        for (const [id, success] of Object.entries(res.success_map)) {
+          if (success) {
+            success_count++;
+          } else {
+            log(`Sample rejected for ${id}: Chessboard not found`, 'error');
+          }
+        }
+
+        if (success_count > 0) {
+          log(`Sample added for ${success_count} camera(s). Total events: ${res.sample_count}`, 'ok');
+        } else {
+          log('Sample rejected: Chessboard not found in any camera', 'error');
+        }
+
+        updateCalibStatus();
+      } catch (e) {
+        log(`Capture failed: ${e}`, 'error');
+      }
+    }
+
+    async function runCalibration() {
+      log('Running calibration... please wait...');
+      try {
+        const res = await api('POST', '/api/calibrate/run');
+
+        for (const id of res.cameras) {
+          const err = res.errors[id];
+          log(`Calibration ${id}: RMS Error = ${err.toFixed(4)}px`, err < 0.5 ? 'ok' : 'error');
+        }
+
+        if (res.stereo_calibrated) {
+          const serr = res.stereo_error;
+          log(`Stereo Calibration: RMS Error = ${serr.toFixed(4)}px`, serr < 0.5 ? 'ok' : 'error');
+        }
+
+        log(`Calibration complete! ${res.cameras.length} cameras calibrated.`, 'ok');
+      } catch (e) {
+        log(`Calibration failed: ${e}`, 'error');
+      }
+    }
+
+    async function clearCalibration() {
+      await api('POST', '/api/calibrate/clear');
+      log('Calibration samples cleared');
+      updateCalibStatus();
+    }
+
+    // --- Skeleton Logic ---
+    let skeletonWs = null;
+    let skelScene, skelCamera, skelRenderer, skelPoints = [];
+
+    function initSkelViz() {
+      const container = document.getElementById('skeleton-viz');
+      if (container.children.length > 0) return;
+
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      skelScene = new THREE.Scene();
+      skelCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10);
+      skelCamera.position.set(0, 0, 1);
+      skelCamera.up.set(0, 1, 0);
+
+      skelRenderer = new THREE.WebGLRenderer({antialias: true});
+      skelRenderer.setSize(width, height);
+      skelRenderer.setClearColor(0x000000);
+      container.appendChild(skelRenderer.domElement);
+
+      const grid = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
+      grid.rotation.x = Math.PI / 2;
+      skelScene.add(grid);
+
+      const axes = new THREE.AxesHelper(0.2);
+      skelScene.add(axes);
+
+      // Create 23 points
+      const geo = new THREE.SphereGeometry(0.01);
+      for (let i = 0; i < 23; i++) {
+        const mat = new THREE.MeshBasicMaterial({color: 0x5b7fff});
+        const mesh = new THREE.Mesh(geo, mat);
+        skelPoints.push(mesh);
+        skelScene.add(mesh);
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+        skelRenderer.render(skelScene, skelCamera);
+      }
+      animate();
+    }
+
+    function toggleSkeleton() {
+      const panel = document.getElementById('skeleton-panel');
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) {
+        initSkelViz();
+        updateSkelStatus();
+      }
+    }
+
+    async function updateSkelStatus() {
+      try {
+        const data = await api('GET', '/api/skeleton/status');
+        const statusEl = document.getElementById('skeleton-status');
+        statusEl.textContent = `Status: ${data.enabled ? 'Running' : 'Idle'} ${data.recording ? ' (RECORDING)' : ''}`;
+
+        document.getElementById('btn-skel-start').disabled = data.enabled;
+        document.getElementById('btn-skel-stop').disabled = !data.enabled;
+        document.getElementById('btn-skel-rec-start').disabled = !data.enabled;
+        document.getElementById('btn-skel-rec-stop').disabled = !data.recording;
+      } catch (e) {
+        log('Skel status check failed', 'error');
+      }
+    }
+
+    async function toggleEstimation(enable) {
+      log(`Turning skeleton estimation ${enable ? 'ON' : 'OFF'}...`);
+      try {
+        await api('POST', '/api/skeleton/toggle', {enabled: enable});
+        updateSkelStatus();
+        if (enable) {
+          startSkelStream();
+        } else {
+          stopSkelStream();
+        }
+      } catch (e) {
+        log('Estimation toggle failed: ' + e, 'error');
+      }
+    }
+
+    async function toggleRecording(enable) {
+      log(`Turning skeleton recording ${enable ? 'ON' : 'OFF'}...`);
+      try {
+        await api('POST', '/api/skeleton/record', {enabled: enable});
+        updateSkelStatus();
+      } catch (e) {
+        log('Recording toggle failed: ' + e, 'error');
+      }
+    }
+
+    function startSkelStream() {
+      if (skeletonWs) return;
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/api/skeleton/stream`;
+      skeletonWs = new WebSocket(wsUrl);
+
+      skeletonWs.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        const pts = data.landmarks;
+        for (let i = 0; i < 23; i++) {
+          if (pts && pts[i]) {
+            // ViKi uses OpenCV BGR/XYZ convention. 
+            // If points are [X, Y, Z] in metres:
+            skelPoints[i].position.set(pts[i][0], pts[i][1], pts[i][2]);
+            skelPoints[i].visible = true;
+          } else {
+            skelPoints[i].visible = false;
+          }
+        }
+      };
+
+      skeletonWs.onclose = () => {
+        skeletonWs = null;
+        log('Skeleton stream closed');
+      };
+    }
+
+    function stopSkelStream() {
+      if (skeletonWs) {
+        skeletonWs.close();
+        skeletonWs = null;
+      }
+    }
+
+    async function startCalibrationSession() {
+      resetCalibration();
+      const boardType = document.getElementById('board-type').value;
+      log(`Starting calibration session (${boardType} board)...`);
+
+      const width = parseInt(document.getElementById('board-width').value, 10);
+      const height = parseInt(document.getElementById('board-height').value, 10);
+      const squareSize = parseFloat(document.getElementById('square-size').value);
+
+      if (boardType === 'chess') {
+        params = {
+          board_size: [width, height],
+          square_size: squareSize
+        };
+        endpoint = (id) => `/api/calibration/start/${id}`;
+      } else { // aruco
+        const markerSize = parseFloat(document.getElementById('marker-size').value);
+        const arucoDict = document.getElementById('aruco-dict').value;
+        params = {
+          board_size: [width, height],
+          square_size: squareSize,
+          marker_size: markerSize,
+          aruco_dict: arucoDict
+        };
+        endpoint = (id) => `/api/calibration/start/aruco/${id}`;
+      }
+
+      for (const id of Object.keys(state)) {
+        try {
+          await api('POST', endpoint(id) + "?mode=manual", params);
+        } catch (e) {
+          log(`Calibration session start failed: ${e}`, 'error');
+        }
+      }
+      updateCalibStatus();
+    }
+
+    async function intrinsicsCalibration() {
+      log('Intrinsics calibration strated...')
+      for (const id of Object.keys(state)) {
+        try {
+          await api('POST', `/api/calibration/intrinsics/${id}`);
+        } catch (e) {
+          log(`Intrinsics calibration for ${id} failed: ${e}`, error)
+        }
+      }
+    }
+
+    async function clearCalibration() {
+      for (const id of Object.keys(state)) {
+        await api('POST', `/api/calibration/clear/${id}`);
+      }
+      log('Calibration samples cleared');
+      updateCalibStatus();
+    }
+
+    checkServer();
+    setInterval(checkServer, 5000);
+    scanDevices();
+    populateArucoDicts();
+    toggleBoardFields();
+  </script>
 </body>
+
 </html>

@@ -7,15 +7,17 @@ calibration solve, status, and clearing collected samples.
 
 from __future__ import annotations
 
+import cv2
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from typing import Optional
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
 from viki.server.routes.models import (
-    ChessboardParams,
+    ArucoBoardParametersData,
+    BoardParametersData,
     IntrinsicsResponse,
     ExtrinsicsResponse,
 )
@@ -63,16 +65,41 @@ async def capture_all(
 async def start_worker(
     device_id: str,
     mode: str = "auto",
-    params: Optional[ChessboardParams] = None,
+    params: BoardParametersData | None = None,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
     if not params:
-        chessboard_size = (8, 6)
+        board_size = (8, 6)
         square_size = 0.025
     else:
-        chessboard_size = params.chessboard_size
+        board_size = params.board_size
         square_size = params.square_size
-    cal.start(device_id, chessboard_size, square_size, mode)
+    cal.start(device_id, mode, "chess", board_size, square_size)
+
+
+@router.post("/start/aruco/{device_id}")
+async def start_aruco_worker(
+    device_id: str,
+    mode: str = "auto",
+    params: ArucoBoardParametersData | None = None,
+    cal: CalibrationManager = Depends(get_calibrator),
+):
+    if not params:
+        board_size = (10, 8)
+        square_size = 1.0
+        marker_size = 1.0
+        aruco_dict = cv2.aruco.DICT_6X6_250
+    else:
+        board_size = params.board_size
+        square_size = params.square_size
+        marker_size = params.marker_size
+        try:
+            aruco_dict = getattr(cv2.aruco, params.aruco_dict)
+        except:
+            raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
+    cal.start(
+        device_id, mode, "aruco", board_size, square_size, marker_size, aruco_dict
+    )
 
 
 @router.get("/status/{device_id}")

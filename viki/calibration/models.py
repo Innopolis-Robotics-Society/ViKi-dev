@@ -6,12 +6,29 @@ from viki.capture.base import Frame
 
 
 @dataclass
+class BoardParameters:
+    board_size: Tuple[int, int]
+    square_size: float
+
+
+@dataclass
+class ArucoBoardParameters(BoardParameters):
+    marker_size: float
+    # aruco_dict: int = cv2.aruco.DICT_6X6_250
+    aruco_dict: int
+
+
+@dataclass
 class CalibrationSample:
     frame: Frame
     corners: np.ndarray
     resolution: Tuple[int, int]
-    chessboard_size: Tuple[int, int]
-    square_size: float
+    board_params: BoardParameters
+
+
+@dataclass
+class ArucoCalibrationSample(CalibrationSample):
+    ids: np.ndarray
 
 
 @dataclass
