@@ -16,6 +16,7 @@ def write_device_intrinsics(
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
 
+    print(data)
     entry = {
         "device_id": device_id,
         "fx": intrinsics.fx,
@@ -34,6 +35,7 @@ def write_device_intrinsics(
     else:
         data.append(entry)
 
+    print(file, data)
     with open(file, "w") as f:
         json.dump(data, f, indent=2)
 

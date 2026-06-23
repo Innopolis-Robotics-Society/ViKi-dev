@@ -1,7 +1,8 @@
 from dataclasses import dataclass, field
+from cv2.typing import MatLike
 import numpy as np
 import cv2
-from typing import Tuple
+from typing import Sequence, Tuple
 from viki.capture.base import Frame
 
 
@@ -21,14 +22,16 @@ class ArucoBoardParameters(BoardParameters):
 @dataclass
 class CalibrationSample:
     frame: Frame
-    corners: np.ndarray
+    corners: MatLike
     resolution: Tuple[int, int]
     board_params: BoardParameters
 
 
 @dataclass
 class ArucoCalibrationSample(CalibrationSample):
-    ids: np.ndarray
+    c_ids: MatLike
+    markers: Sequence[MatLike]
+    m_ids: MatLike
 
 
 @dataclass

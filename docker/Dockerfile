@@ -55,7 +55,7 @@ RUN pip install --no-cache-dir pip-tools && \
 
 COPY ./viki/ ./viki/
 COPY ./skeleton_tests/ ./skeleton_tests/
-RUN pip install --no-deps .
+RUN pip install --no-deps --no-cache-dir -e .
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh

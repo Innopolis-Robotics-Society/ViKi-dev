@@ -209,38 +209,9 @@ class CalibrationManager:
             )
         return extrinsics
 
-    def capture_all(self) -> dict:
-        success_map = {}
-        total_samples = 0
+    def capture_all(self) -> None:
         for device_id, worker in self._workers.items():
-            frame = worker._mgr.latest_frame(device_id)
-            if frame is None:
-                success_map[device_id] = False
-                continue
-
-            # We use a simplified version of add_sample to check success immediately
-            # instead of just calling worker.capture() which is void.
-            chessboard_size = worker.board_params.board_size
-            square_size = worker.board_params.square_size
-            gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-            flags = (
-                cv2.CALIB_CB_ADAPTIVE_THRESH
-                | cv2.CALIB_CB_NORMALIZE_IMAGE
-                | cv2.CALIB_CB_FAST_CHECK
-            )
-            ret, corners = cv2.findChessboardCorners(gray, chessboard_size, None, flags)
-
-            if ret:
-                worker.add_sample(frame)
-                success_map[device_id] = True
-            else:
-                success_map[device_id] = False
-
-        # Calculate total samples across all workers
-        for device_id in self._workers:
-            total_samples += self.samples_count(device_id)
-
-        return {"success_map": success_map, "sample_count": total_samples}
+            worker.capture()
 
     def capture(self, device_id: str) -> None:
         worker = self._workers.get(device_id)

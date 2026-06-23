@@ -2,11 +2,12 @@ import cv2
 
 # ------------------ Setup board and detector ------------------
 dictionary = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_50)
-board = cv2.aruco.CharucoBoard((10, 8), 0.048, 0.036, dictionary)
+board = cv2.aruco.CharucoBoard((8, 10), 0.048, 0.036, dictionary)
 
 params = cv2.aruco.DetectorParameters()
 params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
 detector = cv2.aruco.ArucoDetector(dictionary, params)
+charuco_detector = cv2.aruco.CharucoDetector(board)
 
 # ------------------ Open webcam (index 0) --------------------
 cap = cv2.VideoCapture(0)
@@ -35,7 +36,10 @@ while True:
         corners, ids, gray, board, None, None
     )
 
-    print(charuco_retval, charuco_corners, charuco_ids)
+    # print(charuco_retval, charuco_corners, charuco_ids)
+
+    a, b, c, d = charuco_detector.detectBoard(gray)
+    print(a, b)
 
     # Draw results on the original frame
     debug_frame = frame.copy()

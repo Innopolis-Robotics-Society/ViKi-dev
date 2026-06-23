@@ -9,6 +9,7 @@ x-common: &common
     - /run/udev:/run/udev:ro
     - /tmp/.X11-unix:/tmp/.X11-unix
     - ./data:/app/data
+    - ./viki:/app/viki
   environment:
     - PYTHONUNBUFFERED=1
     - PYTHONPATH=/app
@@ -24,7 +25,7 @@ services:
     container_name: viki
     restart: unless-stopped
     entrypoint: ["/app/docker/entrypoint.sh"]
-    command: ["uvicorn", "viki.server.app:app", "--host", "0.0.0.0", "--port", "8000"]
+    command: ["uvicorn", "viki.server.app:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
 
   terminal:
     <<: *common

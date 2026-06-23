@@ -27,6 +27,9 @@ from viki.server.routes import calibration, cameras, skeleton
 STATIC_DIR = Path(__file__).parent / "static"
 
 
+logging.basicConfig(level=logging.DEBUG)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.manager = CameraManager()

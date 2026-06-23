@@ -1,6 +1,7 @@
 import cv2
-import threading
-from typing import List
+from typing import List, Sequence
+
+from cv2.typing import MatLike
 from viki.capture.base import Frame
 from viki.capture.manager import CameraManager
 from viki.calibration.models import (
@@ -34,40 +35,53 @@ class ArucoWorker(_CalibrationWorker):
             self.dictionary,
         )
 
+        self.detector = cv2.aruco.CharucoDetector(self.board)
+
     def add_sample(self, frame: Frame) -> None:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
 
         # 1. Detect ArUco markers
-        corners, ids, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
-        if ids is None or len(ids) == 0:
+        # markers, ids, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
+
+        corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
+
+        if m_ids is None or len(m_ids) == 0:
             self._logger.debug(
-                f"{self.device_id} add_sample: no ArUco markers detected {self.board_params.board_size}"
+                f"{self.device_id} add_sample: no ArUco markers detected {self.board_params}"
             )
             return
+        if c_ids is None or len(c_ids) == 0:
+            self._logger.debug(
+                f"{self.device_id} add_sample: no ArUco corners detected {self.board_params}"
+            )
+            return
+
         self._logger.debug(self.board_params)
-        self._logger.debug(ids)
+        self._logger.debug(corners, c_ids, markers, m_ids)
 
         # 2. Interpolate chessboard corners from the markers
-        ret, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
-            corners, ids, gray, self.board
-        )
+        # ret, charuco_corners, charuco_ids = cv2.aruco.interpolateCornersCharuco(
+        #     corners, ids, gray, self.board
+        # )
 
         h, w = frame.color.shape[:2]
 
         # Store the detected corners and IDs inside the sample
         sample = ArucoCalibrationSample(
             frame=frame,
-            corners=charuco_corners,
-            ids=charuco_ids,
+            corners=corners,
             resolution=(w, h),
             board_params=self.board_params,
+            markers=markers,
+            c_ids=c_ids,
+            m_ids=m_ids,
         )
 
         with self._lock:
             self._samples.append(sample)
 
         self._logger.debug(
-            f"{self.device_id} add_sample: success (ids: {charuco_ids.flatten()})"
+            f"{self.device_id} add_sample: success (ids: {corners, c_ids})"
         )
 
     def intrinsics_calibration(
@@ -96,8 +110,14 @@ class ArucoWorker(_CalibrationWorker):
         for sample in samples:
             if not type(sample) is ArucoCalibrationSample:
                 continue
-            all_charuco_corners.append(sample.corners)
-            all_charuco_ids.append(sample.ids)
+            print(sample.corners)
+            if (
+                sample.corners is not None
+                and sample.c_ids is not None
+                and len(sample.corners) > 8
+            ):
+                all_charuco_corners.append(sample.corners)
+                all_charuco_ids.append(sample.c_ids)
 
         if len(all_charuco_corners) < 20:
             msg = (
@@ -154,9 +174,14 @@ class ArucoWorker(_CalibrationWorker):
         camera_matrix = intrinsics.camera_matrix
         dist_coeffs = intrinsics.dist_coeffs
 
+        if not type(sample.corners) is Sequence[MatLike]:
+            msg = f"ArucoWorker extrinsics_calibration: Incompatible sample format"
+            self._logger.debug(msg)
+            raise RuntimeError(msg)
+
         ret, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
             sample.corners,
-            sample.ids,
+            sample.c_ids,
             self.board,
             camera_matrix,
             dist_coeffs,

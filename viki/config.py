@@ -8,8 +8,8 @@ Keeping them here makes the streaming/visualisation behaviour easy to
 tweak without hunting through request handlers.
 """
 
-INTRINSICS_FILENAME = "intrinsics_calibration.json"
-EXTRINSICS_FILENAME = "extrinsics_calibration.json"
+INTRINSICS_FILENAME = "data/intrinsics_calibration.json"
+EXTRINSICS_FILENAME = "data/extrinsics_calibration.json"
 
 # ── Camera-start defaults (mirror StartRequest)
 DEFAULT_FPS = 30

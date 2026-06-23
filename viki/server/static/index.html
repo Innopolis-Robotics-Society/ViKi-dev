@@ -858,23 +858,7 @@
     async function captureSample() {
       log('Capturing calibration sample...');
       try {
-        const res = await api('POST', '/api/calibration/capture');
-
-        let success_count = 0;
-        for (const [id, success] of Object.entries(res.success_map)) {
-          if (success) {
-            success_count++;
-          } else {
-            log(`Sample rejected for ${id}: Chessboard not found`, 'error');
-          }
-        }
-
-        if (success_count > 0) {
-          log(`Sample added for ${success_count} camera(s). Total events: ${res.sample_count}`, 'ok');
-        } else {
-          log('Sample rejected: Chessboard not found in any camera', 'error');
-        }
-
+        await api('POST', '/api/calibration/capture');
         updateCalibStatus();
       } catch (e) {
         log(`Capture failed: ${e}`, 'error');

@@ -47,8 +47,7 @@ async def capture(
 async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
-    res = cal.capture_all()
-    return res if res is not None else {"success_map": {}, "sample_count": 0}
+    cal.capture_all()
 
 
 @router.post("/start/{device_id}")
