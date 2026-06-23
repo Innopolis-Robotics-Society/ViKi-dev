@@ -23,7 +23,7 @@ from viki.server.routes.models import (
 )
 from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
 
-router = APIRouter(prefix="/api/calibrate", tags=["calibration"])
+router = APIRouter(prefix="/api/calibration", tags=["calibration"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}

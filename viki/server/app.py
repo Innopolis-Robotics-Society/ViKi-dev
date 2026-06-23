@@ -4,7 +4,10 @@ viki.server.app
 Application assembly only: lifespan resources, static files, router wiring.
 All request logic lives in ``viki.server.routes`` and ``viki.server.streams``.
 """
+
 from __future__ import annotations
+
+import logging
 
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,22 +31,22 @@ STATIC_DIR = Path(__file__).parent / "static"
 async def lifespan(app: FastAPI):
     app.state.manager = CameraManager()
     app.state.calibrator = CalibrationManager(app.state.manager)
-    #for device in range(app.state.manager.active_device_ids):
+    # for device in range(app.state.manager.active_device_ids):
 
-    #app.state.calibrator.load_intrinsics(app.state.manager.active_device_ids)
-    #app.state.calibrator.load_extrinsics()
+    # app.state.calibrator.load_intrinsics(app.state.manager.active_device_ids)
+    # app.state.calibrator.load_extrinsics()
     app.state.sync = MultiCameraSync(app.state.manager)
     app.state.skeleton_pipeline = SkeletonPipeline(app.state.calibrator)
     app.state.skeleton_recorder = SkeletonRecorder()
-    
+
     app.state.skeleton_worker = SkeletonWorker(
-        app.state.manager, 
-        app.state.sync, 
-        app.state.skeleton_pipeline, 
-        app.state.skeleton_recorder
+        app.state.manager,
+        app.state.sync,
+        app.state.skeleton_pipeline,
+        app.state.skeleton_recorder,
     )
     app.state.skeleton_worker.start()
-    
+
     yield
     app.state.skeleton_worker.stop()
     app.state.manager.stop_all()

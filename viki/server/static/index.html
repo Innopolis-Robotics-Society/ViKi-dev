@@ -320,7 +320,7 @@
       padding: 14px;
     }
 
-    .calib-stream {
+    .calib-streams {
       flex: 1;
       background: #000;
       border-radius: 4px;
@@ -328,12 +328,6 @@
       display: flex;
       align-items: center;
       justify-content: center;
-    }
-
-    .calib-stream img {
-      max-width: 100%;
-      height: auto;
-      display: block;
     }
 
     .calib-controls {
@@ -425,8 +419,8 @@
       <button class="danger" onclick="toggleCalibration()">✕ Close</button>
     </div>
     <div class="calib-body">
-      <div class="calib-stream">
-        <img id="calib-stream-img" src="" alt="Calibration Stream">
+      <div id="calib-streams" class="calib-streams">
+        <!-- streams -->
       </div>
       <div class="calib-controls">
         <div class="board-params">
@@ -797,27 +791,74 @@
       panel.style.display = isVisible ? 'none' : 'block';
 
       if (!isVisible) {
-        const img = document.getElementById('calib-stream-img');
-        img.src = `/api/calibrate/stream?t=${Date.now()}`;
+        populateCalibrationStreams();
         updateCalibStatus();
       } else {
-        document.getElementById('calib-stream-img').src = '';
+        clearCalibrationStreams();
+        resetCalibration();
+        document.getElementById('calib-streams').innerHTML = '';
       }
     }
 
+    async function resetCalibration() {
+      await api('POST', `/api/calibration/reset`);
+    }
+
+    function populateCalibrationStreams() {
+      const container = document.getElementById('calib-streams');
+      container.innerHTML = '';
+      const deviceIds = Object.keys(state);
+      if (deviceIds.length === 0) {
+        container.innerHTML = '<div style="color:var(--muted);padding:20px;">No cameras detected</div>';
+        return;
+      }
+
+      container.className = 'calib-streams';
+      deviceIds.forEach(id => {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'calib-stream-wrapper'
+        wrapper.dataset.deviceId = id;
+
+        const img = document.createElement('img');
+        img.src = `/api/cameras/${id}/stream?mode=color&t=${Date.now()}`;
+        wrapper.appendChild(img);
+
+        const label = document.createElement('span');
+        label.className = 'calib-stream-label';
+        label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(…)</span>`;
+        wrapper.appendChild(label);
+
+        container.appendChild(wrapper);
+      });
+
+      updateCalibStatus();
+    }
+
+    function clearCalibrationStreams() {
+      const container = document.getElementById('calib-streams');
+      container.querySelectorAll('img').forEach(img => img.src = '');
+      container.innerHTML = '';
+    }
+
     async function updateCalibStatus() {
-      try {
-        const data = await api('GET', '/api/calibrate/status');
-        document.getElementById('calib-status').textContent = `Samples: ${data.sample_count}`;
-      } catch (e) {
-        log('Status check failed', 'error');
+      const deviceIds = Object.keys(state);
+      for (const id of deviceIds) {
+        const countEl = document.getElementById(`calib-count-${id}`);
+        if (!countEl) continue;
+        try {
+          const data = await api('GET', `/api/calibration/status/${id}`);
+          countEl.textContent = `(${data.samples_count} samples)`;
+        } catch (e) {
+          countEl.textContent = `(error)`;
+          log(`Status check for ${id} failed`, 'error');
+        }
       }
     }
 
     async function captureSample() {
       log('Capturing calibration sample...');
       try {
-        const res = await api('POST', '/api/calibrate/capture');
+        const res = await api('POST', '/api/calibration/capture');
 
         let success_count = 0;
         for (const [id, success] of Object.entries(res.success_map)) {
@@ -840,29 +881,45 @@
       }
     }
 
-    async function runCalibration() {
-      log('Running calibration... please wait...');
-      try {
-        const res = await api('POST', '/api/calibrate/run');
+    async function startCalibrationSession() {
+      resetCalibration();
+      const boardType = document.getElementById('board-type').value;
+      log(`Starting calibration session (${boardType} board)...`);
 
-        for (const id of res.cameras) {
-          const err = res.errors[id];
-          log(`Calibration ${id}: RMS Error = ${err.toFixed(4)}px`, err < 0.5 ? 'ok' : 'error');
-        }
+      const width = parseInt(document.getElementById('board-width').value, 10);
+      const height = parseInt(document.getElementById('board-height').value, 10);
+      const squareSize = parseFloat(document.getElementById('square-size').value);
 
-        if (res.stereo_calibrated) {
-          const serr = res.stereo_error;
-          log(`Stereo Calibration: RMS Error = ${serr.toFixed(4)}px`, serr < 0.5 ? 'ok' : 'error');
-        }
-
-        log(`Calibration complete! ${res.cameras.length} cameras calibrated.`, 'ok');
-      } catch (e) {
-        log(`Calibration failed: ${e}`, 'error');
+      if (boardType === 'chess') {
+        params = {
+          board_size: [width, height],
+          square_size: squareSize
+        };
+        endpoint = (id) => `/api/calibration/start/${id}`;
+      } else { // aruco
+        const markerSize = parseFloat(document.getElementById('marker-size').value);
+        const arucoDict = document.getElementById('aruco-dict').value;
+        params = {
+          board_size: [width, height],
+          square_size: squareSize,
+          marker_size: markerSize,
+          aruco_dict: arucoDict
+        };
+        endpoint = (id) => `/api/calibration/start/aruco/${id}`;
       }
+
+      for (const id of Object.keys(state)) {
+        try {
+          await api('POST', endpoint(id) + "?mode=manual", params);
+        } catch (e) {
+          log(`Calibration session start failed: ${e}`, 'error');
+        }
+      }
+      updateCalibStatus();
     }
 
     async function clearCalibration() {
-      await api('POST', '/api/calibrate/clear');
+      await api('POST', '/api/calibration/clear');
       log('Calibration samples cleared');
       updateCalibStatus();
     }
