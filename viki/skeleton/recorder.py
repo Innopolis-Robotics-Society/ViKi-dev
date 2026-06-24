@@ -20,7 +20,7 @@ class SkeletonRecorder:
     Records a sequence of SkeletonFrames to a JSON file.
     """
 
-    def __init__(self, base_dir: str | Path = "viki/recordings") -> None:
+    def __init__(self, base_dir: str | Path = "data") -> None:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._current_file = None
@@ -40,8 +40,12 @@ class SkeletonRecorder:
     def record(self, frame: SkeletonFrame) -> None:
         """
         Add a frame to the current recording session.
+        Discards frames where all landmarks are NaN.
         """
         if self._current_file is None:
+            return
+
+        if np.isnan(frame.landmarks).all():
             return
 
         # Convert numpy arrays to lists for JSON serialization

@@ -98,8 +98,8 @@ class HandDetector:
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
-        min_hand_confidence: float = 0.6,
-        min_pose_confidence: float = 0.5,
+        min_hand_confidence: float = 0.5,
+        min_pose_confidence: float = 0.3,
         mirrored: bool = False,
         arm_only: bool = False,
     ) -> None:
@@ -132,8 +132,10 @@ class HandDetector:
         self._live_hand_result = None
         self._live_pose_result = None 
         self._live_last_ts_ms  = -1  # timestamp of last result returned to caller
+        self._last_timestamp_ms = -1 # track last timestamp sent to MediaPipe (for video mode)
 
         def _hand_cb(result, _img, _ts):
+
             with self._lock:
                 self._live_hand_result = result
 
@@ -191,10 +193,16 @@ class HandDetector:
             data=np.ascontiguousarray(frame.rgb),
         )
         timestamp_ms = frame.timestamp_us // 1000
-
+ 
         if self._mode == "video":
+            # MediaPipe requires strictly increasing timestamps.
+            if timestamp_ms <= self._last_timestamp_ms:
+                timestamp_ms = self._last_timestamp_ms + 1
+            self._last_timestamp_ms = timestamp_ms
+ 
             hand_result = self._hands.detect_for_video(mp_image, timestamp_ms) if self._hands else None
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
+
             
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
@@ -217,6 +225,7 @@ class HandDetector:
         else:  # image
             hand_result = self._hands.detect(mp_image) if self._hands else None
             pose_result = self._pose.detect(mp_image)
+            print(f"DEBUG: MediaPipe raw results - hand: {hand_result is not None}, pose: {pose_result is not None}")
 
         # Debug logging for detection results
         hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h) if not self._arm_only else (None, None, 1.0)
@@ -272,7 +281,11 @@ class HandDetector:
         self, result, w: int, h: int
     ) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Returns (px (3,2), z_rel (3,)) for [wrist, elbow, shoulder] or (None, None)."""
+        if result is None:
+            print("DEBUG: _extract_pose: result is None")
+            return None, None
         if not result.pose_landmarks:
+            print(f"DEBUG: _extract_pose: pose_landmarks is empty. Result type: {type(result)}")
             return None, None
 
         lms = result.pose_landmarks[0] # take only one person; 33 points
@@ -309,6 +322,10 @@ class HandDetector:
             z  = np.full(21, np.nan, dtype=np.float32)
 
         if pose_px is not None and pose_z is not None:
+            # Override wrist (index 0) with pose wrist for arm-hand continuity
+            px[0] = pose_px[0]
+            z[0] = pose_z[0]
+            
             elbow_px    = pose_px[1]
             shoulder_px = pose_px[2]
             elbow_z     = pose_z[1]

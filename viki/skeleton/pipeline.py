@@ -50,7 +50,7 @@ class SkeletonPipeline:
         self._calibrator = calibrator
 
         self._cache = UndistortCache()
-        self._detector = HandDetector(hand=hand, arm_only=arm_only)
+        self._detector = HandDetector(hand=hand, mode="live", arm_only=arm_only)
         self._R, self._T = load_extrinsics(calib_path)
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
@@ -143,13 +143,8 @@ class SkeletonPipeline:
         if detection is None:
             return None
 
-        # Re-get intrinsics for deprojection
-        intrinsics = self._calibrator.get_intrinsics(device_id)
-        if intrinsics is None:
-            return None
-
-        # We need the prepared frame for depth data. 
-        # To avoid re-preparing, we can just prepare it again here (it's cached).
+        # Use the same preparation logic as _prepare_camera to ensure we have
+        # a fallback K matrix if calibration is missing.
         prepared = self._prepare_camera(device_id, group)
         if prepared is None:
             return None
