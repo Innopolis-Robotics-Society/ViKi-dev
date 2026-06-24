@@ -396,10 +396,33 @@
       gap: 10px;
     }
 
-    .skeleton-stats {
-      font-size: 11px;
+    .skeleton-table-container {
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+    #skel-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+    #skel-table th, #skel-table td {
+      text-align: left;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    #skel-table th {
+      position: sticky;
+      top: 0;
+      background: var(--surface);
       color: var(--muted);
-      margin-bottom: 8px;
+    }
+    #skel-canvas-3d {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
   </style>
 </head>
@@ -480,20 +503,33 @@
       <span class="title">3D Skeleton Estimation</span>
       <button class="danger" onclick="toggleSkeleton()">✕ Close</button>
     </div>
-    <div class="skeleton-body">
-      <div class="skeleton-viz" id="skeleton-viz" style="display:none">
-        <!-- Now handled by canvas overlays on camera cards -->
+      <div class="skeleton-body">
+        <div class="skeleton-viz" id="skeleton-viz" style="display:flex; align-items:center; justify-content:center;">
+          <canvas id="skel-canvas-3d"></canvas>
+        </div>
+        <div class="skeleton-controls">
+          <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
+          <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
+            <label for="skel-viz-cam">Visualize Camera</label>
+            <select id="skel-viz-cam" onchange="updateSkelVizCam()"></select>
+          </div>
+          <button id="btn-skel-start" class="primary" onclick="toggleEstimation(true)">▶ Start Estimation</button>
+          <button id="btn-skel-stop" class="danger" onclick="toggleEstimation(false)" disabled>■ Stop Estimation</button>
+          <div class="sep"></div>
+          <button id="btn-skel-rec-start" onclick="toggleRecording(true)">🔴 Record</button>
+          <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop Recording</button>
+          
+          <div class="skeleton-table-container">
+            <table id="skel-table">
+              <thead>
+                <tr><th>Joint</th><th>X</th><th>Y</th><th>Z</th></tr>
+              </thead>
+              <tbody id="skel-table-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
-      <div class="skeleton-controls">
-        <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
-        <button id="btn-skel-start" class="primary" onclick="toggleEstimation(true)">▶ Start Estimation</button>
-        <button id="btn-skel-stop" class="danger" onclick="toggleEstimation(false)" disabled>■ Stop Estimation</button>
-        <div class="sep"></div>
-        <button id="btn-skel-rec-start" onclick="toggleRecording(true)">🔴 Record</button>
-        <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop
-          Recording</button>
-      </div>
-    </div>
+
   </div>
 
   <div class="grid" id="grid">
@@ -920,13 +956,110 @@
 
     // --- Skeleton Logic ---
     let skeletonWs = null;
-    let skelPoints = [];
+    let skelPoints = []; // Current 3D points for the selected camera
+    let selectedSkelCam = null;
+
+    const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
+    const SKEL_CONNS = [
+      [22, 21], [21, 0], // Arm
+      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8], // Index
+      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
+      [5, 9], [9, 13], [13, 17], // Palm
+    ];
+
+    function populateSkelVizCams() {
+      const select = document.getElementById('skel-viz-cam');
+      if (!select) return;
+      select.innerHTML = '';
+      Object.keys(state).forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        select.appendChild(opt);
+      });
+      updateSkelVizCam();
+    }
+
+    function updateSkelVizCam() {
+      selectedSkelCam = document.getElementById('skel-viz-cam')?.value;
+      // Clear current viz if changing camera
+      skelPoints = [];
+      drawSkeleton3D([]);
+      document.getElementById('skel-table-body').innerHTML = '';
+    }
+
+    function drawSkeleton3D(landmarks) {
+      const canvas = document.getElementById('skel-canvas-3d');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      
+      // Set canvas size to match container
+      const container = document.getElementById('skeleton-viz');
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!landmarks || landmarks.length === 0) return;
+
+      // Simple Orthographic Projection (XZ plane)
+      const scale = 500;
+      const offset = { x: canvas.width / 2, y: canvas.height / 2 };
+      
+      const project = (p) => ({
+        x: offset.x + p[0] * scale,
+        y: offset.y - p[1] * scale, // Invert Y for screen
+      });
+      
+      ctx.strokeStyle = '#5b7fff';
+      ctx.lineWidth = 2;
+      ctx.fillStyle = '#fff';
+      
+      SKEL_CONNS.forEach(([a, b]) => {
+        if (landmarks[a] && landmarks[b]) {
+          const p1 = project(landmarks[a]);
+          const p2 = project(landmarks[b]);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      });
+      
+      landmarks.forEach((p, i) => {
+        if (!p) return;
+        const proj = project(p);
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
+
+    function updateSkeletonUI(deviceId, landmarks) {
+      if (deviceId !== selectedSkelCam) return;
+
+      const tableBody = document.getElementById('skel-table-body');
+      if (tableBody) {
+        tableBody.innerHTML = '';
+        landmarks.forEach((p, i) => {
+          if (!p) return;
+          const row = document.createElement('tr');
+          row.innerHTML = `<td>${SKEL_NAMES[i] || i}</td><td>${p[0].toFixed(3)}</td><td>${p[1].toFixed(3)}</td><td>${p[2].toFixed(3)}</td>`;
+          tableBody.appendChild(row);
+        });
+      }
+      
+      drawSkeleton3D(landmarks);
+    }
 
     function toggleSkeleton() {
       const panel = document.getElementById('skeleton-panel');
       const isVisible = panel.style.display === 'block';
       panel.style.display = isVisible ? 'none' : 'block';
       if (!isVisible) {
+        populateSkelVizCams();
         updateSkelStatus();
       }
     }
@@ -981,9 +1114,29 @@
         const data = JSON.parse(event.data);
         const detections = data.detections;
 
-        for (const [deviceId, pts] of Object.entries(detections)) {
+        for (const [deviceId, det] of Object.entries(detections)) {
+          if (!det) continue;
+
+          // Prepare 3D points for table/viz (normalized)
+          let pts3d = det;
+          if (typeof det === 'object' && 'px' in det) {
+            const img = document.getElementById(`color-${deviceId}`);
+            const w = img ? img.naturalWidth : 640;
+            const h = img ? img.naturalHeight : 480;
+            pts3d = det.px.map((p, i) => [
+              p[0] / w, 
+              p[1] / h, 
+              (det.lm_z_rel && det.lm_z_rel[i]) || 0
+            ]);
+          }
+          updateSkeletonUI(deviceId, pts3d);
+
+          // 2D Overlay
           const canvas = document.getElementById(`skel-canvas-${deviceId}`);
-          if (!canvas || !pts) continue;
+          if (!canvas) continue;
+          
+          const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
+          if (!pts2d || !Array.isArray(pts2d)) continue;
 
           const ctx = canvas.getContext('2d');
           const img = document.getElementById(`color-${deviceId}`);
@@ -1009,8 +1162,9 @@
           ctx.lineWidth = 3;
 
           // Landmarks for arm chain: Wrist (0), Elbow (21), Shoulder (22)
-          const indices = [0, 21, 22];
-          const coords = indices.map(i => pts[i] ? [pts[i][0] * scaleX, pts[i][1] * scaleY] : null);
+           const indices = [0, 21, 22];
+           const coords = indices.map(i => pts2d[i] ? [pts2d[i][0] * scaleX, pts2d[i][1] * scaleY] : null);
+
 
           // Draw lines
           ctx.beginPath();

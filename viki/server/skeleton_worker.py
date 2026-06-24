@@ -108,7 +108,6 @@ class SkeletonWorker:
                         with self._lock:
                             self._latest_result = result
                             logger.debug(f"SkeletonWorker: result of fusion: {result}")
-                            time.sleep(1)
 
                         if result.fused_frame is None:
                             logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection).")

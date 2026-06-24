@@ -6,6 +6,7 @@ Public orchestrator for the skeleton detection pipeline.a
 
 from __future__ import annotations
 
+from time import sleep
 from typing import Optional, Literal
 import logging
 
@@ -102,6 +103,7 @@ class SkeletonPipeline:
             fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
         
         # print(f"DEBUG: Fusion result: {fused is not None}")
+        sleep(1) #TODO remove, for testing 
         return PipelineResult(fused_frame=fused, detections=detections)
 
     def close(self) -> None:
