@@ -173,26 +173,25 @@ class HandDetector:
     def detect(self, frame: Optional[PreparedFrame]) -> Optional[HandDetection]:
         """
         Run detection on a PreparedFrame.
-
+ 
         IMAGE — blocking, returns result immediately.
         VIDEO — blocking with tracking; frame.timestamp_us must be strictly increasing.
         LIVE  — non-blocking; submits frame async and returns the PREVIOUS result.
                 First call always returns None (no previous result yet).
-
+ 
         Returns None if hand is not detected.
         """
         if frame is None:
-            print("DEBUG: HandDetector.detect: frame is None")
             return None
-
+ 
         h, w = frame.rgb.shape[:2]
-        print(f"DEBUG: HandDetector.detect: image size {w}x{h}")
-
+ 
         mp_image = self._mp.Image(
             image_format=self._mp.ImageFormat.SRGB,
             data=np.ascontiguousarray(frame.rgb),
         )
         timestamp_ms = frame.timestamp_us // 1000
+
  
         if self._mode == "video":
             # MediaPipe requires strictly increasing timestamps.
@@ -207,8 +206,16 @@ class HandDetector:
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
             if self._hands:
+                if timestamp_ms <= self._last_timestamp_ms:
+                    timestamp_ms = self._last_timestamp_ms + 1
+                self._last_timestamp_ms = timestamp_ms
                 self._hands.detect_async(mp_image, timestamp_ms)
+            
+            if timestamp_ms <= self._last_timestamp_ms:
+                timestamp_ms = self._last_timestamp_ms + 1
+            self._last_timestamp_ms = timestamp_ms
             self._pose.detect_async(mp_image, timestamp_ms)
+            
             with self._lock:
                 
                 hand_result = self._live_hand_result

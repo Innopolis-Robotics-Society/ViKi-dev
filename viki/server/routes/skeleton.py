@@ -12,6 +12,7 @@ import json
 import time
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
+import numpy as np
 
 from viki.server.deps import get_worker
 from viki.server.skeleton_worker import SkeletonWorker
@@ -56,7 +57,7 @@ async def skeleton_stream(websocket: WebSocket):
                     "confidence": frame.confidence.tolist() if frame else [],
                     "origin": [str(o) for o in frame.origin] if frame else [],
                     "detections": {
-                        dev_id: det.px.tolist() if det else None 
+                        dev_id: det.px.tolist() if (det and not np.isnan(det.px).any()) else None 
                         for dev_id, det in detections.items()
                     }
                 }

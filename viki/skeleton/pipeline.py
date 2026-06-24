@@ -56,38 +56,35 @@ class SkeletonPipeline:
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
         """
         Run the full pipeline on one SyncedFrameGroup.
-
+ 
         Returns a PipelineResult containing the fused 3D frame and per-camera 2D detections.
-
+ 
         Parameters
         ----------
         group : SyncedFrameGroup
             Output of MultiCameraSync.get_synced_frame().
-
+ 
         Returns
         -------
         PipelineResult
         """
-        print(f"DEBUG: Pipeline process called with {len(group.frames)} frames")
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
-
+ 
         # Process all frames in the group
         for dev_id, frame in group.frames.items():
-            print(f"DEBUG: Processing device {dev_id}")
             prepared = self._prepare_camera(dev_id, group)
             if prepared is None:
-                print(f"DEBUG: Pipeline: Preparation failed for {dev_id}")
                 detections[dev_id] = None
                 lms_3d[dev_id] = None
                 continue
             
             det = self._detector.detect(prepared)
-            print(f"DEBUG: Detector result for {dev_id}: {det is not None}")
             detections[dev_id] = det
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
-
+ 
         # Fusion logic:
+
         # Master camera is the first device in the group.
         # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())

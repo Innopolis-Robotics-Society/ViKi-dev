@@ -49,7 +49,7 @@ def _wrist_scale(
     if not (0 <= v < h and 0 <= u < w):
         return None
     Z_wrist = depth_m[v, u]
-    if np.isnan(Z_wrist) or wrist_z_rel == 0.0:
+    if np.isnan(Z_wrist).any() or wrist_z_rel == 0.0:
         return None
     return float(Z_wrist / wrist_z_rel)
 
