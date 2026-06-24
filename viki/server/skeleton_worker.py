@@ -107,27 +107,29 @@ class SkeletonWorker:
                         
                         with self._lock:
                             self._latest_result = result
+                            logger.debug(f"SkeletonWorker: result of fusion: {result}")
+                            time.sleep(1)
 
                         if result.fused_frame is None:
-                            # Log occasionally that we got frames but no detection
-                            if np.random.random() < 0.01:
-                                logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection or missing calib).")
+                            logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection).")
+                            time.sleep(1)
                         else:
                             # 3. Record if enabled
                             if self._recording:
                                 self._recorder.record(result.fused_frame)
                     else:
                         # This happens if cameras aren't producing frames or sync is failing
-                        if np.random.random() < 0.01:
-                            logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
+                        logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
+                        time.sleep(1)
                 except Exception as e:
                     logger.exception(f"Skeleton worker pipeline error: {e}")
+                    time.sleep(1)
             
             # Maintain target FPS
-            elapsed = time.monotonic() - start_time
-            sleep_time = self._interval - elapsed
-            if sleep_time > 0:
-                time.sleep(sleep_time)
+            # elapsed = time.monotonic() - start_time
+            # sleep_time = self._interval - elapsed
+            # if sleep_time > 0:
+            #     time.sleep(sleep_time)
 
     @property
     def is_enabled(self) -> bool:

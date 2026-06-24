@@ -19,7 +19,7 @@ from viki.skeleton.camera_prep import UndistortCache, prepare_frame
 from viki.skeleton.fusion import fuse, load_extrinsics
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.hand_detector import HandDetector
-from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult
+from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
 
 
 class SkeletonPipeline:
@@ -45,13 +45,12 @@ class SkeletonPipeline:
         calibrator: CalibrationManager,
         calib_path: str = "viki/capture/calibration_results.npz",
         hand: Literal["right", "left"] = "right",
-        arm_only: bool = False,
     ) -> None:
         self._calibrator = calibrator
-
         self._cache = UndistortCache()
-        self._detector = HandDetector(hand=hand, mode="live", arm_only=arm_only)
+        self._detector = HandDetector(hand=hand, mode="live")
         self._R, self._T = load_extrinsics(calib_path)
+
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
         """
@@ -102,7 +101,7 @@ class SkeletonPipeline:
             # Single camera case: just use the first camera as origin
             fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
         
-        print(f"DEBUG: Fusion result: {fused is not None}")
+        # print(f"DEBUG: Fusion result: {fused is not None}")
         return PipelineResult(fused_frame=fused, detections=detections)
 
     def close(self) -> None:
@@ -119,6 +118,7 @@ class SkeletonPipeline:
         """Stage 1: prepare frame for detection."""
         frame = group.frames.get(device_id)
         if frame is None:
+            logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
 
         intrinsics = self._calibrator.get_intrinsics(device_id)

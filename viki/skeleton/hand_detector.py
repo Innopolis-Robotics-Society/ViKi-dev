@@ -101,17 +101,16 @@ class HandDetector:
         min_hand_confidence: float = 0.5,
         min_pose_confidence: float = 0.3,
         mirrored: bool = False,
-        arm_only: bool = False,
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
-
+ 
         self._hand = hand
         self._mode = mode
-        self._arm_only = arm_only
-
+ 
         if mirrored:
+
             self._target_label = "Left" if hand == "right" else "Right"
         else:
             self._target_label = "Right" if hand == "right" else "Left"
@@ -144,20 +143,17 @@ class HandDetector:
                 self._live_pose_result = result
                 
 
-        if not self._arm_only:
-            hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
-            hand_opts = vision.HandLandmarkerOptions(
-                base_options=python.BaseOptions(model_asset_path=hand_path),
-                running_mode=running_mode,
-                num_hands=1,
-                min_hand_detection_confidence=min_hand_confidence,
-                min_hand_presence_confidence=min_hand_confidence,
-                min_tracking_confidence=min_hand_confidence,
-                **({"result_callback": _hand_cb} if mode == "live" else {}),
-            )
-            self._hands = vision.HandLandmarker.create_from_options(hand_opts)
-        else:
-            self._hands = None
+        hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
+        hand_opts = vision.HandLandmarkerOptions(
+            base_options=python.BaseOptions(model_asset_path=hand_path),
+            running_mode=running_mode,
+            num_hands=1,
+            min_hand_detection_confidence=min_hand_confidence,
+            min_hand_presence_confidence=min_hand_confidence,
+            min_tracking_confidence=min_hand_confidence,
+            **({"result_callback": _hand_cb} if mode == "live" else {}),
+        )
+        self._hands = vision.HandLandmarker.create_from_options(hand_opts)
 
         pose_opts = vision.PoseLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=pose_path),
@@ -221,7 +217,7 @@ class HandDetector:
                 hand_result = self._live_hand_result
                 pose_result = self._live_pose_result
                 last_ts     = self._live_last_ts_ms
-            if (not self._arm_only and hand_result is None) or pose_result is None:
+            if (hand_result is None) or pose_result is None:
                 return None  # no result yet (first frame)
             # Callback hasn't fired for this frame yet — stale result, skip
             if last_ts == timestamp_ms:
@@ -235,8 +231,8 @@ class HandDetector:
             print(f"DEBUG: MediaPipe raw results - hand: {hand_result is not None}, pose: {pose_result is not None}")
 
         # Debug logging for detection results
-        hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h) if not self._arm_only else (None, None, 1.0)
-        if not self._arm_only and hand_px is None:
+        hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h)
+        if hand_px is None:
             print(f"DEBUG: Hand detection failed: hand_result is {hand_result is None}")
             return None
 
@@ -311,7 +307,7 @@ class HandDetector:
         hand_px: np.ndarray | None,       # (21, 2)
         hand_z:  np.ndarray | None,       # (21,)
         pose_px: np.ndarray | None,       # (3, 2) [wrist, elbow, shoulder] or None
-        pose_z:  np.ndarray | None,       # (3,) or None
+        pose_z:  np.ndarray | None,       # (3,) or None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Build final (23, 2) px and (23,) z_rel arrays.

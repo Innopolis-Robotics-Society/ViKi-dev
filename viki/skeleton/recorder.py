@@ -19,14 +19,16 @@ class SkeletonRecorder:
     """
     Records a sequence of SkeletonFrames to a JSON file.
     """
-
-    def __init__(self, base_dir: str | Path = "data") -> None:
+ 
+    def __init__(self, base_dir: str | Path = "data", filter_indices: list[int] | None = None) -> None:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
+        self._filter_indices = filter_indices
         self._current_file = None
         self._frames: List[dict] = []
-
+ 
     def start(self) -> str:
+
         """
         Start a new recording session.
         Returns the filename of the recording.
@@ -48,14 +50,27 @@ class SkeletonRecorder:
         if np.isnan(frame.landmarks).all():
             return
 
+        # Filter landmarks if filter_indices is provided (e.g. arm only)
+        landmarks = frame.landmarks
+        source = frame.source
+        confidence = frame.confidence
+        origin = frame.origin
+        
+        if self._filter_indices:
+            landmarks = landmarks[self._filter_indices]
+            source = source[self._filter_indices]
+            confidence = confidence[self._filter_indices]
+            origin = origin[self._filter_indices]
+
         # Convert numpy arrays to lists for JSON serialization
         self._frames.append({
             "ts": frame.timestamp_us,
-            "landmarks": frame.landmarks.tolist(),
-            "source": [str(s) for s in frame.source],
-            "confidence": frame.confidence.tolist(),
-            "origin": [str(o) for o in frame.origin],
+            "landmarks": landmarks.tolist(),
+            "source": [str(s) for s in source],
+            "confidence": confidence.tolist(),
+            "origin": [str(o) for o in origin],
         })
+
 
     def stop(self) -> str | None:
         """

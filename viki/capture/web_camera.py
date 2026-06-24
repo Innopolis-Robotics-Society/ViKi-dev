@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 import numpy as np
 import cv2
 
@@ -77,6 +78,7 @@ class WebCameraBackend(CameraBackend):
         if not self._running or self._cap is None:
             msg = "WebCameraBackend is not started or cap is None."
             self._logger.debug(msg)
+            time.sleep(1)
             raise RuntimeError(msg)
 
         ret, frame = self._cap.read()
@@ -97,7 +99,6 @@ class WebCameraBackend(CameraBackend):
         color = np.array(frame)
         depth = np.zeros_like(color)
 
-        import time
         timestamp_us = int(time.time() * 1_000_000)
 
         return Frame(

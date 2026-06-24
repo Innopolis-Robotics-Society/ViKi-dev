@@ -10,14 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import numpy as np
+from viki.skeleton.models import LM
 
 from viki.server.deps import get_worker
 from viki.server.skeleton_worker import SkeletonWorker
 
 router = APIRouter(prefix="/api/skeleton", tags=["skeleton"])
+logger = logging.getLogger(__name__)
 
 class ToggleRequest(BaseModel):
     enabled: bool
@@ -42,12 +45,13 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
 @router.websocket("/stream")
 async def skeleton_stream(websocket: WebSocket):
     await websocket.accept()
+    logger.debug("ROUTES/SKELETON: stream endpoint engaged")
     worker: SkeletonWorker = websocket.app.state.skeleton_worker
     try:
         while True:
             frame = worker.get_latest_frame()
             detections = worker.get_latest_detections()
-            
+                        
             if frame or detections:
                 # Serialize result to dict
                 data = {
@@ -62,8 +66,9 @@ async def skeleton_stream(websocket: WebSocket):
                     }
                 }
                 await websocket.send_json(data)
+
             
-            # Stream at ~20 fps
+            # Stream at ~20 fps (comment out for unbound stream)
             await asyncio.sleep(0.05)
     except WebSocketDisconnect:
         pass

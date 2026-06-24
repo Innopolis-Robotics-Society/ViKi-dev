@@ -10,6 +10,7 @@ x-common: &common
     - /tmp/.X11-unix:/tmp/.X11-unix
     - ./data:/app/data
     - ./viki:/app/viki
+    - ./models:/app/models
   environment:
     - PYTHONUNBUFFERED=1
     - PYTHONPATH=/app
