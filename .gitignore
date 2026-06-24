@@ -1,3 +1,5 @@
+rec_*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -224,5 +226,6 @@ __marimo__/
 skeleton_models/
 skeleton_tests/
 models/
+
 
 AGENTS.md
