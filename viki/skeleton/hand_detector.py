@@ -22,6 +22,9 @@ import threading
 import urllib.request
 from pathlib import Path
 from typing import Literal, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -98,6 +101,7 @@ class HandDetector:
         min_hand_confidence: float = 0.6,
         min_pose_confidence: float = 0.5,
         mirrored: bool = False,
+        arm_only: bool = False,
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
@@ -105,6 +109,7 @@ class HandDetector:
 
         self._hand = hand
         self._mode = mode
+        self._arm_only = arm_only
 
         if mirrored:
             self._target_label = "Left" if hand == "right" else "Right"
@@ -137,16 +142,20 @@ class HandDetector:
                 self._live_pose_result = result
                 
 
-        hand_opts = vision.HandLandmarkerOptions(
-            base_options=python.BaseOptions(model_asset_path=hand_path),
-            running_mode=running_mode,
-            num_hands=1,
-            min_hand_detection_confidence=min_hand_confidence,
-            min_hand_presence_confidence=min_hand_confidence,
-            min_tracking_confidence=min_hand_confidence,
-            **({"result_callback": _hand_cb} if mode == "live" else {}),
-        )
-        self._hands = vision.HandLandmarker.create_from_options(hand_opts)
+        if not self._arm_only:
+            hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
+            hand_opts = vision.HandLandmarkerOptions(
+                base_options=python.BaseOptions(model_asset_path=hand_path),
+                running_mode=running_mode,
+                num_hands=1,
+                min_hand_detection_confidence=min_hand_confidence,
+                min_hand_presence_confidence=min_hand_confidence,
+                min_tracking_confidence=min_hand_confidence,
+                **({"result_callback": _hand_cb} if mode == "live" else {}),
+            )
+            self._hands = vision.HandLandmarker.create_from_options(hand_opts)
+        else:
+            self._hands = None
 
         pose_opts = vision.PoseLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=pose_path),
@@ -159,7 +168,7 @@ class HandDetector:
         self._pose = vision.PoseLandmarker.create_from_options(pose_opts)
         self._mp = mp
 
-    def detect(self, frame: PreparedFrame) -> Optional[HandDetection]:
+    def detect(self, frame: Optional[PreparedFrame]) -> Optional[HandDetection]:
         """
         Run detection on a PreparedFrame.
 
@@ -170,7 +179,12 @@ class HandDetector:
 
         Returns None if hand is not detected.
         """
+        if frame is None:
+            print("DEBUG: HandDetector.detect: frame is None")
+            return None
+
         h, w = frame.rgb.shape[:2]
+        print(f"DEBUG: HandDetector.detect: image size {w}x{h}")
 
         mp_image = self._mp.Image(
             image_format=self._mp.ImageFormat.SRGB,
@@ -179,19 +193,20 @@ class HandDetector:
         timestamp_ms = frame.timestamp_us // 1000
 
         if self._mode == "video":
-            hand_result = self._hands.detect_for_video(mp_image, timestamp_ms)
+            hand_result = self._hands.detect_for_video(mp_image, timestamp_ms) if self._hands else None
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
             
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
-            self._hands.detect_async(mp_image, timestamp_ms)
+            if self._hands:
+                self._hands.detect_async(mp_image, timestamp_ms)
             self._pose.detect_async(mp_image, timestamp_ms)
             with self._lock:
                 
                 hand_result = self._live_hand_result
                 pose_result = self._live_pose_result
                 last_ts     = self._live_last_ts_ms
-            if hand_result is None or pose_result is None:
+            if (not self._arm_only and hand_result is None) or pose_result is None:
                 return None  # no result yet (first frame)
             # Callback hasn't fired for this frame yet — stale result, skip
             if last_ts == timestamp_ms:
@@ -200,14 +215,19 @@ class HandDetector:
                 self._live_last_ts_ms = timestamp_ms
 
         else:  # image
-            hand_result = self._hands.detect(mp_image)
+            hand_result = self._hands.detect(mp_image) if self._hands else None
             pose_result = self._pose.detect(mp_image)
 
-        hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h)
-        if hand_px is None:
+        # Debug logging for detection results
+        hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h) if not self._arm_only else (None, None, 1.0)
+        if not self._arm_only and hand_px is None:
+            print(f"DEBUG: Hand detection failed: hand_result is {hand_result is None}")
             return None
 
         pose_px, pose_z = self._extract_pose(pose_result, w, h)
+        if pose_px is None:
+            print(f"DEBUG: Pose detection failed: pose_result is {pose_result is None}")
+            return None
         px, lm_z_rel = self._merge(hand_px, hand_z, pose_px, pose_z)
 
         return HandDetection(
@@ -268,10 +288,10 @@ class HandDetector:
 
     @staticmethod
     def _merge(
-        hand_px: np.ndarray,          # (21, 2)
-        hand_z:  np.ndarray,          # (21,)
-        pose_px: np.ndarray | None,   # (3, 2) [wrist, elbow, shoulder] or None
-        pose_z:  np.ndarray | None,   # (3,) or None
+        hand_px: np.ndarray | None,       # (21, 2)
+        hand_z:  np.ndarray | None,       # (21,)
+        pose_px: np.ndarray | None,       # (3, 2) [wrist, elbow, shoulder] or None
+        pose_z:  np.ndarray | None,       # (3,) or None
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Build final (23, 2) px and (23,) z_rel arrays.
@@ -281,12 +301,14 @@ class HandDetector:
           [21]    ELBOW     — from Pose, or nan if Pose not detected
           [22]    SHOULDER  — from Pose, or nan if Pose not detected
         """
-        px = hand_px.copy()
-        z  = hand_z.copy()
+        if hand_px is not None:
+            px = hand_px.copy()
+            z  = hand_z.copy()
+        else:
+            px = np.full((21, 2), np.nan, dtype=np.float32)
+            z  = np.full(21, np.nan, dtype=np.float32)
 
         if pose_px is not None and pose_z is not None:
-            # px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
-            # z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
             elbow_px    = pose_px[1]
             shoulder_px = pose_px[2]
             elbow_z     = pose_z[1]

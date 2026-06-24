@@ -17,7 +17,7 @@ def write_device_intrinsics(
         data = []
 
     print(data)
-    entry = {
+    new_entry = {
         "device_id": device_id,
         "fx": intrinsics.fx,
         "fy": intrinsics.fy,
@@ -26,14 +26,14 @@ def write_device_intrinsics(
         "dist_coeffs": intrinsics.dist_coeffs.tolist(),
     }
 
-    logging.debug(entry)
+    logging.debug(new_entry)
 
     for i, entry in enumerate(data):
         if entry.get("device_id") == device_id:
-            data[i] = entry
+            data[i] = new_entry
             break
     else:
-        data.append(entry)
+        data.append(new_entry)
 
     print(file, data)
     with open(file, "w") as f:
@@ -51,20 +51,20 @@ def write_device_extrinsics(
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
 
-    entry = {
+    new_entry = {
         "device_id": device_id,
         "rvec": extrinsics.rvec.tolist(),
         "tvec": extrinsics.tvec.tolist(),
     }
 
-    logging.debug(entry)
+    logging.debug(new_entry)
 
     for i, entry in enumerate(data):
         if entry.get("device_id") == device_id:
-            data[i] = entry
+            data[i] = new_entry
             break
     else:
-        data.append(entry)
+        data.append(new_entry)
 
     with open(file, "w") as f:
         json.dump(data, f, indent=2)

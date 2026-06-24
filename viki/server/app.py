@@ -39,7 +39,7 @@ async def lifespan(app: FastAPI):
     # app.state.calibrator.load_intrinsics(app.state.manager.active_device_ids)
     # app.state.calibrator.load_extrinsics()
     app.state.sync = MultiCameraSync(app.state.manager)
-    app.state.skeleton_pipeline = SkeletonPipeline(app.state.calibrator)
+    app.state.skeleton_pipeline = SkeletonPipeline(app.state.calibrator, arm_only=True)
     app.state.skeleton_recorder = SkeletonRecorder()
 
     app.state.skeleton_worker = SkeletonWorker(

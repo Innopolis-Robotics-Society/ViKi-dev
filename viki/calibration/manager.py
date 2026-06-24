@@ -138,10 +138,6 @@ class CalibrationManager:
         if path != "":
             self.load_intrinsics(device_id, path)
         intrinsics = self._intrinsics.get(device_id)
-        if not intrinsics:
-            self._logger.debug(
-                f"CalibrationManager get_intrinsics: {device_id} not in intrinsics list"
-            )
         return intrinsics
 
     def extrinsics_calibration(

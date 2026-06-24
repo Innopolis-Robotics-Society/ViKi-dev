@@ -66,7 +66,7 @@ class MultiCameraSync:
         self,
         manager: CameraManager,
         sync_fps: int = 15,
-        max_offset_us: int = 30,
+        max_offset_us: int = 100000,
         required_devices: Optional[list] = None,
     ) -> None:
         self._manager = manager

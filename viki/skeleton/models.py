@@ -106,6 +106,14 @@ class Landmarks3D:
 
 
 #
+@dataclass
+class PipelineResult:
+    """
+    Combined result of the pipeline for one synced frame group.
+    """
+    fused_frame: SkeletonFrame | None  # The world-space 3D skeleton
+    detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
+
 # Public api
 #
 

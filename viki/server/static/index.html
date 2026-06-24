@@ -223,7 +223,15 @@
       aspect-ratio: 4/3;
       overflow: hidden;
     }
-
+    .skel-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
     .stream-panel img {
       width: 100%;
       height: 100%;
@@ -473,8 +481,8 @@
       <button class="danger" onclick="toggleSkeleton()">✕ Close</button>
     </div>
     <div class="skeleton-body">
-      <div class="skeleton-viz" id="skeleton-viz">
-        <!-- Three.js canvas will be injected here -->
+      <div class="skeleton-viz" id="skeleton-viz" style="display:none">
+        <!-- Now handled by canvas overlays on camera cards -->
       </div>
       <div class="skeleton-controls">
         <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
@@ -497,7 +505,6 @@
 
   <div id="log"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
   <script>
     // Per-camera config definitions
     const CAMERA_CONFIG = {
@@ -653,6 +660,7 @@
     <div class="streams">
       <div class="stream-panel">
         <img id="color-${id}" src="" alt="color">
+        <canvas id="skel-canvas-${id}" class="skel-overlay"></canvas>
         <span class="stream-label">COLOR</span>
       </div>
       <div class="stream-divider"></div>
@@ -910,54 +918,13 @@
 
     // --- Skeleton Logic ---
     let skeletonWs = null;
-    let skelScene, skelCamera, skelRenderer, skelPoints = [];
-
-    function initSkelViz() {
-      const container = document.getElementById('skeleton-viz');
-      if (container.children.length > 0) return;
-
-      const width = container.clientWidth;
-      const height = container.clientHeight;
-
-      skelScene = new THREE.Scene();
-      skelCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10);
-      skelCamera.position.set(0, 0, 1);
-      skelCamera.up.set(0, 1, 0);
-
-      skelRenderer = new THREE.WebGLRenderer({antialias: true});
-      skelRenderer.setSize(width, height);
-      skelRenderer.setClearColor(0x000000);
-      container.appendChild(skelRenderer.domElement);
-
-      const grid = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
-      grid.rotation.x = Math.PI / 2;
-      skelScene.add(grid);
-
-      const axes = new THREE.AxesHelper(0.2);
-      skelScene.add(axes);
-
-      // Create 23 points
-      const geo = new THREE.SphereGeometry(0.01);
-      for (let i = 0; i < 23; i++) {
-        const mat = new THREE.MeshBasicMaterial({color: 0x5b7fff});
-        const mesh = new THREE.Mesh(geo, mat);
-        skelPoints.push(mesh);
-        skelScene.add(mesh);
-      }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        skelRenderer.render(skelScene, skelCamera);
-      }
-      animate();
-    }
+    let skelPoints = [];
 
     function toggleSkeleton() {
       const panel = document.getElementById('skeleton-panel');
       const isVisible = panel.style.display === 'block';
       panel.style.display = isVisible ? 'none' : 'block';
       if (!isVisible) {
-        initSkelViz();
         updateSkelStatus();
       }
     }
@@ -1010,16 +977,57 @@
 
       skeletonWs.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        const pts = data.landmarks;
-        for (let i = 0; i < 23; i++) {
-          if (pts && pts[i]) {
-            // ViKi uses OpenCV BGR/XYZ convention. 
-            // If points are [X, Y, Z] in metres:
-            skelPoints[i].position.set(pts[i][0], pts[i][1], pts[i][2]);
-            skelPoints[i].visible = true;
-          } else {
-            skelPoints[i].visible = false;
+        const detections = data.detections;
+
+        for (const [deviceId, pts] of Object.entries(detections)) {
+          const canvas = document.getElementById(`skel-canvas-${deviceId}`);
+          if (!canvas || !pts) continue;
+
+          const ctx = canvas.getContext('2d');
+          const img = document.getElementById(`color-${deviceId}`);
+          if (!img) continue;
+
+          // Sync canvas size to current image display size
+          canvas.width = img.clientWidth;
+          canvas.height = img.clientHeight;
+
+          // Image is center-fit, we need to find the actual image area within the panel
+          // For simplicity, we assume the canvas matches the image's rendering.
+          // Since the image has object-fit: contain, we'd ideally need to calculate the offset.
+          // But as a first pass, we'll draw based on the normalized pixels (u, v) relative to the image.
+          
+          // The backend sends pixels as absolute image coords (u, v).
+          // We need to scale them to the displayed image size.
+          const scaleX = canvas.width / img.naturalWidth;
+          const scaleY = canvas.height / img.naturalHeight;
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = '#5b7fff';
+          ctx.fillStyle = '#5b7fff';
+          ctx.lineWidth = 3;
+
+          // Landmarks for arm chain: Wrist (0), Elbow (21), Shoulder (22)
+          const indices = [0, 21, 22];
+          const coords = indices.map(i => pts[i] ? [pts[i][0] * scaleX, pts[i][1] * scaleY] : null);
+
+          // Draw lines
+          ctx.beginPath();
+          for (let i = 0; i < coords.length - 1; i++) {
+            if (coords[i] && coords[i+1]) {
+              ctx.moveTo(coords[i][0], coords[i][1]);
+              ctx.lineTo(coords[i+1][0], coords[i+1][1]);
+            }
           }
+          ctx.stroke();
+
+          // Draw dots
+          coords.forEach(p => {
+            if (p) {
+              ctx.beginPath();
+              ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          });
         }
       };
 

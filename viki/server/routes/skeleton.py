@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
@@ -44,14 +45,20 @@ async def skeleton_stream(websocket: WebSocket):
     try:
         while True:
             frame = worker.get_latest_frame()
-            if frame:
-                # Serialize SkeletonFrame to dict
+            detections = worker.get_latest_detections()
+            
+            if frame or detections:
+                # Serialize result to dict
                 data = {
-                    "ts": frame.timestamp_us,
-                    "landmarks": frame.landmarks.tolist(),
-                    "source": [str(s) for s in frame.source],
-                    "confidence": frame.confidence.tolist(),
-                    "origin": [str(o) for o in frame.origin],
+                    "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
+                    "landmarks": frame.landmarks.tolist() if frame else [],
+                    "source": [str(s) for s in frame.source] if frame else [],
+                    "confidence": frame.confidence.tolist() if frame else [],
+                    "origin": [str(o) for o in frame.origin] if frame else [],
+                    "detections": {
+                        dev_id: det.px.tolist() if det else None 
+                        for dev_id, det in detections.items()
+                    }
                 }
                 await websocket.send_json(data)
             

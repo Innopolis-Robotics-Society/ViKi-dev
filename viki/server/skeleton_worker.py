@@ -11,8 +11,8 @@ import time
 from typing import Optional
 
 import numpy as np
-from viki.skeleton.models import SkeletonFrame
-from viki.skeleton.pipeline import SkeletonPipeline
+from viki.skeleton.models import SkeletonFrame, HandDetection
+from viki.skeleton.pipeline import SkeletonPipeline, PipelineResult
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.capture.sync import MultiCameraSync
 from viki.capture.manager import CameraManager
@@ -41,7 +41,7 @@ class SkeletonWorker:
         self._enabled = False
         self._recording = False
         
-        self._latest_frame: Optional[SkeletonFrame] = None
+        self._latest_result: Optional[PipelineResult] = None
         self._lock = threading.Lock()
         
         self._stop_event = threading.Event()
@@ -83,7 +83,12 @@ class SkeletonWorker:
     def get_latest_frame(self) -> Optional[SkeletonFrame]:
         """Return the most recently processed skeleton frame."""
         with self._lock:
-            return self._latest_frame
+            return self._latest_result.fused_frame if self._latest_result else None
+
+    def get_latest_detections(self) -> dict[str, HandDetection | None]:
+        """Return the most recent 2D detections per camera."""
+        with self._lock:
+            return self._latest_result.detections if self._latest_result else {}
 
     def _run(self) -> None:
         """Main loop of the worker thread."""
@@ -98,19 +103,19 @@ class SkeletonWorker:
                     group = self._sync.get_synced_frame()
                     if group:
                         # 2. Process skeleton
-                        frame = self._pipeline.process(group)
+                        result = self._pipeline.process(group)
                         
-                        if frame is None:
+                        with self._lock:
+                            self._latest_result = result
+
+                        if result.fused_frame is None:
                             # Log occasionally that we got frames but no detection
                             if np.random.random() < 0.01:
-                                logger.debug("SkeletonWorker: Received synced frames but pipeline returned None (no detection or missing calib).")
+                                logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection or missing calib).")
                         else:
-                            with self._lock:
-                                self._latest_frame = frame
-                            
                             # 3. Record if enabled
                             if self._recording:
-                                self._recorder.record(frame)
+                                self._recorder.record(result.fused_frame)
                     else:
                         # This happens if cameras aren't producing frames or sync is failing
                         if np.random.random() < 0.01:
