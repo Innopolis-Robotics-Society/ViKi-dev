@@ -481,7 +481,7 @@
     <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
     <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
     <div class="sep"></div>
-    <button class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
+    <button id="btn-record-rgbd" class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
   </div>
 
   <div class="calib-panel" id="calib-panel">
@@ -838,13 +838,32 @@
     }
 
     async function startRGBDRecording() {
+      const btn = document.getElementById('btn-record-rgbd');
+      const duration = 10.0;
+      const fps = 15;
+
       log('Starting RGB-D recording...');
       try {
         const res = await api('POST', '/api/record/start', {
-          duration: 10.0,
-          fps: 15
+          duration: duration,
+          fps: fps
         });
         log(`Recording started: ${res.status}`, 'ok');
+
+        // Visual feedback
+        btn.disabled = true;
+        btn.textContent = 'Recording...';
+        btn.classList.remove('primary');
+        btn.classList.add('danger');
+
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '🔴 Record RGB-D';
+          btn.classList.remove('danger');
+          btn.classList.add('primary');
+          log('Recording duration elapsed', 'ok');
+        }, duration * 1000);
+
       } catch (e) {
         log('Recording failed: ' + e, 'error');
       }

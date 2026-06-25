@@ -1,27 +1,10 @@
 """
-Record both color and depth videos when docker is up! 
+Record both color and depth videos when docker is up!
 
-
-
-=========================================================================
-
-!!!!! do not enable cameras on the frontend for this script to work !!!!!
-
-=========================================================================
-
-
-
-First open a terminal inside the container:
-docker compose run --rm terminal
-
-Then run the recording script to record with kinect_0 for 10 seconds at 15 fps:
-python3 viki/capture/record_rgbd.py --duration 10 --fps 15 --devices kinect_0
-
-To let rthe script auto-detect cameras, simply omit the --devices flag
-python3 viki/capture/record_rgbd.py --duration 10 --fps 15
-
-Record with multiple cams: 
-python record_rgbd.py --duration 10 --devices kinect_0 kinect_1
+record for 10 seconds at 15 fps on all active devices
+curl -X POST http://localhost:8000/api/record/start \
+     -H "Content-Type: application/json" \
+     -d '{"duration": 10.0, "fps": 15}'     
 
 Recordings will be saved in data/videos/rec_YYYYMMDD_HHMMSS/
 """
