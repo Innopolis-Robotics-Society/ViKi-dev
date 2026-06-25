@@ -1,5 +1,5 @@
 rec_*.json
-data/videos/
+data/
 *.npy
 
 # Byte-compiled / optimized / DLL files
