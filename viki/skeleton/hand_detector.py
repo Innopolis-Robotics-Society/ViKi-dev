@@ -100,7 +100,7 @@ class HandDetector:
         models_dir: str = "models",
         min_hand_confidence: float = 0.5,
         min_pose_confidence: float = 0.3,
-        mirrored: bool = False,
+        mirrored: bool = True,
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python

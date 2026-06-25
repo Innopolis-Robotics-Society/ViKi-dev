@@ -1,0 +1,152 @@
+import os
+import json
+import time
+from datetime import datetime
+from typing import Optional
+
+import cv2
+import numpy as np
+
+from .base import SyncedFrameGroup
+from .sync import MultiCameraSync
+from viki.viz.depth import DepthColorizer
+
+class RGBDRecorder:
+    """
+    Records synchronized RGB-D frames from multiple cameras to disk.
+    Saves RGB and colorized Depth as MP4 videos, and raw Depth as .npy files.
+    """
+
+    def __init__(self, manager, output_base_dir: str = "data/videos"):
+        self.manager = manager
+        self.output_base_dir = output_base_dir
+        self.current_recording_dir: Optional[str] = None
+        self.frame_idx = 0
+        self.timestamps = []
+        self._writers: dict[str, dict] = {} # dev_id -> {"color": VideoWriter, "depth": VideoWriter}
+        self._colorizers: dict[str, DepthColorizer] = {}
+
+    def _setup_recording_dir(self) -> str:
+        # Create a unique directory for this recording
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        recording_dir = os.path.join(self.output_base_dir, f"rec_{timestamp}")
+        os.makedirs(recording_dir, exist_ok=True)
+
+        # Setup per-camera directories
+        active_ids = self.manager.active_device_ids()
+        for dev_id in active_ids:
+            cam_dir = os.path.join(recording_dir, dev_id)
+            os.makedirs(os.path.join(cam_dir, "depth"), exist_ok=True)
+
+            # Save intrinsics from the latest frame
+            frame = self.manager.latest_frame(dev_id)
+            if frame:
+                intrinsics = {}
+                if frame.color_intrinsics:
+                    ci = frame.color_intrinsics
+                    intrinsics["color"] = {
+                        "fx": ci.fx, "fy": ci.fy, "cx": ci.cx, "cy": ci.cy,
+                        "width": ci.width, "height": ci.height,
+                        "dist_coeffs": ci.dist_coeffs.tolist()
+                    }
+                if frame.depth_intrinsics:
+                    di = frame.depth_intrinsics
+                    intrinsics["depth"] = {
+                        "fx": di.fx, "fy": di.fy, "cx": di.cx, "cy": di.cy,
+                        "width": di.width, "height": di.height,
+                        "dist_coeffs": di.dist_coeffs.tolist()
+                    }
+                
+                with open(os.path.join(cam_dir, "intrinsics.json"), "w") as f:
+                    json.dump(intrinsics, f, indent=4)
+
+        return recording_dir
+
+    def _init_writers(self, group: SyncedFrameGroup, sync_fps: int):
+        """Initialize VideoWriters based on the first synced frame group."""
+        for dev_id, frame in group.frames.items():
+            h, w = frame.color.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+            
+            color_path = os.path.join(self.current_recording_dir, dev_id, "color.mp4")
+            depth_path = os.path.join(self.current_recording_dir, dev_id, "depth_viz.mp4")
+            
+            self._writers[dev_id] = {
+                "color": cv2.VideoWriter(color_path, fourcc, sync_fps, (w, h)),
+                "depth": cv2.VideoWriter(depth_path, fourcc, sync_fps, (w, h))
+            }
+            self._colorizers[dev_id] = DepthColorizer()
+
+    def _save_group(self, group: SyncedFrameGroup, sync_fps: int):
+        if not self._writers:
+            self._init_writers(group, sync_fps)
+
+        idx_str = f"{self.frame_idx:06d}"
+        self.timestamps.append({
+            "sync_timestamp_us": group.sync_timestamp_us,
+            "offsets_us": group.offsets_us
+        })
+
+        for dev_id, frame in group.frames.items():
+            # Save color video
+            if frame.color is not None:
+                self._writers[dev_id]["color"].write(frame.color)
+            
+            # Save raw depth for metric analysis
+            if frame.depth is not None:
+                depth_path = os.path.join(self.current_recording_dir, dev_id, "depth", f"{idx_str}.npy")
+                np.save(depth_path, frame.depth)
+                
+                # Save colorized depth video
+                colorized = self._colorizers[dev_id].colorize(frame.depth)
+                if colorized is not None:
+                    self._writers[dev_id]["depth"].write(colorized)
+                else:
+                    # If depth is invalid, write a black frame to maintain sync
+                    self._writers[dev_id]["depth"].write(np.zeros_like(frame.color))
+
+        self.frame_idx += 1
+
+    def record(self, duration_s: float, sync_fps: int = 15):
+        """
+        Records synchronized frames for the given duration.
+        """
+        self.current_recording_dir = self._setup_recording_dir()
+        self.frame_idx = 0
+        self.timestamps = []
+        self._writers = {}
+        self._colorizers = {}
+
+        sync = MultiCameraSync(self.manager, sync_fps=sync_fps)
+        
+        print(f"Recording to {self.current_recording_dir} for {duration_s}s at {sync_fps}fps...")
+        
+        # Custom loop to pass sync_fps to _save_group
+        period_s = 1.0 / sync_fps
+        deadline = time.monotonic() + duration_s
+        
+        while time.monotonic() < deadline:
+            tick_wall = time.monotonic()
+            group = sync.get_synced_frame()
+            if group is not None:
+                self._save_group(group, sync_fps)
+            
+            elapsed = time.monotonic() - tick_wall
+            sleep_s = period_s - elapsed
+            if sleep_s > 0:
+                time.sleep(sleep_s)
+        
+        # Release writers
+        for dev_id in self._writers:
+            self._writers[dev_id]["color"].release()
+            self._writers[dev_id]["depth"].release()
+
+        # Finalize metadata
+        with open(os.path.join(self.current_recording_dir, "timestamps.json"), "w") as f:
+            json.dump(self.timestamps, f, indent=4)
+        
+        with open(os.path.join(self.current_recording_dir, "extrinsics.json"), "w") as f:
+            json.dump({}, f, indent=4)
+
+        print(f"Recording finished. Saved {self.frame_idx} frames.")
+        return self.current_recording_dir

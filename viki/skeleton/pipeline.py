@@ -44,7 +44,7 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        calib_path: str = "viki/capture/calibration_results.npz",
+        calib_path: str = "data/intrinsics_calibration.json",
         hand: Literal["right", "left"] = "right",
     ) -> None:
         self._calibrator = calibrator
