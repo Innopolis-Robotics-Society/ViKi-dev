@@ -55,7 +55,7 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
 @router.websocket("/stream")
 async def skeleton_stream(websocket: WebSocket):
     await websocket.accept()
-    logger.debug("ROUTES/SKELETON: stream endpoint engaged")
+    # logger.debug("ROUTES/SKELETON: stream endpoint engaged")
     worker: SkeletonWorker = websocket.app.state.skeleton_worker
     try:
         while True:

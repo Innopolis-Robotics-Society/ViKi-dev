@@ -93,14 +93,14 @@ class HandDetector:
 
     def __init__(
         self,
-        hand: Literal["right", "left"] = "right",
-        mode: Literal["image", "video", "live"] = "live",
+        hand: Literal["right", "left"] = "right", #TODO move this selection to frontend
+        mode: Literal["image", "video", "live"] = "image",
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
         min_hand_confidence: float = 0.5,
         min_pose_confidence: float = 0.3,
-        mirrored: bool = True,
+        mirrored: bool = False, # TODO swapped to true
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
@@ -110,10 +110,9 @@ class HandDetector:
         self._mode = mode
  
         if mirrored:
-            
             self._target_label = "Left" if hand == "right" else "Right"
         else:
-            self._target_label = "Right" if hand == "right" else "Left" # TODO is there a mistake here?  note: changed 'if hand == "right"' to 'if hand == "left"'
+            self._target_label = "Right" if hand == "right" else "Left" 
 
         hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
         pose_path = pose_model or _ensure_model("pose_landmarker.task", models_dir)
@@ -288,7 +287,7 @@ class HandDetector:
             print("DEBUG: _extract_pose: result is None")
             return None, None
         if not result.pose_landmarks:
-            print(f"DEBUG: _extract_pose: pose_landmarks is empty. Result type: {type(result)}")
+            # print(f"DEBUG: _extract_pose: pose_landmarks is empty. Result type: {type(result)}")
             return None, None
 
         lms = result.pose_landmarks[0] # take only one person; 33 points

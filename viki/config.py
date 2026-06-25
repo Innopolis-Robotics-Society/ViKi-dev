@@ -13,7 +13,7 @@ EXTRINSICS_FILENAME = "data/extrinsics_calibration.json"
 
 # ── Camera-start defaults (mirror StartRequest)
 DEFAULT_FPS = 30
-DEFAULT_COLOR_WIDTH = 640
+DEFAULT_COLOR_WIDTH = 1280, 720 # TODO changed from 640, 480
 DEFAULT_COLOR_HEIGHT = 480
 DEFAULT_DEPTH_MODE = "NFOV_UNBINNED"
 
@@ -25,4 +25,4 @@ DEPTH_MIN_VALID_FRACTION = 0.05
 # ── Streaming / encoding
 JPEG_QUALITY = 80
 STREAM_IDLE_SLEEP = 0.005
-PLACEHOLDER_SIZE = (640, 480)
+PLACEHOLDER_SIZE = (1280, 720) # TODO changed from 640, 480

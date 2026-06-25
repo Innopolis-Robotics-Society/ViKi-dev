@@ -112,16 +112,18 @@ class SkeletonWorker:
                             # logger.debug(f"SkeletonWorker: result of fusion: landmarks: {result.fused_frame.landmarks}")
 
                         if result.fused_frame is None:
-                            # logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection).")
-                            time.sleep(1)
+                            # logger.debug("SkeletonWorker: (no detection).")
+                            # time.sleep(1)
+                            pass
                         else:
                             # 3. Record if enabled
                             if self._recording:
                                 self._recorder.record(result.fused_frame)
                     else:
                         # This happens if cameras aren't producing frames or sync is failing
-                        logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
-                        time.sleep(1)
+                        #logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
+                        # time.sleep(1)
+                        pass
                 except Exception as e:
                     logger.exception(f"Skeleton worker pipeline error: {e}")
                     time.sleep(1)

@@ -44,8 +44,8 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        calib_path: str = "data/intrinsics_calibration.json",
-        hand: Literal["right", "left"] = "right",
+        calib_path: str = "viki/capture/calibration_results.npz", #TODO move to loading calibration from data/intrinsics_calibration.json
+        hand: Literal["right", "left"] = "right", #TODO move hand and mirrored configuration from multiple files (defined in multiple files (hand_detector.py and pipeline.py))
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()
@@ -73,7 +73,7 @@ class SkeletonPipeline:
  
         # Process all frames in the group
         for dev_id, frame in group.frames.items():
-            logger.debug(f"got frame from {dev_id}")
+            # logger.debug(f"got frame from {dev_id}")
             prepared = self._prepare_camera(dev_id, group)
             if prepared is None:
                 detections[dev_id] = None
@@ -83,7 +83,7 @@ class SkeletonPipeline:
             det = self._detector.detect(prepared)
             detections[dev_id] = det
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
-            logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
+            # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
  
         # Fusion logic:
 

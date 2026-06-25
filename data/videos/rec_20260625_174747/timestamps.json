@@ -1,0 +1,902 @@
+[
+    {
+        "sync_timestamp_us": 1782409667274030,
+        "offsets_us": {
+            "kinect_0": -2720
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667340778,
+        "offsets_us": {
+            "kinect_0": -8201
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667407586,
+        "offsets_us": {
+            "kinect_0": -17013
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667474367,
+        "offsets_us": {
+            "kinect_0": -22172
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667541093,
+        "offsets_us": {
+            "kinect_0": -27388
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667607798,
+        "offsets_us": {
+            "kinect_0": -36439
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667674585,
+        "offsets_us": {
+            "kinect_0": -41572
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667743258,
+        "offsets_us": {
+            "kinect_0": -48877
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667809991,
+        "offsets_us": {
+            "kinect_0": -57507
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667876728,
+        "offsets_us": {
+            "kinect_0": -780
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409667943475,
+        "offsets_us": {
+            "kinect_0": -9450
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668010213,
+        "offsets_us": {
+            "kinect_0": -15613
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668076935,
+        "offsets_us": {
+            "kinect_0": -20988
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668143693,
+        "offsets_us": {
+            "kinect_0": -29781
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668210427,
+        "offsets_us": {
+            "kinect_0": -34799
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668277180,
+        "offsets_us": {
+            "kinect_0": -40491
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668344484,
+        "offsets_us": {
+            "kinect_0": -49276
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668411209,
+        "offsets_us": {
+            "kinect_0": -54948
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668477953,
+        "offsets_us": {
+            "kinect_0": -60436
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668544690,
+        "offsets_us": {
+            "kinect_0": -7678
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668611484,
+        "offsets_us": {
+            "kinect_0": -12179
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668678267,
+        "offsets_us": {
+            "kinect_0": -18198
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668745069,
+        "offsets_us": {
+            "kinect_0": -27294
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668811778,
+        "offsets_us": {
+            "kinect_0": -32167
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668878501,
+        "offsets_us": {
+            "kinect_0": -37885
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409668946308,
+        "offsets_us": {
+            "kinect_0": -47664
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669013055,
+        "offsets_us": {
+            "kinect_0": -53063
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669079760,
+        "offsets_us": {
+            "kinect_0": -346
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669146491,
+        "offsets_us": {
+            "kinect_0": -5348
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669213278,
+        "offsets_us": {
+            "kinect_0": -10778
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669280017,
+        "offsets_us": {
+            "kinect_0": -19792
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669346746,
+        "offsets_us": {
+            "kinect_0": -25106
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669413483,
+        "offsets_us": {
+            "kinect_0": -30189
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669480284,
+        "offsets_us": {
+            "kinect_0": -39187
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669551804,
+        "offsets_us": {
+            "kinect_0": -49322
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669618537,
+        "offsets_us": {
+            "kinect_0": -54782
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669685215,
+        "offsets_us": {
+            "kinect_0": -1457
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669751956,
+        "offsets_us": {
+            "kinect_0": -7377
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669818690,
+        "offsets_us": {
+            "kinect_0": -15033
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669885488,
+        "offsets_us": {
+            "kinect_0": -21411
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409669952232,
+        "offsets_us": {
+            "kinect_0": -26762
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670019058,
+        "offsets_us": {
+            "kinect_0": -35059
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670085888,
+        "offsets_us": {
+            "kinect_0": -39908
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670155212,
+        "offsets_us": {
+            "kinect_0": -48838
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670221944,
+        "offsets_us": {
+            "kinect_0": -57285
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670288673,
+        "offsets_us": {
+            "kinect_0": -1235
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670355391,
+        "offsets_us": {
+            "kinect_0": -10206
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670422090,
+        "offsets_us": {
+            "kinect_0": -15439
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670488819,
+        "offsets_us": {
+            "kinect_0": -20870
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670555634,
+        "offsets_us": {
+            "kinect_0": -29657
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670622357,
+        "offsets_us": {
+            "kinect_0": -34888
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670689138,
+        "offsets_us": {
+            "kinect_0": -39973
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670758214,
+        "offsets_us": {
+            "kinect_0": -51234
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670824921,
+        "offsets_us": {
+            "kinect_0": -56767
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670891720,
+        "offsets_us": {
+            "kinect_0": -3380
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409670958513,
+        "offsets_us": {
+            "kinect_0": -9526
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671025292,
+        "offsets_us": {
+            "kinect_0": -14828
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671092027,
+        "offsets_us": {
+            "kinect_0": -15742
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671158823,
+        "offsets_us": {
+            "kinect_0": -21331
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671225546,
+        "offsets_us": {
+            "kinect_0": -30162
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671292518,
+        "offsets_us": {
+            "kinect_0": -35147
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671360919,
+        "offsets_us": {
+            "kinect_0": -42825
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671427652,
+        "offsets_us": {
+            "kinect_0": -51626
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671494435,
+        "offsets_us": {
+            "kinect_0": -57237
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671561138,
+        "offsets_us": {
+            "kinect_0": -4326
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671627851,
+        "offsets_us": {
+            "kinect_0": -9846
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671694689,
+        "offsets_us": {
+            "kinect_0": -14985
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671761383,
+        "offsets_us": {
+            "kinect_0": -23655
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671828136,
+        "offsets_us": {
+            "kinect_0": -28955
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671894911,
+        "offsets_us": {
+            "kinect_0": -34661
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409671964474,
+        "offsets_us": {
+            "kinect_0": -46208
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672031255,
+        "offsets_us": {
+            "kinect_0": -51808
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672097973,
+        "offsets_us": {
+            "kinect_0": -56981
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672164797,
+        "offsets_us": {
+            "kinect_0": -3998
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672231530,
+        "offsets_us": {
+            "kinect_0": -9489
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672298265,
+        "offsets_us": {
+            "kinect_0": -18069
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672364996,
+        "offsets_us": {
+            "kinect_0": -23376
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672431748,
+        "offsets_us": {
+            "kinect_0": -28663
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672498586,
+        "offsets_us": {
+            "kinect_0": -38029
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672566850,
+        "offsets_us": {
+            "kinect_0": -44917
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672633605,
+        "offsets_us": {
+            "kinect_0": -50182
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672700550,
+        "offsets_us": {
+            "kinect_0": -59193
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672767273,
+        "offsets_us": {
+            "kinect_0": -2412
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672834018,
+        "offsets_us": {
+            "kinect_0": -11751
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672900776,
+        "offsets_us": {
+            "kinect_0": -17171
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409672967595,
+        "offsets_us": {
+            "kinect_0": -22357
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673034367,
+        "offsets_us": {
+            "kinect_0": -30960
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673101135,
+        "offsets_us": {
+            "kinect_0": -36833
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673169795,
+        "offsets_us": {
+            "kinect_0": -43564
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673236520,
+        "offsets_us": {
+            "kinect_0": -51253
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673303255,
+        "offsets_us": {
+            "kinect_0": -57914
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673369985,
+        "offsets_us": {
+            "kinect_0": -5096
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673436776,
+        "offsets_us": {
+            "kinect_0": -10170
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673503501,
+        "offsets_us": {
+            "kinect_0": -16065
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673570245,
+        "offsets_us": {
+            "kinect_0": -24806
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673636999,
+        "offsets_us": {
+            "kinect_0": -29583
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673703743,
+        "offsets_us": {
+            "kinect_0": -35376
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673772810,
+        "offsets_us": {
+            "kinect_0": -46367
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673839543,
+        "offsets_us": {
+            "kinect_0": -51753
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673906292,
+        "offsets_us": {
+            "kinect_0": -57187
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409673973018,
+        "offsets_us": {
+            "kinect_0": -4346
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674039709,
+        "offsets_us": {
+            "kinect_0": -9298
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674106463,
+        "offsets_us": {
+            "kinect_0": -18596
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674173187,
+        "offsets_us": {
+            "kinect_0": -23661
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674239985,
+        "offsets_us": {
+            "kinect_0": -28973
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674306733,
+        "offsets_us": {
+            "kinect_0": -38020
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674375251,
+        "offsets_us": {
+            "kinect_0": -45093
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674441994,
+        "offsets_us": {
+            "kinect_0": -50293
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674508725,
+        "offsets_us": {
+            "kinect_0": -59067
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674575463,
+        "offsets_us": {
+            "kinect_0": -2593
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674642257,
+        "offsets_us": {
+            "kinect_0": -11457
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674708979,
+        "offsets_us": {
+            "kinect_0": -16722
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674775799,
+        "offsets_us": {
+            "kinect_0": -22146
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674842567,
+        "offsets_us": {
+            "kinect_0": -30920
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674909390,
+        "offsets_us": {
+            "kinect_0": -36752
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409674976644,
+        "offsets_us": {
+            "kinect_0": -42461
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675043373,
+        "offsets_us": {
+            "kinect_0": -51115
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675110073,
+        "offsets_us": {
+            "kinect_0": -56769
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675176806,
+        "offsets_us": {
+            "kinect_0": -3987
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675243549,
+        "offsets_us": {
+            "kinect_0": -8807
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675310305,
+        "offsets_us": {
+            "kinect_0": -14219
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675377041,
+        "offsets_us": {
+            "kinect_0": -22951
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675443833,
+        "offsets_us": {
+            "kinect_0": -28225
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675510654,
+        "offsets_us": {
+            "kinect_0": -34244
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675580472,
+        "offsets_us": {
+            "kinect_0": -46086
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675647188,
+        "offsets_us": {
+            "kinect_0": -51408
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675713875,
+        "offsets_us": {
+            "kinect_0": -56674
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675780617,
+        "offsets_us": {
+            "kinect_0": -3311
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675847433,
+        "offsets_us": {
+            "kinect_0": -7988
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675914169,
+        "offsets_us": {
+            "kinect_0": -18177
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409675980925,
+        "offsets_us": {
+            "kinect_0": -22851
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676047697,
+        "offsets_us": {
+            "kinect_0": -28265
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676114486,
+        "offsets_us": {
+            "kinect_0": -37607
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676184730,
+        "offsets_us": {
+            "kinect_0": -45895
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676251525,
+        "offsets_us": {
+            "kinect_0": -51821
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676318260,
+        "offsets_us": {
+            "kinect_0": -60385
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676385016,
+        "offsets_us": {
+            "kinect_0": -3737
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676451755,
+        "offsets_us": {
+            "kinect_0": -12760
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676518507,
+        "offsets_us": {
+            "kinect_0": -18024
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676585242,
+        "offsets_us": {
+            "kinect_0": -23852
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676651979,
+        "offsets_us": {
+            "kinect_0": -32627
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676718732,
+        "offsets_us": {
+            "kinect_0": -37949
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676788466,
+        "offsets_us": {
+            "kinect_0": -46316
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676855204,
+        "offsets_us": {
+            "kinect_0": -54998
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676921947,
+        "offsets_us": {
+            "kinect_0": -60378
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409676988700,
+        "offsets_us": {
+            "kinect_0": -7098
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409677055440,
+        "offsets_us": {
+            "kinect_0": -12537
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409677122197,
+        "offsets_us": {
+            "kinect_0": -18332
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409677188886,
+        "offsets_us": {
+            "kinect_0": -26543
+        }
+    },
+    {
+        "sync_timestamp_us": 1782409677255581,
+        "offsets_us": {
+            "kinect_0": -32307
+        }
+    }
+]

@@ -65,15 +65,19 @@ class RGBDRecorder:
     def _init_writers(self, group: SyncedFrameGroup, sync_fps: int):
         """Initialize VideoWriters based on the first synced frame group."""
         for dev_id, frame in group.frames.items():
-            h, w = frame.color.shape[:2]
             fourcc = cv2.VideoWriter_fourcc(*'mp4v')
             
+            # Color writer
             color_path = os.path.join(self.current_recording_dir, dev_id, "color.mp4")
+            color_size = (frame.color.shape[1], frame.color.shape[0]) if frame.color is not None else (640, 480)
+            
+            # Depth writer
             depth_path = os.path.join(self.current_recording_dir, dev_id, "depth_viz.mp4")
+            depth_size = (frame.depth.shape[1], frame.depth.shape[0]) if frame.depth is not None else (640, 480)
             
             self._writers[dev_id] = {
-                "color": cv2.VideoWriter(color_path, fourcc, sync_fps, (w, h)),
-                "depth": cv2.VideoWriter(depth_path, fourcc, sync_fps, (w, h))
+                "color": cv2.VideoWriter(color_path, fourcc, sync_fps, color_size),
+                "depth": cv2.VideoWriter(depth_path, fourcc, sync_fps, depth_size)
             }
             self._colorizers[dev_id] = DepthColorizer()
 

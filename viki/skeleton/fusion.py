@@ -40,7 +40,7 @@ _PRIORITY = [
 ]
 
 
-def load_extrinsics(path: str | Path = "viki/capture/calibration_results.npz") -> tuple[np.ndarray, np.ndarray]:
+def load_extrinsics(path: str | Path = "viki/capture/calibration_results.npz") -> tuple[np.ndarray, np.ndarray]: #TODO move to loading calibration from data/intrinsics_calibration.json
     """
     Load R and T from the calibration npz file. Returns identity R and zero T if file missing.
 
