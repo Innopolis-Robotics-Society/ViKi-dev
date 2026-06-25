@@ -299,6 +299,42 @@
       margin-bottom: 8px;
     }
 
+    .calib-stream-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      max-height: 100%;
+    }
+    .calib-img-container {
+      position: relative;
+      display: inline-block;
+    }
+    .calib-stream-wrapper img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .calib-stream-label {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(0, 0, 0, 0.5);
+      padding: 2px 6px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+    .calib-count {
+      color: var(--accent);
+      margin-left: 4px;
+    }
+
     .calib-panel {
       display: none;
       margin: 0 24px 24px;
@@ -336,6 +372,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 10px;
+      max-height: 600px;
     }
 
     .calib-controls {
@@ -475,7 +513,7 @@
           </div>
           <div class="field-row">
             <label>Square size (m)</label>
-            <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
+            <input type="number" id="square-size" value="0.025" step="0.001" min="0.01" />
           </div>
 
           <!-- Aruco‑specific fields (hidden by default) -->
@@ -490,8 +528,8 @@
             </div>
           </div>
         </div>
-        <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="startCalibrationSession()">Start Calibration</button>
+        <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="intrinsicsCalibration()">Start Intrinsics</button>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
       </div>
@@ -862,18 +900,22 @@
       container.className = 'calib-streams';
       deviceIds.forEach(id => {
         const wrapper = document.createElement('div');
-        wrapper.className = 'calib-stream-wrapper'
+        wrapper.className = 'calib-stream-wrapper';
         wrapper.dataset.deviceId = id;
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'calib-img-container';
 
         const img = document.createElement('img');
         img.src = `/api/cameras/${id}/stream?mode=color&t=${Date.now()}`;
-        wrapper.appendChild(img);
+        imgContainer.appendChild(img);
 
         const label = document.createElement('span');
         label.className = 'calib-stream-label';
         label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(…)</span>`;
-        wrapper.appendChild(label);
+        imgContainer.appendChild(label);
 
+        wrapper.appendChild(imgContainer);
         container.appendChild(wrapper);
       });
 
