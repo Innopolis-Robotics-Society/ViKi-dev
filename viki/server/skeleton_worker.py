@@ -17,6 +17,7 @@ from viki.skeleton.pipeline import SkeletonPipeline, PipelineResult
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.capture.sync import MultiCameraSync
 from viki.capture.manager import CameraManager
+from viki.capture.recorder import RGBDRecorder
 
 
 class SkeletonWorker:
@@ -41,6 +42,11 @@ class SkeletonWorker:
 
         self._enabled = False
         self._recording = False
+        
+        # RGB-D Recording state
+        self._rgbd_recording = False
+        self._rgbd_recorder: Optional[RGBDRecorder] = None
+        self._rgbd_stop_time: float = 0.0
         
         self._latest_result: Optional[PipelineResult] = None
         self._lock = threading.Lock()
@@ -81,6 +87,19 @@ class SkeletonWorker:
         
         self._recording = recording
 
+    def set_rgbd_recording(self, enabled: bool, duration: float = 10.0, output_dir: str = "data/videos") -> None:
+        """Enable or disable synchronized RGB-D recording."""
+        with self._lock:
+            if enabled:
+                self._rgbd_recorder = RGBDRecorder(self._manager, output_base_dir=output_dir)
+                self._rgbd_recording = True
+                self._rgbd_stop_time = time.monotonic() + duration
+            else:
+                if self._rgbd_recorder:
+                    self._rgbd_recorder.stop()
+                self._rgbd_recorder = None
+                self._rgbd_recording = False
+
     def get_latest_frame(self) -> Optional[SkeletonFrame]:
         """Return the most recently processed skeleton frame."""
         with self._lock:
@@ -98,41 +117,41 @@ class SkeletonWorker:
         while not self._stop_event.is_set():
             start_time = time.monotonic()
             
-            if self._enabled:
+            # Check for RGB-D recording timeout
+            if self._rgbd_recording and time.monotonic() > self._rgbd_stop_time:
+                logger.info("RGB-D recording duration elapsed. Stopping...")
+                self.set_rgbd_recording(False)
+
+            if self._enabled or self._rgbd_recording:
                 try:
                     # 1. Get synced frames
                     group = self._sync.get_synced_frame()
                     if group:
-                        # 2. Process skeleton
-                        result = self._pipeline.process(group)
-                        
-                        with self._lock:
-                            self._latest_result = result
-                            
-                            # logger.debug(f"SkeletonWorker: result of fusion: landmarks: {result.fused_frame.landmarks}")
+                        # A. If RGB-D recording is active, save the raw synced group
+                        if self._rgbd_recording and self._rgbd_recorder:
+                            self._rgbd_recorder.save_group(group, self._target_fps)
 
-                        if result.fused_frame is None:
-                            # logger.debug("SkeletonWorker: (no detection).")
-                            # time.sleep(1)
-                            pass
-                        else:
-                            # 3. Record if enabled
-                            if self._recording:
+                        # B. Process skeleton if enabled
+                        if self._enabled:
+                            result = self._pipeline.process(group)
+                            with self._lock:
+                                self._latest_result = result
+                            if self._recording and result.fused_frame:
                                 self._recorder.record(result.fused_frame)
                     else:
-                        # This happens if cameras aren't producing frames or sync is failing
-                        #logger.warning("SkeletonWorker: No synced frames available from MultiCameraSync.")
-                        # time.sleep(1)
+                        # No synced frames - if recording, we could write a duplicate here
+                        # but for now we just let it be (MultiCameraSync returns None)
                         pass
                 except Exception as e:
-                    logger.exception(f"Skeleton worker pipeline error: {e}")
+                    logger.exception(f"Worker pipeline error: {e}")
                     time.sleep(1)
             
             # Maintain target FPS
-            # elapsed = time.monotonic() - start_time
-            # sleep_time = self._interval - elapsed
-            # if sleep_time > 0:
-            #     time.sleep(sleep_time)
+            elapsed = time.monotonic() - start_time
+            sleep_time = self._interval - elapsed
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+
 
     @property
     def is_enabled(self) -> bool:

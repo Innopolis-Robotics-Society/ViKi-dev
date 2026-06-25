@@ -20,7 +20,7 @@ class RGBDRecorder:
     def __init__(self, manager, output_base_dir: str = "data/videos"):
         self.manager = manager
         self.output_base_dir = output_base_dir
-        self.current_recording_dir: Optional[str] = None
+        self.current_recording_dir: Optional[str] = self._setup_recording_dir()
         self.frame_idx = 0
         self.timestamps = []
         self._writers: dict[str, dict] = {} # dev_id -> {"color": VideoWriter, "depth": VideoWriter}
@@ -81,7 +81,7 @@ class RGBDRecorder:
             }
             self._colorizers[dev_id] = DepthColorizer()
 
-    def _save_group(self, group: SyncedFrameGroup, sync_fps: int):
+    def save_group(self, group: SyncedFrameGroup, sync_fps: int):
         if not self._writers:
             self._init_writers(group, sync_fps)
 
@@ -110,6 +110,24 @@ class RGBDRecorder:
                     self._writers[dev_id]["depth"].write(np.zeros_like(frame.color))
 
         self.frame_idx += 1
+
+    def stop(self):
+        """Release writers and finalize metadata."""
+        if not self._writers:
+            return
+            
+        for dev_id in self._writers:
+            self._writers[dev_id]["color"].release()
+            self._writers[dev_id]["depth"].release()
+
+        with open(os.path.join(self.current_recording_dir, "timestamps.json"), "w") as f:
+            json.dump(self.timestamps, f, indent=4)
+        
+        with open(os.path.join(self.current_recording_dir, "extrinsics.json"), "w") as f:
+            json.dump({}, f, indent=4)
+        
+        self._writers = {}
+        print(f"RGB-D recording finalized. Saved {self.frame_idx} frames.")
 
     def record(self, duration_s: float, sync_fps: int = 15):
         """

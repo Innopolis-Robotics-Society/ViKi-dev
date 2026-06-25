@@ -1,5 +1,6 @@
 """
 Record both color and depth videos when docker is up!
+frontend is currently hardcoded to call a 15 fps recording for 10 seconds on all active cameras. 
 
 record for 10 seconds at 15 fps on all active devices
 curl -X POST http://localhost:8000/api/record/start \
