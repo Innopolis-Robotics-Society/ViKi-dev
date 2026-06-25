@@ -22,7 +22,7 @@ from viki.capture.sync import MultiCameraSync
 from viki.skeleton.pipeline import SkeletonPipeline
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
-from viki.server.routes import calibration, cameras, skeleton
+from viki.server.routes import calibration, cameras, skeleton, recording
 
 STATIC_DIR = Path(__file__).parent / "static"
 
@@ -61,6 +61,7 @@ app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(cameras.router)
 app.include_router(calibration.router)
 app.include_router(skeleton.router)
+app.include_router(recording.router)
 
 
 @app.get("/", response_class=HTMLResponse)

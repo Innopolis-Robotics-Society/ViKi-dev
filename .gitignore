@@ -1,6 +1,11 @@
 rec_*.json
-data/
 *.npy
+extrinsics.json
+timestamps.json
+intrinsics.json
+*.zip
+depth/
+data/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

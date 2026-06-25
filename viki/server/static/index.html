@@ -480,6 +480,8 @@
     <div class="sep"></div>
     <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
     <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
+    <div class="sep"></div>
+    <button class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
   </div>
 
   <div class="calib-panel" id="calib-panel">
@@ -832,6 +834,19 @@
         setRunning(id, true);
       } catch (e) {
         log(`Failed to start ${id}: ${e}`, 'error');
+      }
+    }
+
+    async function startRGBDRecording() {
+      log('Starting RGB-D recording...');
+      try {
+        const res = await api('POST', '/api/record/start', {
+          duration: 10.0,
+          fps: 15
+        });
+        log(`Recording started: ${res.status}`, 'ok');
+      } catch (e) {
+        log('Recording failed: ' + e, 'error');
       }
     }
 
