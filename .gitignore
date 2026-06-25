@@ -1,5 +1,5 @@
 rec_*.json
-data/videos/*
+data/videos/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
