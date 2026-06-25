@@ -2,12 +2,12 @@
 Record both color and depth videos when docker is up!
 frontend is currently hardcoded to call a 15 fps recording for 10 seconds on all active cameras. 
 
-record for 10 seconds at 15 fps on all active devices
+record for 10 seconds at 15 fps on all active devices:
 curl -X POST http://localhost:8000/api/record/start \
      -H "Content-Type: application/json" \
      -d '{"duration": 10.0, "fps": 15}'     
 
-Recordings will be saved in data/videos/rec_YYYYMMDD_HHMMSS/
+Recordings are saved in data/videos/rec_YYYYMMDD_HHMMSS/
 """
 
 import argparse

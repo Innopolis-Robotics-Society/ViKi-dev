@@ -10,6 +10,7 @@ import numpy as np
 from .base import SyncedFrameGroup
 from .sync import MultiCameraSync
 from viki.viz.depth import DepthColorizer
+import viki.config
 
 class RGBDRecorder:
     """
@@ -82,6 +83,9 @@ class RGBDRecorder:
             self._colorizers[dev_id] = DepthColorizer()
 
     def save_group(self, group: SyncedFrameGroup, sync_fps: int):
+        if self.current_recording_dir == None:
+            return
+        
         if not self._writers:
             self._init_writers(group, sync_fps)
 
@@ -98,8 +102,9 @@ class RGBDRecorder:
             
             # Save raw depth for metric analysis
             if frame.depth is not None:
-                depth_path = os.path.join(self.current_recording_dir, dev_id, "depth", f"{idx_str}.npy")
-                np.save(depth_path, frame.depth)
+                if viki.config.RECORD_DEPTH == True:
+                    depth_path = os.path.join(self.current_recording_dir, dev_id, "depth", f"{idx_str}.npy")
+                    np.save(depth_path, frame.depth)
                 
                 # Save colorized depth video
                 colorized = self._colorizers[dev_id].colorize(frame.depth)

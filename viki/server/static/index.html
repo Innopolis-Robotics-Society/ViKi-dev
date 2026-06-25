@@ -1345,9 +1345,10 @@
       updateCalibStatus();
     }
 
-    checkServer();
+    // checkServer();
     setInterval(checkServer, 5000);
-    scanDevices();
+    // scanDevices();
+    etInterval(scanDevices, 5000);
     populateArucoDicts();
     toggleBoardFields();
   </script>

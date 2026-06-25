@@ -104,8 +104,6 @@ class SkeletonPipeline:
             # Single camera case: just use the first camera as origin
             fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
         
-        # logger.debug(f"DEBUG: Fusion result: {fused is not None}")
-        # sleep(1) #TODO remove, for testing 
         return PipelineResult(fused_frame=fused, detections=detections)
 
     def close(self) -> None:
