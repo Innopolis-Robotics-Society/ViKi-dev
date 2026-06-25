@@ -94,7 +94,7 @@ class HandDetector:
     def __init__(
         self,
         hand: Literal["right", "left"] = "right",
-        mode: Literal["image", "video", "live"] = "image",
+        mode: Literal["image", "video", "live"] = "live",
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
@@ -110,10 +110,10 @@ class HandDetector:
         self._mode = mode
  
         if mirrored:
-
+            
             self._target_label = "Left" if hand == "right" else "Right"
         else:
-            self._target_label = "Right" if hand == "right" else "Left"
+            self._target_label = "Right" if hand == "right" else "Left" # TODO is there a mistake here?  note: changed 'if hand == "right"' to 'if hand == "left"'
 
         hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
         pose_path = pose_model or _ensure_model("pose_landmarker.task", models_dir)
@@ -177,8 +177,8 @@ class HandDetector:
  
         Returns None if hand is not detected.
         """
-        if frame is None:
-            return None
+        # if frame is None:
+        #     return None
  
         h, w = frame.rgb.shape[:2]
  

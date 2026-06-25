@@ -19,6 +19,16 @@ from viki.skeleton.models import LM
 from viki.server.deps import get_worker
 from viki.server.skeleton_worker import SkeletonWorker
 
+def sanitize_nan(val):
+    """Recursively replace NaN with None for JSON serialization."""
+    if isinstance(val, list):
+        return [sanitize_nan(x) for x in val]
+    if isinstance(val, np.ndarray):
+        return sanitize_nan(val.tolist())
+    if isinstance(val, float) and np.isnan(val):
+        return None
+    return val
+
 router = APIRouter(prefix="/api/skeleton", tags=["skeleton"])
 logger = logging.getLogger(__name__)
 
@@ -56,12 +66,12 @@ async def skeleton_stream(websocket: WebSocket):
                 # Serialize result to dict
                 data = {
                     "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
-                    "landmarks": frame.landmarks.tolist() if frame else [],
+                    "landmarks": sanitize_nan(frame.landmarks) if frame else [],
                     "source": [str(s) for s in frame.source] if frame else [],
-                    "confidence": frame.confidence.tolist() if frame else [],
+                    "confidence": sanitize_nan(frame.confidence) if frame else [],
                     "origin": [str(o) for o in frame.origin] if frame else [],
                     "detections": {
-                        dev_id: det.px.tolist() if (det and not np.isnan(det.px).any()) else None 
+                        dev_id: sanitize_nan(det.px) if (det and not np.isnan(det.px).any()) else None 
                         for dev_id, det in detections.items()
                     }
                 }

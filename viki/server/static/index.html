@@ -545,10 +545,11 @@
         <div class="skeleton-viz" id="skeleton-viz" style="display:flex; align-items:center; justify-content:center;">
           <canvas id="skel-canvas-3d"></canvas>
         </div>
-        <div class="skeleton-controls">
-          <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
-          <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
-            <label for="skel-viz-cam">Visualize Camera</label>
+    <div class="skeleton-controls">
+      <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
+      <div id="skeleton-detections" style="font-size: 11px; color: var(--muted); margin-bottom: 10px;"></div>
+      <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
+        <label for="skel-viz-cam">Visualize Camera</label>
             <select id="skel-viz-cam" onchange="updateSkelVizCam()"></select>
           </div>
           <button id="btn-skel-start" class="primary" onclick="toggleEstimation(true)">▶ Start Estimation</button>
@@ -593,7 +594,7 @@
         resolutions: ['1280x720', '1920x1080', '2048x1536'],
         defaultRes: '1280x720',
         fps: [5, 15, 30],
-        defaultFps: 30,
+        defaultFps: 15,
         depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
         defaultDepth: 'NFOV_UNBINNED',
         // WFOV_UNBINNED hardware limitation: max 15 fps
@@ -665,7 +666,7 @@
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
-          ...data.web_camera.map(id => ({id, type: "web_camera"})),
+          // ...data.web_camera.map(id => ({id, type: "web_camera"})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {
@@ -947,6 +948,7 @@
       log('Capturing calibration sample...');
       try {
         await api('POST', '/api/calibration/capture');
+        log('Sample captured successfully', 'ok');
         updateCalibStatus();
       } catch (e) {
         log(`Capture failed: ${e}`, 'error');
@@ -1156,6 +1158,16 @@
         const data = JSON.parse(event.data);
         const detections = data.detections;
 
+        // Update detection status in panel
+        const detEl = document.getElementById('skeleton-detections');
+        if (detEl) {
+          const statusHtml = Object.keys(state).map(id => {
+            const detected = !!detections[id];
+            return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
+          }).join('');
+          detEl.innerHTML = statusHtml;
+        }
+
         for (const [deviceId, det] of Object.entries(detections)) {
           if (!det) continue;
 
@@ -1280,12 +1292,13 @@
     }
 
     async function intrinsicsCalibration() {
-      log('Intrinsics calibration strated...')
+      log('Intrinsics calibration started...');
       for (const id of Object.keys(state)) {
         try {
           await api('POST', `/api/calibration/intrinsics/${id}`);
+          log(`Intrinsics calibration for ${id} successful`, 'ok');
         } catch (e) {
-          log(`Intrinsics calibration for ${id} failed: ${e}`, error)
+          log(`Intrinsics calibration for ${id} failed: ${e}`, 'error');
         }
       }
     }

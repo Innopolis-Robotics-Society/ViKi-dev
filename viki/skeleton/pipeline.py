@@ -73,6 +73,7 @@ class SkeletonPipeline:
  
         # Process all frames in the group
         for dev_id, frame in group.frames.items():
+            logger.debug(f"got frame from {dev_id}")
             prepared = self._prepare_camera(dev_id, group)
             if prepared is None:
                 detections[dev_id] = None
@@ -82,6 +83,7 @@ class SkeletonPipeline:
             det = self._detector.detect(prepared)
             detections[dev_id] = det
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
+            logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
  
         # Fusion logic:
 
@@ -102,8 +104,8 @@ class SkeletonPipeline:
             # Single camera case: just use the first camera as origin
             fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
         
-        # print(f"DEBUG: Fusion result: {fused is not None}")
-        sleep(1) #TODO remove, for testing 
+        # logger.debug(f"DEBUG: Fusion result: {fused is not None}")
+        # sleep(1) #TODO remove, for testing 
         return PipelineResult(fused_frame=fused, detections=detections)
 
     def close(self) -> None:

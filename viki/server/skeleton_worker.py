@@ -6,6 +6,7 @@ Background worker that runs the skeleton pipeline on demand.
 
 from __future__ import annotations
 
+# from asyncio.windows_events import NULL
 import threading
 import time
 from typing import Optional
@@ -107,10 +108,11 @@ class SkeletonWorker:
                         
                         with self._lock:
                             self._latest_result = result
-                            logger.debug(f"SkeletonWorker: result of fusion: {result}")
+                            
+                            # logger.debug(f"SkeletonWorker: result of fusion: landmarks: {result.fused_frame.landmarks}")
 
                         if result.fused_frame is None:
-                            logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection).")
+                            # logger.debug("SkeletonWorker: Received synced frames but pipeline returned no fused frame (no detection).")
                             time.sleep(1)
                         else:
                             # 3. Record if enabled
