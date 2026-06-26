@@ -21,6 +21,7 @@ from viki.skeleton.fusion import fuse, load_extrinsics
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.hand_detector import HandDetector
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
+import viki.config
 
 
 class SkeletonPipeline:
@@ -45,7 +46,7 @@ class SkeletonPipeline:
         self,
         calibrator: CalibrationManager,
         calib_path: str = "viki/capture/calibration_results.npz", #TODO move to loading calibration from data/intrinsics_calibration.json
-        hand: Literal["right", "left"] = "right", #TODO move hand and mirrored configuration from multiple files (defined in multiple files (hand_detector.py and pipeline.py))
+        hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()

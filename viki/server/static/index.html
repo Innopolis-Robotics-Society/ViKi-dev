@@ -530,7 +530,7 @@
             </div>
           </div>
         </div>
-        <button onclick="startCalibrationSession()">Start Calibration</button>
+        <button onclick="startCalibrationSession()">Sync Parameters</button>
         <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="intrinsicsCalibration()">Start Intrinsics</button>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
@@ -668,7 +668,7 @@
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
-          // ...data.web_camera.map(id => ({id, type: "web_camera"})),
+          ...data.web_camera.map(id => ({id, type: "web_camera"})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {
@@ -904,6 +904,8 @@
         if (state[id].running) await stopCamera(id);
     }
 
+    let calibPollInterval = null;
+
     function toggleCalibration() {
       const panel = document.getElementById('calib-panel');
       const isVisible = panel.style.display === 'block';
@@ -912,7 +914,10 @@
       if (!isVisible) {
         populateCalibrationStreams();
         updateCalibStatus();
+        calibPollInterval = setInterval(updateCalibStatus, 1000);
       } else {
+        if (calibPollInterval) clearInterval(calibPollInterval);
+        calibPollInterval = null;
         clearCalibrationStreams();
         resetCalibration();
         document.getElementById('calib-streams').innerHTML = '';
@@ -1345,10 +1350,10 @@
       updateCalibStatus();
     }
 
-    // checkServer();
+    checkServer();
     setInterval(checkServer, 5000);
-    // scanDevices();
-    etInterval(scanDevices, 5000);
+    scanDevices();
+    setInterval(scanDevices, 5000);
     populateArucoDicts();
     toggleBoardFields();
   </script>

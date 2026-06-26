@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 import numpy as np
 
 from viki.skeleton.models import HandDetection, LM, PreparedFrame
+import viki.config
 
 # MediaPipe Pose landmark indices (33-point full-body model)
 _POSE_LEFT_SHOULDER  = 11
@@ -93,14 +94,14 @@ class HandDetector:
 
     def __init__(
         self,
-        hand: Literal["right", "left"] = "right", #TODO move this selection to frontend
+        hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT, #TODO move this selection to frontend
         mode: Literal["image", "video", "live"] = "image",
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
         min_hand_confidence: float = 0.5,
         min_pose_confidence: float = 0.3,
-        mirrored: bool = False, # TODO swapped to true
+        mirrored: bool = viki.config.CAMERAS_MIRRORED
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
@@ -108,6 +109,7 @@ class HandDetector:
  
         self._hand = hand
         self._mode = mode
+        self._detection_flag = False
  
         if mirrored:
             self._target_label = "Left" if hand == "right" else "Right"
@@ -232,15 +234,25 @@ class HandDetector:
         # Debug logging for detection results
         hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h)
         if hand_px is None:
-            print(f"DEBUG: Hand detection failed: hand_result is {hand_result is None}")
+            if self._detection_flag == True:
+                # print(f"DEBUG: Pose detection failed: pose_result is {pose_result is None}")
+                logger.debug(f"stopped seeing {self._hand} hand")
+                self._detection_flag = False
             return None
 
         pose_px, pose_z = self._extract_pose(pose_result, w, h)
         if pose_px is None:
-            print(f"DEBUG: Pose detection failed: pose_result is {pose_result is None}")
+            if self._detection_flag == True:
+                # print(f"DEBUG: Pose detection failed: pose_result is {pose_result is None}")
+                logger.debug(f"pose of {self._hand} hand not detected")
+                self._detection_flag = False
             return None
+        
         px, lm_z_rel = self._merge(hand_px, hand_z, pose_px, pose_z)
-
+        if self._detection_flag == False:
+            logger.debug(f"seeing {self._hand} hand")
+            self._detection_flag = True
+        
         return HandDetection(
             px=px,
             lm_z_rel=lm_z_rel,
