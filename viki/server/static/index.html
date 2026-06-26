@@ -532,8 +532,14 @@
         </div>
         <button onclick="startCalibrationSession()">Sync Parameters</button>
         <button class="primary" onclick="captureSample()">Capture Sample</button>
+        <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
         <button onclick="intrinsicsCalibration()">Calibrate Intrinsics</button>
+        <button class="primary" onclick="extrinsicsCalibration()">Calibrate Extrinsics</button>
+        <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
+        <div style="font-size: 11px; color: var(--muted); margin-top: 12px; white-space: pre-line; text-align: center; line-height: 1.4;">Intrinsic calibration requires 20 samples per camera
+Extrinsic calibration requires 1 sample per camera</div>
+
       </div>
     </div>
   </div>
@@ -950,7 +956,7 @@
         imgContainer.className = 'calib-img-container';
 
         const img = document.createElement('img');
-        img.src = `/api/cameras/${id}/stream?mode=color&t=${Date.now()}`;
+        img.src = `/api/cameras/${id}/stream?undistort=false&t=${Date.now()}`;
         imgContainer.appendChild(img);
 
         const label = document.createElement('span');
@@ -1089,14 +1095,45 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!landmarks || landmarks.length === 0) return;
 
+      // Initial pass: filter for physically plausible depth (> 10cm)
+      const plausiblePoints = landmarks.filter(p => p && !isNaN(p[0]) && p[2] > 0.1);
+      if (plausiblePoints.length === 0) return;
+
+      // Auto-centering: find the average center of the plausible points
+      const center = {
+        x: plausiblePoints.reduce((sum, p) => sum + p[0], 0) / plausiblePoints.length,
+        y: plausiblePoints.reduce((sum, p) => sum + p[1], 0) / plausiblePoints.length,
+        z: plausiblePoints.reduce((sum, p) => sum + p[2], 0) / plausiblePoints.length,
+      };
+
+      // Spatial Filter: only keep points within 0.5m of the center to reject background "jumps"
+      const isValid = (p) => {
+        if (!p || isNaN(p[0]) || p[2] <= 0.1) return false;
+        const dist = Math.sqrt(
+          Math.pow(p[0] - center.x, 2) + 
+          Math.pow(p[1] - center.y, 2) + 
+          Math.pow(p[2] - center.z, 2)
+        );
+        return dist < 0.5;
+      };
+
+      const validPoints = landmarks.filter(isValid);
+      if (validPoints.length === 0) return;
+
+      // Adaptive scaling: find max spread among valid points to fit in view
+      let maxSpread = 0.1; 
+      validPoints.forEach(p => {
+        maxSpread = Math.max(maxSpread, Math.abs(p[0] - center.x), Math.abs(p[1] - center.y), Math.abs(p[2] - center.z));
+      });
+      const scale = (canvas.width / 6) / maxSpread;
+
       const viewW = canvas.width / 3;
       const viewH = canvas.height;
-      const scale = 400;
       
       const views = [
-        { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0], y: p[2] }), offset: 0 },
-        { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0], y: p[1] }), offset: viewW },
-        { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2], y: p[1] }), offset: viewW * 2 },
+        { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0] - center.x, y: p[2] - center.z }), offset: 0 },
+        { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0] - center.x, y: p[1] - center.y }), offset: viewW },
+        { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - center.z, y: p[1] - center.y }), offset: viewW * 2 },
       ];
 
       views.forEach(view => {
@@ -1112,18 +1149,18 @@
         ctx.fillStyle = '#fff';
 
         SKEL_CONNS.forEach(([a, b]) => {
-          if (landmarks[a] && landmarks[b]) {
-            const p1 = view.proj(landmarks[a]);
-            const p2 = view.proj(landmarks[b]);
+          if (isValid(landmarks[a]) && isValid(landmarks[b])) {
+            const proj1 = view.proj(landmarks[a]);
+            const proj2 = view.proj(landmarks[b]);
             ctx.beginPath();
-            ctx.moveTo(centerX + p1.x * scale, centerY - p1.y * scale);
-            ctx.lineTo(centerX + p2.x * scale, centerY - p2.y * scale);
+            ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
+            ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
             ctx.stroke();
           }
         });
 
         landmarks.forEach((p, i) => {
-          if (!p || isNaN(p[0])) return;
+          if (!isValid(p)) return;
           const proj = view.proj(p);
           ctx.beginPath();
           ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
@@ -1347,7 +1384,18 @@
       }
     }
 
+    async function extrinsicsCalibration() {
+      log('Extrinsics calibration started...');
+      try {
+        await api('POST', '/api/calibration/extrinsics');
+        log('Extrinsics calibration successful', 'ok');
+      } catch (e) {
+        log(`Extrinsics calibration failed: ${e}`, 'error');
+      }
+    }
+
     async function clearCalibration() {
+
       for (const id of Object.keys(state)) {
         await api('POST', `/api/calibration/clear/${id}`);
       }

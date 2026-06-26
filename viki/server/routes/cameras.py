@@ -86,11 +86,12 @@ async def camera_info(device_id: str, mgr: CameraManager = Depends(get_manager))
 @router.get("/cameras/{device_id}/stream")
 def colour_stream(
     device_id: str,
+    undistort: bool = True,
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):
     return StreamingResponse(
-        camera_stream(mgr, cal, device_id, "color"),
+        camera_stream(mgr, cal, device_id, "color", undistort=undistort),
         media_type=_MJPEG_MEDIA,
         headers=_STREAM_HEADERS,
     )

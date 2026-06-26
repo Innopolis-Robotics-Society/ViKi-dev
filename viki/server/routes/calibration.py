@@ -146,6 +146,47 @@ async def intrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
     )
 
 
+@router.post("/extrinsics", response_model=list[ExtrinsicsResponse])
+async def extrinsics_post_all(
+    cal: CalibrationManager = Depends(get_calibrator),
+    mgr: CameraManager = Depends(get_manager),
+):
+    import logging
+    results = []
+    active_devices = mgr.active_device_ids()
+    if not active_devices:
+        raise HTTPException(400, "No active cameras to calibrate")
+
+    # Check if any workers are active
+    if not cal._workers:
+        raise HTTPException(
+            400, 
+            "Calibration session not started. Please configure board parameters and click 'Sync Parameters' first."
+        )
+
+    for device_id in active_devices:
+        try:
+            extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
+            results.append(ExtrinsicsResponse(
+                rvec=extr.rvec.flatten().tolist(),
+                tvec=extr.tvec.flatten().tolist(),
+            ))
+        except Exception as e:
+            logging.error(f"Extrinsics calibration failed for {device_id}: {e}")
+            continue
+    
+    if not results:
+        # If we got here, it means all active devices failed to calibrate
+        # (e.g. due to lack of samples)
+        raise HTTPException(
+            422, 
+            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples."
+        )
+        
+    return results
+
+
+
 @router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)
 async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
     extrinsics = cal.get_extrinsics(device_id)

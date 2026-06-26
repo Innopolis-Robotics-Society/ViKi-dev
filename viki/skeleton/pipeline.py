@@ -45,14 +45,13 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        calib_path: str = "viki/capture/calibration_results.npz", #TODO move this selection to frontend
         hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()
         self._detectors: dict[str, HandDetector] = {}
         self._hand_type = hand
-        self._R, self._T = load_extrinsics(calib_path)
+        self._R, self._T = load_extrinsics()
 
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:

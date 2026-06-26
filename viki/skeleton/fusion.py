@@ -28,6 +28,8 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+import cv2
+import json
 
 from viki.skeleton.models import LandmarkSource, Landmarks3D, LM, SkeletonFrame
 
@@ -40,23 +42,30 @@ _PRIORITY = [
 ]
 
 
-def load_extrinsics(path: str | Path = "viki/capture/calibration_results.npz") -> tuple[np.ndarray, np.ndarray]: #TODO move to loading calibration from data/intrinsics_calibration.json
-    """
-    Load R and T from the calibration npz file. Returns identity R and zero T if file missing.
+from viki.calibration.file import read_device_extrinsics
+from viki.config import EXTRINSICS_FILENAME
 
-    Returns
-    -------
-    R : (3, 3) float64
-    T : (3, 1) float64
+def load_extrinsics(path: str | Path = EXTRINSICS_FILENAME) -> tuple[np.ndarray, np.ndarray]:
     """
+    Load R and T from the calibration JSON file.
+    Returns identity R and zero T if calibration is missing.
+    """
+    # For simplicity, we assume kinect_1 is the one to be transformed to kinect_0.
+    # In the current setup, we look for the second camera in the JSON.
     try:
-        data = np.load(path, allow_pickle=True)
-        ext = data["extrinsic_data"].item()
-        R = np.asarray(ext["R"], dtype=np.float64)
-        T = np.asarray(ext["T"], dtype=np.float64).reshape(3, 1)
-        return R, T
-    except (FileNotFoundError, KeyError, AttributeError):
-        # Return identity and zero if calibration is missing or corrupt
+        with open(path, "r") as f:
+            data = json.load(f)
+        
+        # Find kinect_1 (subordinate)
+        ext1 = next((e for e in data if "1" in e["device_id"]), None)
+        if ext1 is None:
+            return np.eye(3, dtype=np.float64), np.zeros((3, 1), dtype=np.float64)
+        
+        rvec = np.array(ext1["rvec"], dtype=np.float64)
+        tvec = np.array(ext1["tvec"], dtype=np.float64).reshape(3, 1)
+        R, _ = cv2.Rodrigues(rvec)
+        return R, tvec
+    except (FileNotFoundError, json.JSONDecodeError, StopIteration):
         return np.eye(3, dtype=np.float64), np.zeros((3, 1), dtype=np.float64)
 
 
