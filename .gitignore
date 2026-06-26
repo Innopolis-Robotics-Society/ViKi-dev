@@ -1,3 +1,12 @@
+rec_*.json
+*.npy
+extrinsics.json
+timestamps.json
+intrinsics.json
+*.zip
+depth/
+data/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -224,5 +233,6 @@ __marimo__/
 skeleton_models/
 skeleton_tests/
 models/
+
 
 AGENTS.md

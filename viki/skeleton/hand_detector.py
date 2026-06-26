@@ -22,6 +22,9 @@ import threading
 import urllib.request
 from pathlib import Path
 from typing import Literal, Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -90,26 +93,26 @@ class HandDetector:
 
     def __init__(
         self,
-        hand: Literal["right", "left"] = "right",
+        hand: Literal["right", "left"] = "right", #TODO move this selection to frontend
         mode: Literal["image", "video", "live"] = "image",
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
-        min_hand_confidence: float = 0.6,
-        min_pose_confidence: float = 0.5,
-        mirrored: bool = False,
+        min_hand_confidence: float = 0.5,
+        min_pose_confidence: float = 0.3,
+        mirrored: bool = False, # TODO swapped to true
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
-
+ 
         self._hand = hand
         self._mode = mode
-
+ 
         if mirrored:
             self._target_label = "Left" if hand == "right" else "Right"
         else:
-            self._target_label = "Right" if hand == "right" else "Left"
+            self._target_label = "Right" if hand == "right" else "Left" 
 
         hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
         pose_path = pose_model or _ensure_model("pose_landmarker.task", models_dir)
@@ -127,8 +130,10 @@ class HandDetector:
         self._live_hand_result = None
         self._live_pose_result = None 
         self._live_last_ts_ms  = -1  # timestamp of last result returned to caller
+        self._last_timestamp_ms = -1 # track last timestamp sent to MediaPipe (for video mode)
 
         def _hand_cb(result, _img, _ts):
+
             with self._lock:
                 self._live_hand_result = result
 
@@ -137,6 +142,7 @@ class HandDetector:
                 self._live_pose_result = result
                 
 
+        hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
         hand_opts = vision.HandLandmarkerOptions(
             base_options=python.BaseOptions(model_asset_path=hand_path),
             running_mode=running_mode,
@@ -159,39 +165,58 @@ class HandDetector:
         self._pose = vision.PoseLandmarker.create_from_options(pose_opts)
         self._mp = mp
 
-    def detect(self, frame: PreparedFrame) -> Optional[HandDetection]:
+    def detect(self, frame: Optional[PreparedFrame]) -> Optional[HandDetection]:
         """
         Run detection on a PreparedFrame.
-
+ 
         IMAGE — blocking, returns result immediately.
         VIDEO — blocking with tracking; frame.timestamp_us must be strictly increasing.
         LIVE  — non-blocking; submits frame async and returns the PREVIOUS result.
                 First call always returns None (no previous result yet).
-
+ 
         Returns None if hand is not detected.
         """
+        # if frame is None:
+        #     return None
+ 
         h, w = frame.rgb.shape[:2]
-
+ 
         mp_image = self._mp.Image(
             image_format=self._mp.ImageFormat.SRGB,
             data=np.ascontiguousarray(frame.rgb),
         )
         timestamp_ms = frame.timestamp_us // 1000
 
+ 
         if self._mode == "video":
-            hand_result = self._hands.detect_for_video(mp_image, timestamp_ms)
+            # MediaPipe requires strictly increasing timestamps.
+            if timestamp_ms <= self._last_timestamp_ms:
+                timestamp_ms = self._last_timestamp_ms + 1
+            self._last_timestamp_ms = timestamp_ms
+ 
+            hand_result = self._hands.detect_for_video(mp_image, timestamp_ms) if self._hands else None
             pose_result = self._pose.detect_for_video(mp_image, timestamp_ms)
+
             
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
-            self._hands.detect_async(mp_image, timestamp_ms)
+            if self._hands:
+                if timestamp_ms <= self._last_timestamp_ms:
+                    timestamp_ms = self._last_timestamp_ms + 1
+                self._last_timestamp_ms = timestamp_ms
+                self._hands.detect_async(mp_image, timestamp_ms)
+            
+            if timestamp_ms <= self._last_timestamp_ms:
+                timestamp_ms = self._last_timestamp_ms + 1
+            self._last_timestamp_ms = timestamp_ms
             self._pose.detect_async(mp_image, timestamp_ms)
+            
             with self._lock:
                 
                 hand_result = self._live_hand_result
                 pose_result = self._live_pose_result
                 last_ts     = self._live_last_ts_ms
-            if hand_result is None or pose_result is None:
+            if (hand_result is None) or pose_result is None:
                 return None  # no result yet (first frame)
             # Callback hasn't fired for this frame yet — stale result, skip
             if last_ts == timestamp_ms:
@@ -200,14 +225,20 @@ class HandDetector:
                 self._live_last_ts_ms = timestamp_ms
 
         else:  # image
-            hand_result = self._hands.detect(mp_image)
+            hand_result = self._hands.detect(mp_image) if self._hands else None
             pose_result = self._pose.detect(mp_image)
+            print(f"DEBUG: MediaPipe raw results - hand: {hand_result is not None}, pose: {pose_result is not None}")
 
+        # Debug logging for detection results
         hand_px, hand_z, confidence = self._extract_hand(hand_result, w, h)
         if hand_px is None:
+            print(f"DEBUG: Hand detection failed: hand_result is {hand_result is None}")
             return None
 
         pose_px, pose_z = self._extract_pose(pose_result, w, h)
+        if pose_px is None:
+            print(f"DEBUG: Pose detection failed: pose_result is {pose_result is None}")
+            return None
         px, lm_z_rel = self._merge(hand_px, hand_z, pose_px, pose_z)
 
         return HandDetection(
@@ -252,7 +283,11 @@ class HandDetector:
         self, result, w: int, h: int
     ) -> tuple[Optional[np.ndarray], Optional[np.ndarray]]:
         """Returns (px (3,2), z_rel (3,)) for [wrist, elbow, shoulder] or (None, None)."""
+        if result is None:
+            print("DEBUG: _extract_pose: result is None")
+            return None, None
         if not result.pose_landmarks:
+            # print(f"DEBUG: _extract_pose: pose_landmarks is empty. Result type: {type(result)}")
             return None, None
 
         lms = result.pose_landmarks[0] # take only one person; 33 points
@@ -268,10 +303,10 @@ class HandDetector:
 
     @staticmethod
     def _merge(
-        hand_px: np.ndarray,          # (21, 2)
-        hand_z:  np.ndarray,          # (21,)
-        pose_px: np.ndarray | None,   # (3, 2) [wrist, elbow, shoulder] or None
-        pose_z:  np.ndarray | None,   # (3,) or None
+        hand_px: np.ndarray | None,       # (21, 2)
+        hand_z:  np.ndarray | None,       # (21,)
+        pose_px: np.ndarray | None,       # (3, 2) [wrist, elbow, shoulder] or None
+        pose_z:  np.ndarray | None,       # (3,) or None,
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Build final (23, 2) px and (23,) z_rel arrays.
@@ -281,12 +316,18 @@ class HandDetector:
           [21]    ELBOW     — from Pose, or nan if Pose not detected
           [22]    SHOULDER  — from Pose, or nan if Pose not detected
         """
-        px = hand_px.copy()
-        z  = hand_z.copy()
+        if hand_px is not None:
+            px = hand_px.copy()
+            z  = hand_z.copy()
+        else:
+            px = np.full((21, 2), np.nan, dtype=np.float32)
+            z  = np.full(21, np.nan, dtype=np.float32)
 
         if pose_px is not None and pose_z is not None:
-            # px[LM.WRIST] = pose_px[0] # Override wrist with pose for better stability. 
-            # z[LM.WRIST]  = pose_z[0] # But maybe it's better two cases: with/without override
+            # Override wrist (index 0) with pose wrist for arm-hand continuity
+            px[0] = pose_px[0]
+            z[0] = pose_z[0]
+            
             elbow_px    = pose_px[1]
             shoulder_px = pose_px[2]
             elbow_z     = pose_z[1]

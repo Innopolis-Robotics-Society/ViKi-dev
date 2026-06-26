@@ -223,7 +223,15 @@
       aspect-ratio: 4/3;
       overflow: hidden;
     }
-
+    .skel-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
     .stream-panel img {
       width: 100%;
       height: 100%;
@@ -291,6 +299,42 @@
       margin-bottom: 8px;
     }
 
+    .calib-stream-wrapper {
+      position: relative;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 0;
+      max-height: 100%;
+    }
+    .calib-img-container {
+      position: relative;
+      display: inline-block;
+    }
+    .calib-stream-wrapper img {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .calib-stream-label {
+      position: absolute;
+      top: 6px;
+      left: 8px;
+      font-size: 10px;
+      font-weight: 600;
+      color: rgba(255, 255, 255, 0.6);
+      background: rgba(0, 0, 0, 0.5);
+      padding: 2px 6px;
+      border-radius: 3px;
+      pointer-events: none;
+    }
+    .calib-count {
+      color: var(--accent);
+      margin-left: 4px;
+    }
+
     .calib-panel {
       display: none;
       margin: 0 24px 24px;
@@ -328,6 +372,8 @@
       display: flex;
       align-items: center;
       justify-content: center;
+      gap: 10px;
+      max-height: 600px;
     }
 
     .calib-controls {
@@ -388,10 +434,33 @@
       gap: 10px;
     }
 
-    .skeleton-stats {
-      font-size: 11px;
+    .skeleton-table-container {
+      margin-top: 10px;
+      max-height: 200px;
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+    }
+    #skel-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 10px;
+    }
+    #skel-table th, #skel-table td {
+      text-align: left;
+      padding: 4px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    #skel-table th {
+      position: sticky;
+      top: 0;
+      background: var(--surface);
       color: var(--muted);
-      margin-bottom: 8px;
+    }
+    #skel-canvas-3d {
+      width: 100%;
+      height: 100%;
+      display: block;
     }
   </style>
 </head>
@@ -411,6 +480,8 @@
     <div class="sep"></div>
     <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
     <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
+    <div class="sep"></div>
+    <button id="btn-record-rgbd" class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
   </div>
 
   <div class="calib-panel" id="calib-panel">
@@ -444,7 +515,7 @@
           </div>
           <div class="field-row">
             <label>Square size (m)</label>
-            <input type="number" id="square-size" value="1.0" step="0.001" min="0.01" />
+            <input type="number" id="square-size" value="0.025" step="0.001" min="0.01" />
           </div>
 
           <!-- Aruco‑specific fields (hidden by default) -->
@@ -459,8 +530,8 @@
             </div>
           </div>
         </div>
-        <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="startCalibrationSession()">Start Calibration</button>
+        <button class="primary" onclick="captureSample()">Capture Sample</button>
         <button onclick="intrinsicsCalibration()">Start Intrinsics</button>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
       </div>
@@ -472,20 +543,34 @@
       <span class="title">3D Skeleton Estimation</span>
       <button class="danger" onclick="toggleSkeleton()">✕ Close</button>
     </div>
-    <div class="skeleton-body">
-      <div class="skeleton-viz" id="skeleton-viz">
-        <!-- Three.js canvas will be injected here -->
+      <div class="skeleton-body">
+        <div class="skeleton-viz" id="skeleton-viz" style="display:flex; align-items:center; justify-content:center;">
+          <canvas id="skel-canvas-3d"></canvas>
+        </div>
+    <div class="skeleton-controls">
+      <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
+      <div id="skeleton-detections" style="font-size: 11px; color: var(--muted); margin-bottom: 10px;"></div>
+      <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
+        <label for="skel-viz-cam">Visualize Camera</label>
+            <select id="skel-viz-cam" onchange="updateSkelVizCam()"></select>
+          </div>
+          <button id="btn-skel-start" class="primary" onclick="toggleEstimation(true)">▶ Start Estimation</button>
+          <button id="btn-skel-stop" class="danger" onclick="toggleEstimation(false)" disabled>■ Stop Estimation</button>
+          <div class="sep"></div>
+          <button id="btn-skel-rec-start" onclick="toggleRecording(true)">🔴 Record</button>
+          <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop Recording</button>
+          
+          <div class="skeleton-table-container">
+            <table id="skel-table">
+              <thead>
+                <tr><th>Joint</th><th>X</th><th>Y</th><th>Z</th></tr>
+              </thead>
+              <tbody id="skel-table-body"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
-      <div class="skeleton-controls">
-        <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
-        <button id="btn-skel-start" class="primary" onclick="toggleEstimation(true)">▶ Start Estimation</button>
-        <button id="btn-skel-stop" class="danger" onclick="toggleEstimation(false)" disabled>■ Stop Estimation</button>
-        <div class="sep"></div>
-        <button id="btn-skel-rec-start" onclick="toggleRecording(true)">🔴 Record</button>
-        <button id="btn-skel-rec-stop" class="danger" onclick="toggleRecording(false)" disabled>⏹ Stop
-          Recording</button>
-      </div>
-    </div>
+
   </div>
 
   <div class="grid" id="grid">
@@ -497,7 +582,6 @@
 
   <div id="log"></div>
 
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.min.js"></script>
   <script>
     // Per-camera config definitions
     const CAMERA_CONFIG = {
@@ -512,7 +596,7 @@
         resolutions: ['1280x720', '1920x1080', '2048x1536'],
         defaultRes: '1280x720',
         fps: [5, 15, 30],
-        defaultFps: 30,
+        defaultFps: 15,
         depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
         defaultDepth: 'NFOV_UNBINNED',
         // WFOV_UNBINNED hardware limitation: max 15 fps
@@ -584,7 +668,7 @@
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
-          ...data.web_camera.map(id => ({id, type: "web_camera"})),
+          // ...data.web_camera.map(id => ({id, type: "web_camera"})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {
@@ -653,6 +737,7 @@
     <div class="streams">
       <div class="stream-panel">
         <img id="color-${id}" src="" alt="color">
+        <canvas id="skel-canvas-${id}" class="skel-overlay"></canvas>
         <span class="stream-label">COLOR</span>
       </div>
       <div class="stream-divider"></div>
@@ -715,6 +800,8 @@
         const footer = document.getElementById('footer-' + id);
         if (!footer) return;
 
+        if (!info) return;
+
         // Update color panel aspect ratio
         if (info.color_shape) {
           const [ch, cw] = info.color_shape;
@@ -747,6 +834,38 @@
         setRunning(id, true);
       } catch (e) {
         log(`Failed to start ${id}: ${e}`, 'error');
+      }
+    }
+
+    async function startRGBDRecording() {
+      const btn = document.getElementById('btn-record-rgbd');
+      const duration = 10.0;
+      const fps = 15;
+
+      log('Starting RGB-D recording...');
+      try {
+        const res = await api('POST', '/api/record/start', {
+          duration: duration,
+          fps: fps
+        });
+        log(`Recording started: ${res.status}`, 'ok');
+
+        // Visual feedback
+        btn.disabled = true;
+        btn.textContent = 'Recording...';
+        btn.classList.remove('primary');
+        btn.classList.add('danger');
+
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.textContent = '🔴 Record RGB-D';
+          btn.classList.remove('danger');
+          btn.classList.add('primary');
+          log('Recording duration elapsed', 'ok');
+        }, duration * 1000);
+
+      } catch (e) {
+        log('Recording failed: ' + e, 'error');
       }
     }
 
@@ -816,18 +935,22 @@
       container.className = 'calib-streams';
       deviceIds.forEach(id => {
         const wrapper = document.createElement('div');
-        wrapper.className = 'calib-stream-wrapper'
+        wrapper.className = 'calib-stream-wrapper';
         wrapper.dataset.deviceId = id;
+
+        const imgContainer = document.createElement('div');
+        imgContainer.className = 'calib-img-container';
 
         const img = document.createElement('img');
         img.src = `/api/cameras/${id}/stream?mode=color&t=${Date.now()}`;
-        wrapper.appendChild(img);
+        imgContainer.appendChild(img);
 
         const label = document.createElement('span');
         label.className = 'calib-stream-label';
         label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(…)</span>`;
-        wrapper.appendChild(label);
+        imgContainer.appendChild(label);
 
+        wrapper.appendChild(imgContainer);
         container.appendChild(wrapper);
       });
 
@@ -859,6 +982,7 @@
       log('Capturing calibration sample...');
       try {
         await api('POST', '/api/calibration/capture');
+        log('Sample captured successfully', 'ok');
         updateCalibStatus();
       } catch (e) {
         log(`Capture failed: ${e}`, 'error');
@@ -910,46 +1034,102 @@
 
     // --- Skeleton Logic ---
     let skeletonWs = null;
-    let skelScene, skelCamera, skelRenderer, skelPoints = [];
+    let skelPoints = []; // Current 3D points for the selected camera
+    let selectedSkelCam = null;
 
-    function initSkelViz() {
+    const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
+    const SKEL_CONNS = [
+      [22, 21], [21, 0], // Arm
+      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
+      [0, 5], [5, 6], [6, 7], [7, 8], // Index
+      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
+      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
+      [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
+      [5, 9], [9, 13], [13, 17], // Palm
+    ];
+
+    function populateSkelVizCams() {
+      const select = document.getElementById('skel-viz-cam');
+      if (!select) return;
+      select.innerHTML = '';
+      Object.keys(state).forEach(id => {
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = id;
+        select.appendChild(opt);
+      });
+      updateSkelVizCam();
+    }
+
+    function updateSkelVizCam() {
+      selectedSkelCam = document.getElementById('skel-viz-cam')?.value;
+      // Clear current viz if changing camera
+      skelPoints = [];
+      drawSkeleton3D([]);
+      document.getElementById('skel-table-body').innerHTML = '';
+    }
+
+    function drawSkeleton3D(landmarks) {
+      const canvas = document.getElementById('skel-canvas-3d');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      
+      // Set canvas size to match container
       const container = document.getElementById('skeleton-viz');
-      if (container.children.length > 0) return;
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
 
-      const width = container.clientWidth;
-      const height = container.clientHeight;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (!landmarks || landmarks.length === 0) return;
 
-      skelScene = new THREE.Scene();
-      skelCamera = new THREE.PerspectiveCamera(75, width / height, 0.1, 10);
-      skelCamera.position.set(0, 0, 1);
-      skelCamera.up.set(0, 1, 0);
+      // Simple Orthographic Projection (XZ plane)
+      const scale = 500;
+      const offset = { x: canvas.width / 2, y: canvas.height / 2 };
+      
+      const project = (p) => ({
+        x: offset.x + p[0] * scale,
+        y: offset.y - p[1] * scale, // Invert Y for screen
+      });
+      
+      ctx.strokeStyle = '#5b7fff';
+      ctx.lineWidth = 2;
+      ctx.fillStyle = '#fff';
+      
+      SKEL_CONNS.forEach(([a, b]) => {
+        if (landmarks[a] && landmarks[b]) {
+          const p1 = project(landmarks[a]);
+          const p2 = project(landmarks[b]);
+          ctx.beginPath();
+          ctx.moveTo(p1.x, p1.y);
+          ctx.lineTo(p2.x, p2.y);
+          ctx.stroke();
+        }
+      });
+      
+      landmarks.forEach((p, i) => {
+        if (!p) return;
+        const proj = project(p);
+        ctx.beginPath();
+        ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+    }
 
-      skelRenderer = new THREE.WebGLRenderer({antialias: true});
-      skelRenderer.setSize(width, height);
-      skelRenderer.setClearColor(0x000000);
-      container.appendChild(skelRenderer.domElement);
+    function updateSkeletonUI(deviceId, landmarks) {
+      if (deviceId !== selectedSkelCam) return;
 
-      const grid = new THREE.GridHelper(2, 20, 0x444444, 0x222222);
-      grid.rotation.x = Math.PI / 2;
-      skelScene.add(grid);
-
-      const axes = new THREE.AxesHelper(0.2);
-      skelScene.add(axes);
-
-      // Create 23 points
-      const geo = new THREE.SphereGeometry(0.01);
-      for (let i = 0; i < 23; i++) {
-        const mat = new THREE.MeshBasicMaterial({color: 0x5b7fff});
-        const mesh = new THREE.Mesh(geo, mat);
-        skelPoints.push(mesh);
-        skelScene.add(mesh);
+      const tableBody = document.getElementById('skel-table-body');
+      if (tableBody) {
+        tableBody.innerHTML = '';
+        landmarks.forEach((p, i) => {
+          if (!p) return;
+          const row = document.createElement('tr');
+          row.innerHTML = `<td>${SKEL_NAMES[i] || i}</td><td>${p[0].toFixed(3)}</td><td>${p[1].toFixed(3)}</td><td>${p[2].toFixed(3)}</td>`;
+          tableBody.appendChild(row);
+        });
       }
-
-      function animate() {
-        requestAnimationFrame(animate);
-        skelRenderer.render(skelScene, skelCamera);
-      }
-      animate();
+      
+      drawSkeleton3D(landmarks);
     }
 
     function toggleSkeleton() {
@@ -957,7 +1137,7 @@
       const isVisible = panel.style.display === 'block';
       panel.style.display = isVisible ? 'none' : 'block';
       if (!isVisible) {
-        initSkelViz();
+        populateSkelVizCams();
         updateSkelStatus();
       }
     }
@@ -1010,16 +1190,88 @@
 
       skeletonWs.onmessage = (event) => {
         const data = JSON.parse(event.data);
-        const pts = data.landmarks;
-        for (let i = 0; i < 23; i++) {
-          if (pts && pts[i]) {
-            // ViKi uses OpenCV BGR/XYZ convention. 
-            // If points are [X, Y, Z] in metres:
-            skelPoints[i].position.set(pts[i][0], pts[i][1], pts[i][2]);
-            skelPoints[i].visible = true;
-          } else {
-            skelPoints[i].visible = false;
+        const detections = data.detections;
+
+        // Update detection status in panel
+        const detEl = document.getElementById('skeleton-detections');
+        if (detEl) {
+          const statusHtml = Object.keys(state).map(id => {
+            const detected = !!detections[id];
+            return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
+          }).join('');
+          detEl.innerHTML = statusHtml;
+        }
+
+        for (const [deviceId, det] of Object.entries(detections)) {
+          if (!det) continue;
+
+          // Prepare 3D points for table/viz (normalized)
+          let pts3d = det;
+          if (typeof det === 'object' && 'px' in det) {
+            const img = document.getElementById(`color-${deviceId}`);
+            const w = img ? img.naturalWidth : 640;
+            const h = img ? img.naturalHeight : 480;
+            pts3d = det.px.map((p, i) => [
+              p[0] / w, 
+              p[1] / h, 
+              (det.lm_z_rel && det.lm_z_rel[i]) || 0
+            ]);
           }
+          updateSkeletonUI(deviceId, pts3d);
+
+          // 2D Overlay
+          const canvas = document.getElementById(`skel-canvas-${deviceId}`);
+          if (!canvas) continue;
+          
+          const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
+          if (!pts2d || !Array.isArray(pts2d)) continue;
+
+          const ctx = canvas.getContext('2d');
+          const img = document.getElementById(`color-${deviceId}`);
+          if (!img) continue;
+
+          // Sync canvas size to current image display size
+          canvas.width = img.clientWidth;
+          canvas.height = img.clientHeight;
+
+          // Image is center-fit, we need to find the actual image area within the panel
+          // For simplicity, we assume the canvas matches the image's rendering.
+          // Since the image has object-fit: contain, we'd ideally need to calculate the offset.
+          // But as a first pass, we'll draw based on the normalized pixels (u, v) relative to the image.
+          
+          // The backend sends pixels as absolute image coords (u, v).
+          // We need to scale them to the displayed image size.
+          const scaleX = canvas.width / img.naturalWidth;
+          const scaleY = canvas.height / img.naturalHeight;
+
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          ctx.strokeStyle = '#5b7fff';
+          ctx.fillStyle = '#5b7fff';
+          ctx.lineWidth = 3;
+
+          // Landmarks for arm chain: Wrist (0), Elbow (21), Shoulder (22)
+           const indices = [0, 21, 22];
+           const coords = indices.map(i => pts2d[i] ? [pts2d[i][0] * scaleX, pts2d[i][1] * scaleY] : null);
+
+
+          // Draw lines
+          ctx.beginPath();
+          for (let i = 0; i < coords.length - 1; i++) {
+            if (coords[i] && coords[i+1]) {
+              ctx.moveTo(coords[i][0], coords[i][1]);
+              ctx.lineTo(coords[i+1][0], coords[i+1][1]);
+            }
+          }
+          ctx.stroke();
+
+          // Draw dots
+          coords.forEach(p => {
+            if (p) {
+              ctx.beginPath();
+              ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          });
         }
       };
 
@@ -1074,12 +1326,13 @@
     }
 
     async function intrinsicsCalibration() {
-      log('Intrinsics calibration strated...')
+      log('Intrinsics calibration started...');
       for (const id of Object.keys(state)) {
         try {
           await api('POST', `/api/calibration/intrinsics/${id}`);
+          log(`Intrinsics calibration for ${id} successful`, 'ok');
         } catch (e) {
-          log(`Intrinsics calibration for ${id} failed: ${e}`, error)
+          log(`Intrinsics calibration for ${id} failed: ${e}`, 'error');
         }
       }
     }
@@ -1092,9 +1345,10 @@
       updateCalibStatus();
     }
 
-    checkServer();
+    // checkServer();
     setInterval(checkServer, 5000);
-    scanDevices();
+    // scanDevices();
+    etInterval(scanDevices, 5000);
     populateArucoDicts();
     toggleBoardFields();
   </script>

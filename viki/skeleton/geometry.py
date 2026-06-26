@@ -41,12 +41,15 @@ def _wrist_scale(
 
     Returns None if the wrist depth pixel is nan or out of bounds.
     """
+    # Ensure wrist coordinates are valid before rounding
+    if np.isnan(wrist_px[0]) or np.isnan(wrist_px[1]):
+        return None
     u, v = int(round(wrist_px[0])), int(round(wrist_px[1]))
-    h, w = depth_m.shape
+    h, w = depth_m.shape[:2]
     if not (0 <= v < h and 0 <= u < w):
         return None
     Z_wrist = depth_m[v, u]
-    if np.isnan(Z_wrist) or wrist_z_rel == 0.0:
+    if np.isnan(Z_wrist).any() or wrist_z_rel == 0.0:
         return None
     return float(Z_wrist / wrist_z_rel)
 
@@ -73,7 +76,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     fx, fy = K[0, 0], K[1, 1]
     cx, cy = K[0, 2], K[1, 2]
     depth_m = frame.depth_m
-    h, w = depth_m.shape
+    h, w = depth_m.shape[:2]
 
     mp_z_scale = _wrist_scale(detection.px[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
     if mp_z_scale is None:
@@ -95,11 +98,12 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
             continue
 
         Z = depth_m[vi, ui]
-
-        if not np.isnan(Z):
+ 
+        if not np.isnan(Z).any():
             # Valid depth
             points[i] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
             source[i] = LandmarkSource.DEPTH
+
 
         elif mp_z_scale is not None:
             # No depth, we estimate Z
