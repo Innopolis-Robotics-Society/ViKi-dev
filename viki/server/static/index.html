@@ -874,6 +874,9 @@
       await api('POST', `/api/cameras/${id}/stop`);
       log(`${id} stopped`);
       setRunning(id, false);
+      // Clear the overlay canvas for the stopped camera
+      const canvas = document.getElementById(`skel-canvas-${id}`);
+      if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
     }
 
     function setRunning(id, running) {
@@ -1079,7 +1082,6 @@
       if (!canvas) return;
       const ctx = canvas.getContext('2d');
       
-      // Set canvas size to match container
       const container = document.getElementById('skeleton-viz');
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
@@ -1087,36 +1089,46 @@
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!landmarks || landmarks.length === 0) return;
 
-      // Simple Orthographic Projection (XZ plane)
-      const scale = 500;
-      const offset = { x: canvas.width / 2, y: canvas.height / 2 };
+      const viewW = canvas.width / 3;
+      const viewH = canvas.height;
+      const scale = 400;
       
-      const project = (p) => ({
-        x: offset.x + p[0] * scale,
-        y: offset.y - p[1] * scale, // Invert Y for screen
-      });
-      
-      ctx.strokeStyle = '#5b7fff';
-      ctx.lineWidth = 2;
-      ctx.fillStyle = '#fff';
-      
-      SKEL_CONNS.forEach(([a, b]) => {
-        if (landmarks[a] && landmarks[b]) {
-          const p1 = project(landmarks[a]);
-          const p2 = project(landmarks[b]);
+      const views = [
+        { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0], y: p[2] }), offset: 0 },
+        { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0], y: p[1] }), offset: viewW },
+        { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2], y: p[1] }), offset: viewW * 2 },
+      ];
+
+      views.forEach(view => {
+        const centerX = view.offset + viewW / 2;
+        const centerY = viewH / 2;
+        
+        ctx.fillStyle = '#6b6b80';
+        ctx.font = '10px SF Mono';
+        ctx.fillText(view.label, view.offset + 10, 20);
+
+        ctx.strokeStyle = '#5b7fff';
+        ctx.lineWidth = 2;
+        ctx.fillStyle = '#fff';
+
+        SKEL_CONNS.forEach(([a, b]) => {
+          if (landmarks[a] && landmarks[b]) {
+            const p1 = view.proj(landmarks[a]);
+            const p2 = view.proj(landmarks[b]);
+            ctx.beginPath();
+            ctx.moveTo(centerX + p1.x * scale, centerY - p1.y * scale);
+            ctx.lineTo(centerX + p2.x * scale, centerY - p2.y * scale);
+            ctx.stroke();
+          }
+        });
+
+        landmarks.forEach((p, i) => {
+          if (!p || isNaN(p[0])) return;
+          const proj = view.proj(p);
           ctx.beginPath();
-          ctx.moveTo(p1.x, p1.y);
-          ctx.lineTo(p2.x, p2.y);
-          ctx.stroke();
-        }
-      });
-      
-      landmarks.forEach((p, i) => {
-        if (!p) return;
-        const proj = project(p);
-        ctx.beginPath();
-        ctx.arc(proj.x, proj.y, 3, 0, Math.PI * 2);
-        ctx.fill();
+          ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
+          ctx.fill();
+        });
       });
     }
 
@@ -1127,7 +1139,7 @@
       if (tableBody) {
         tableBody.innerHTML = '';
         landmarks.forEach((p, i) => {
-          if (!p) return;
+          if (!p || p[0] === null || isNaN(p[0])) return;
           const row = document.createElement('tr');
           row.innerHTML = `<td>${SKEL_NAMES[i] || i}</td><td>${p[0].toFixed(3)}</td><td>${p[1].toFixed(3)}</td><td>${p[2].toFixed(3)}</td>`;
           tableBody.appendChild(row);
@@ -1171,9 +1183,16 @@
           startSkelStream();
         } else {
           stopSkelStream();
+          // Clear all overlay canvases when estimation is turned off
+          Object.keys(state).forEach(id => {
+            const canvas = document.getElementById(`skel-canvas-${id}`);
+            if (canvas) canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
+          });
+          drawSkeleton3D([]);
+          document.getElementById('skel-table-body').innerHTML = '';
         }
       } catch (e) {
-        log('Estimation toggle failed: ' + e, 'error');
+        log('Estimation toggle failed: ' + e);
       }
     }
 
@@ -1193,92 +1212,78 @@
       const wsUrl = `${protocol}//${window.location.host}/api/skeleton/stream`;
       skeletonWs = new WebSocket(wsUrl);
 
-      skeletonWs.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        const detections = data.detections;
+       skeletonWs.onmessage = (event) => {
+         const data = JSON.parse(event.data);
+         const detections = data.detections;
+         const globalLms = data.landmarks;
 
-        // Update detection status in panel
-        const detEl = document.getElementById('skeleton-detections');
-        if (detEl) {
-          const statusHtml = Object.keys(state).map(id => {
-            const detected = !!detections[id];
-            return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
-          }).join('');
-          detEl.innerHTML = statusHtml;
-        }
+         // Update detection status in panel
+         const detEl = document.getElementById('skeleton-detections');
+         if (detEl) {
+           const statusHtml = Object.keys(state).map(id => {
+             const detected = !!detections[id];
+             return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
+           }).join('');
+           detEl.innerHTML = statusHtml;
+         }
 
-        for (const [deviceId, det] of Object.entries(detections)) {
-          if (!det) continue;
+         for (const [deviceId, det] of Object.entries(detections)) {
+           const canvas = document.getElementById(`skel-canvas-${deviceId}`);
+           if (!canvas) continue;
+           const ctx = canvas.getContext('2d');
+           
+           if (!det) {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             continue;
+           }
 
-          // Prepare 3D points for table/viz (normalized)
-          let pts3d = det;
-          if (typeof det === 'object' && 'px' in det) {
-            const img = document.getElementById(`color-${deviceId}`);
-            const w = img ? img.naturalWidth : 640;
-            const h = img ? img.naturalHeight : 480;
-            pts3d = det.px.map((p, i) => [
-              p[0] / w, 
-              p[1] / h, 
-              (det.lm_z_rel && det.lm_z_rel[i]) || 0
-            ]);
-          }
-          updateSkeletonUI(deviceId, pts3d);
+           // 2D Overlay
+           const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
+           if (!pts2d || !Array.isArray(pts2d)) {
+             ctx.clearRect(0, 0, canvas.width, canvas.height);
+             continue;
+           }
 
-          // 2D Overlay
-          const canvas = document.getElementById(`skel-canvas-${deviceId}`);
-          if (!canvas) continue;
-          
-          const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
-          if (!pts2d || !Array.isArray(pts2d)) continue;
+           const img = document.getElementById(`color-${deviceId}`);
+           if (!img) continue;
 
-          const ctx = canvas.getContext('2d');
-          const img = document.getElementById(`color-${deviceId}`);
-          if (!img) continue;
+           canvas.width = img.clientWidth;
+           canvas.height = img.clientHeight;
 
-          // Sync canvas size to current image display size
-          canvas.width = img.clientWidth;
-          canvas.height = img.clientHeight;
+           const scaleX = canvas.width / img.naturalWidth;
+           const scaleY = canvas.height / img.naturalHeight;
 
-          // Image is center-fit, we need to find the actual image area within the panel
-          // For simplicity, we assume the canvas matches the image's rendering.
-          // Since the image has object-fit: contain, we'd ideally need to calculate the offset.
-          // But as a first pass, we'll draw based on the normalized pixels (u, v) relative to the image.
-          
-          // The backend sends pixels as absolute image coords (u, v).
-          // We need to scale them to the displayed image size.
-          const scaleX = canvas.width / img.naturalWidth;
-          const scaleY = canvas.height / img.naturalHeight;
+           ctx.clearRect(0, 0, canvas.width, canvas.height);
+           ctx.strokeStyle = '#5b7fff';
+           ctx.fillStyle = '#5b7fff';
+           ctx.lineWidth = 3;
 
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.strokeStyle = '#5b7fff';
-          ctx.fillStyle = '#5b7fff';
-          ctx.lineWidth = 3;
-
-          // Landmarks for arm chain: Wrist (0), Elbow (21), Shoulder (22)
            const indices = [0, 21, 22];
            const coords = indices.map(i => pts2d[i] ? [pts2d[i][0] * scaleX, pts2d[i][1] * scaleY] : null);
 
+           ctx.beginPath();
+           for (let i = 0; i < coords.length - 1; i++) {
+             if (coords[i] && coords[i+1]) {
+               ctx.moveTo(coords[i][0], coords[i][1]);
+               ctx.lineTo(coords[i+1][0], coords[i+1][1]);
+             }
+           }
+           ctx.stroke();
 
-          // Draw lines
-          ctx.beginPath();
-          for (let i = 0; i < coords.length - 1; i++) {
-            if (coords[i] && coords[i+1]) {
-              ctx.moveTo(coords[i][0], coords[i][1]);
-              ctx.lineTo(coords[i+1][0], coords[i+1][1]);
-            }
-          }
-          ctx.stroke();
-
-          // Draw dots
-          coords.forEach(p => {
-            if (p) {
-              ctx.beginPath();
-              ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
-              ctx.fill();
-            }
-          });
-        }
-      };
+           coords.forEach(p => {
+             if (p) {
+               ctx.beginPath();
+               ctx.arc(p[0], p[1], 4, 0, Math.PI * 2);
+               ctx.fill();
+             }
+           });
+         }
+         
+         // Update 3D Viz and Table using Fused Landmarks
+         if (globalLms && globalLms.length > 0) {
+           updateSkeletonUI(selectedSkelCam, globalLms);
+         }
+       };
 
       skeletonWs.onclose = () => {
         skeletonWs = null;
