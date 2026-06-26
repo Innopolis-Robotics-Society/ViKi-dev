@@ -11,6 +11,8 @@ import cv2
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+import logging
+logger = logging.getLogger(__name__)
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
@@ -72,6 +74,11 @@ async def capture(
 async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    if not cal._workers:
+        raise HTTPException(
+            400, 
+            "Calibration session not started. Please click 'Sync Parameters' first."
+        )
     cal.capture_all()
 
 
@@ -118,7 +125,8 @@ async def start_aruco_worker(
 
 @router.get("/status/{device_id}")
 async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
-    return {"samples_count": cal.status(device_id)}
+    # logger.debug(f"calibration status for {device_id}: {cal.status(device_id)}")
+    return cal.status(device_id)
 
 
 @router.get("/samples_count/{device_id}")
@@ -176,18 +184,10 @@ async def extrinsics_post_all(
     cal: CalibrationManager = Depends(get_calibrator),
     mgr: CameraManager = Depends(get_manager),
 ):
-    import logging
     results = []
     active_devices = mgr.active_device_ids()
     if not active_devices:
         raise HTTPException(400, "No active cameras to calibrate")
-
-    # Check if any workers are active
-    if not cal._workers:
-        raise HTTPException(
-            400, 
-            "Calibration session not started. Please configure board parameters and click 'Sync Parameters' first."
-        )
 
     for device_id in active_devices:
         try:
@@ -197,7 +197,7 @@ async def extrinsics_post_all(
                 tvec=extr.tvec.flatten().tolist(),
             ))
         except Exception as e:
-            logging.error(f"Extrinsics calibration failed for {device_id}: {e}")
+            logger.error(f"Extrinsics calibration failed for {device_id}: {e}")
             continue
     
     if not results:

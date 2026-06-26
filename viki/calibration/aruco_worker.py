@@ -93,7 +93,7 @@ class ArucoWorker(_CalibrationWorker):
 
 
         self._logger.debug(
-            f"{self.device_id} add_sample: success (ids: {corners, c_ids})"
+            f"{self.device_id} add_sample: success)" # (ids: {corners, c_ids})"
         )
 
     def intrinsics_calibration(

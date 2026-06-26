@@ -530,7 +530,7 @@
              </div>
            </div>
         </div>
-         <button onclick="startCalibrationSession()">Sync Parameters</button>
+         <button onclick="startCalibrationSession()">deprecated: Sync Params</button>
          <button id="btn-capture-sample" class="primary" onclick="captureSample()">Capture Sample</button>
          <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
         <button onclick="intrinsicsCalibration()">Calibrate Intrinsics</button>
@@ -633,7 +633,7 @@ Extrinsic calibration requires 1 sample per camera</div>
       });
     }
 
-    function toggleBoardFields() {
+    async function toggleBoardFields() {
       const boardType = document.getElementById("board-type").value;
       const arucoFields = document.getElementById("aruco-fields");
       arucoFields.style.display = boardType === 'aruco' ? 'block' : 'none';
@@ -648,9 +648,8 @@ Extrinsic calibration requires 1 sample per camera</div>
         document.getElementById('square-size').value = 0.05;
         document.getElementById('marker-size').value = 0.035;
       }
-      paramsSynced = false;
-      updateCaptureButtonState();
-      syncBoardParameters();
+      await syncBoardParameters();
+      await startCalibrationSession(true);
     }
 
     async function syncBoardParameters() {
@@ -671,20 +670,12 @@ Extrinsic calibration requires 1 sample per camera</div>
       
       try {
         await api('POST', `/api/calibration/sync?board_type=${boardType}`, params);
-        paramsSynced = true;
-        updateCaptureButtonState();
       } catch (e) {
         log('Parameter sync failed: ' + e, 'error');
       }
     }
 
-    let paramsSynced = true;
     const state = {};    // device_id -> { running, type, infoInterval }
- 
-    function updateCaptureButtonState() {
-      const btn = document.getElementById('btn-capture-sample');
-      if (btn) btn.disabled = !paramsSynced;
-    }
 
     function log(msg, cls = '') {
       const el = document.getElementById('log');
@@ -962,24 +953,7 @@ Extrinsic calibration requires 1 sample per camera</div>
         if (state[id].running) await stopCamera(id);
     }
 
-    // let calibPollInterval = null;
-
-    function toggleCalibration() {
-      const panel = document.getElementById('calib-panel');
-      const isVisible = panel.style.display === 'block';
-      panel.style.display = isVisible ? 'none' : 'block';
- 
-      if (!isVisible) {
-        populateCalibrationStreams();
-        updateCalibStatus();
-        paramsSynced = false;
-        updateCaptureButtonState();
-      } else {
-        clearCalibrationStreams();
-        resetCalibration();
-        document.getElementById('calib-streams').innerHTML = '';
-      }
-    }
+    let calibPollInterval = null;
 
     async function resetCalibration() {
       await api('POST', `/api/calibration/reset`);
@@ -993,30 +967,28 @@ Extrinsic calibration requires 1 sample per camera</div>
         container.innerHTML = '<div style="color:var(--muted);padding:20px;">No cameras detected</div>';
         return;
       }
-
+  
       container.className = 'calib-streams';
       deviceIds.forEach(id => {
         const wrapper = document.createElement('div');
         wrapper.className = 'calib-stream-wrapper';
         wrapper.dataset.deviceId = id;
-
+  
         const imgContainer = document.createElement('div');
         imgContainer.className = 'calib-img-container';
-
+  
         const img = document.createElement('img');
         img.src = `/api/cameras/${id}/stream?undistort=false&t=${Date.now()}`;
         imgContainer.appendChild(img);
-
+  
         const label = document.createElement('span');
         label.className = 'calib-stream-label';
-        label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(…)</span>`;
+        label.innerHTML = `${id} <span class="calib-count" id="calib-count-${id}">(0 samples)</span>`;
         imgContainer.appendChild(label);
-
+  
         wrapper.appendChild(imgContainer);
         container.appendChild(wrapper);
       });
-
-      updateCalibStatus();
     }
 
     function clearCalibrationStreams() {
@@ -1027,26 +999,49 @@ Extrinsic calibration requires 1 sample per camera</div>
 
     async function updateCalibStatus() {
       const deviceIds = Object.keys(state);
-      for (const id of deviceIds) {
+      await Promise.all(deviceIds.map(async (id) => {
         const countEl = document.getElementById(`calib-count-${id}`);
-        if (!countEl) continue;
+        if (!countEl) return;
         try {
-          const data = await api('GET', `/api/calibration/status/${id}`);
+           const data = await api('GET', `/api/calibration/status/${id}?t=${Date.now()}`);
+
           if (data.started) {
             countEl.textContent = `(${data.samples_count} samples)`;
           } else {
-            countEl.textContent = `(Idle)`;
+            countEl.textContent = `(0 samples)`;
           }
         } catch (e) {
           countEl.textContent = `(error)`;
           log(`Status check for ${id} failed`, 'error');
         }
+      }));
+    }
+
+    function toggleCalibration() {
+      const panel = document.getElementById('calib-panel');
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+  
+      if (!isVisible) {
+        populateCalibrationStreams();
+        startCalibrationSession(false);
+        updateCalibStatus();
+        calibPollInterval = setInterval(updateCalibStatus, 1000);
+      } else {
+        if (calibPollInterval) {
+          clearInterval(calibPollInterval);
+          calibPollInterval = null;
+        }
+        clearCalibrationStreams();
+        resetCalibration();
+        document.getElementById('calib-streams').innerHTML = '';
       }
     }
 
     async function captureSample() {
       log('Capturing calibration sample...');
       try {
+        updateCalibStatus();
         await api('POST', '/api/calibration/capture');
         log('Sample captured successfully', 'ok');
         updateCalibStatus();
@@ -1055,8 +1050,10 @@ Extrinsic calibration requires 1 sample per camera</div>
       }
     }
 
-    async function startCalibrationSession() {
-      resetCalibration();
+    async function startCalibrationSession(reset = true) {
+      if (reset) {
+        await resetCalibration();
+      }
       const boardType = document.getElementById('board-type').value;
       log(`Starting calibration session (${boardType} board)...`);
 
@@ -1064,6 +1061,7 @@ Extrinsic calibration requires 1 sample per camera</div>
       const height = parseInt(document.getElementById('board-height').value, 10);
       const squareSize = parseFloat(document.getElementById('square-size').value);
 
+      let params, endpoint;
       if (boardType === 'chess') {
         params = {
           board_size: [width, height],
@@ -1468,43 +1466,6 @@ Extrinsic calibration requires 1 sample per camera</div>
         skeletonWs.close();
         skeletonWs = null;
       }
-    }
-
-    async function startCalibrationSession() {
-      resetCalibration();
-      const boardType = document.getElementById('board-type').value;
-      log(`Starting calibration session (${boardType} board)...`);
-
-      const width = parseInt(document.getElementById('board-width').value, 10);
-      const height = parseInt(document.getElementById('board-height').value, 10);
-      const squareSize = parseFloat(document.getElementById('square-size').value);
-
-      if (boardType === 'chess') {
-        params = {
-          board_size: [width, height],
-          square_size: squareSize
-        };
-        endpoint = (id) => `/api/calibration/start/${id}`;
-      } else { // aruco
-        const markerSize = parseFloat(document.getElementById('marker-size').value);
-        const arucoDict = document.getElementById('aruco-dict').value;
-        params = {
-          board_size: [width, height],
-          square_size: squareSize,
-          marker_size: markerSize,
-          aruco_dict: arucoDict
-        };
-        endpoint = (id) => `/api/calibration/start/aruco/${id}`;
-      }
-
-      for (const id of Object.keys(state)) {
-        try {
-          await api('POST', endpoint(id) + "?mode=manual", params);
-        } catch (e) {
-          log(`Calibration session start failed: ${e}`, 'error');
-        }
-      }
-      updateCalibStatus();
     }
 
     async function intrinsicsCalibration() {
