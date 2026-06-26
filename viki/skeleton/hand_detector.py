@@ -178,8 +178,8 @@ class HandDetector:
  
         Returns None if hand is not detected.
         """
-        # if frame is None:
-        #     return None
+        if frame is None:
+            return None
  
         h, w = frame.rgb.shape[:2]
  
