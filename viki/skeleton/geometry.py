@@ -10,8 +10,12 @@ relative z coordinate.
 """
 
 from __future__ import annotations
+from time import sleep
 
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 from viki.skeleton.models import HandDetection, LandmarkSource, Landmarks3D, LM, PreparedFrame
 
@@ -77,12 +81,17 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     cx, cy = K[0, 2], K[1, 2]
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
- 
+
+    # for _ in range(240):
     mp_z_scale = _wrist_scale(detection.px[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
+    #     if mp_z_scale is not None:
+    #         break
+    #     sleep(0.2)
     if mp_z_scale is None:
         z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
         if z_rel_wrist != 0.0:
             mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
+        logger.debug("did not find the wrist, using fallback")
  
     points = np.full((LM.N, 3), np.nan, dtype=np.float32)
     source = np.array([LandmarkSource.MISSING] * LM.N, dtype=object)

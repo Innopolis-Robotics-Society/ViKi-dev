@@ -35,6 +35,31 @@ async def reset(cal: CalibrationManager = Depends(get_calibrator)):
     return {"status": "success"}
 
 
+@router.post("/sync")
+async def sync(
+    params: ArucoBoardParametersData | BoardParametersData, 
+    board_type: str,
+    cal: CalibrationManager = Depends(get_calibrator)
+):
+    # Extract common params
+    board_size = params.board_size
+    square_size = params.square_size
+    
+    # Extract aruco specific
+    marker_size = 0.025
+    aruco_dict = cv2.aruco.DICT_6X6_250
+    
+    if board_type == "aruco" and hasattr(params, "marker_size"):
+        marker_size = params.marker_size
+        try:
+            aruco_dict = getattr(cv2.aruco, params.aruco_dict)
+        except:
+            raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
+            
+    cal.sync_params(board_type, board_size, square_size, marker_size, aruco_dict)
+    return {"status": "success"}
+
+
 @router.post("/capture/{device_id}")
 async def capture(
     device_id: str,
@@ -75,9 +100,9 @@ async def start_aruco_worker(
 ):
     if not params:
         board_size = (10, 8)
-        square_size = 1.0
-        marker_size = 1.0
-        aruco_dict = cv2.aruco.DICT_6X6_250
+        square_size = 0.05
+        marker_size = 0.035
+        aruco_dict = cv2.aruco.DICT_5X5_100
     else:
         board_size = params.board_size
         square_size = params.square_size

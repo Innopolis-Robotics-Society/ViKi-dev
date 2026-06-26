@@ -505,34 +505,34 @@
           </div>
 
           <!-- Common fields (always visible) -->
-          <div class="field-row">
-            <label>Board width</label>
-            <input type="number" id="board-width" value="8" min="1" />
-          </div>
-          <div class="field-row">
-            <label>Board height</label>
-            <input type="number" id="board-height" value="6" min="1" />
-          </div>
-          <div class="field-row">
-            <label>Square size (m)</label>
-            <input type="number" id="square-size" value="0.025" step="0.001" min="0.01" />
-          </div>
-
-          <!-- Aruco‑specific fields (hidden by default) -->
-          <div id="aruco-fields" style="display: none;">
-            <div class="field-row">
-              <label>Marker size (m)</label>
-              <input type="number" id="marker-size" value="0.8" step="0.001" min="0.01" />
-            </div>
-            <div class="field-row">
-              <label>Dictionary</label>
-              <select id="aruco-dict"></select>
-            </div>
-          </div>
+           <div class="field-row">
+             <label>Board width</label>
+             <input type="number" id="board-width" value="8" min="1" onchange="syncBoardParameters()" />
+           </div>
+           <div class="field-row">
+             <label>Board height</label>
+             <input type="number" id="board-height" value="6" min="1" onchange="syncBoardParameters()" />
+           </div>
+           <div class="field-row">
+             <label>Square size (m)</label>
+             <input type="number" id="square-size" value="0.05" step="0.001" min="0.01" onchange="syncBoardParameters()" />
+           </div>
+ 
+           <!-- Aruco‑specific fields (hidden by default) -->
+           <div id="aruco-fields" style="display: none;">
+             <div class="field-row">
+               <label>Marker size (m)</label>
+               <input type="number" id="marker-size" value="0.035" step="0.001" min="0.01" onchange="syncBoardParameters()" />
+             </div>
+             <div class="field-row">
+               <label>Dictionary</label>
+               <select id="aruco-dict" onchange="syncBoardParameters()"></select>
+             </div>
+           </div>
         </div>
-        <button onclick="startCalibrationSession()">Sync Parameters</button>
-        <button class="primary" onclick="captureSample()">Capture Sample</button>
-        <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
+         <button onclick="startCalibrationSession()">Sync Parameters</button>
+         <button id="btn-capture-sample" class="primary" onclick="captureSample()">Capture Sample</button>
+         <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
         <button onclick="intrinsicsCalibration()">Calibrate Intrinsics</button>
         <button class="primary" onclick="extrinsicsCalibration()">Calibrate Extrinsics</button>
         <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
@@ -556,6 +556,9 @@ Extrinsic calibration requires 1 sample per camera</div>
     <div class="skeleton-controls">
       <div class="skeleton-stats" id="skeleton-status">Status: Idle</div>
       <div id="skeleton-detections" style="font-size: 11px; color: var(--muted); margin-bottom: 10px;"></div>
+      <div style="margin-bottom: 10px; display: flex; gap: 8px;">
+        <button id="btn-skel-view" onclick="toggleSkelView()" style="font-size: 11px; padding: 4px 8px; cursor: pointer;">View: Projections</button>
+      </div>
       <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
         <label for="skel-viz-cam">Visualize Camera</label>
             <select id="skel-viz-cam" onchange="updateSkelVizCam()"></select>
@@ -632,10 +635,56 @@ Extrinsic calibration requires 1 sample per camera</div>
 
     function toggleBoardFields() {
       const boardType = document.getElementById("board-type").value;
-      document.getElementById('aruco-fields').style.display = boardType === 'aruco' ? 'block' : 'none';
+      const arucoFields = document.getElementById("aruco-fields");
+      arucoFields.style.display = boardType === 'aruco' ? 'block' : 'none';
+
+      if (boardType === 'chess') {
+        document.getElementById('board-width').value = 8;
+        document.getElementById('board-height').value = 6;
+        document.getElementById('square-size').value = 0.025;
+      } else {
+        document.getElementById('board-width').value = 8;
+        document.getElementById('board-height').value = 6;
+        document.getElementById('square-size').value = 0.05;
+        document.getElementById('marker-size').value = 0.035;
+      }
+      paramsSynced = false;
+      updateCaptureButtonState();
+      syncBoardParameters();
     }
 
+    async function syncBoardParameters() {
+      const boardType = document.getElementById("board-type").value;
+      const width = parseInt(document.getElementById("board-width").value, 10);
+      const height = parseInt(document.getElementById("board-height").value, 10);
+      const squareSize = parseFloat(document.getElementById("square-size").value);
+      
+      const params = {
+        board_size: [width, height],
+        square_size: squareSize
+      };
+      
+      if (boardType === 'aruco') {
+        params.marker_size = parseFloat(document.getElementById('marker-size').value);
+        params.aruco_dict = document.getElementById('aruco-dict').value;
+      }
+      
+      try {
+        await api('POST', `/api/calibration/sync?board_type=${boardType}`, params);
+        paramsSynced = true;
+        updateCaptureButtonState();
+      } catch (e) {
+        log('Parameter sync failed: ' + e, 'error');
+      }
+    }
+
+    let paramsSynced = true;
     const state = {};    // device_id -> { running, type, infoInterval }
+ 
+    function updateCaptureButtonState() {
+      const btn = document.getElementById('btn-capture-sample');
+      if (btn) btn.disabled = !paramsSynced;
+    }
 
     function log(msg, cls = '') {
       const el = document.getElementById('log');
@@ -919,14 +968,13 @@ Extrinsic calibration requires 1 sample per camera</div>
       const panel = document.getElementById('calib-panel');
       const isVisible = panel.style.display === 'block';
       panel.style.display = isVisible ? 'none' : 'block';
-
+ 
       if (!isVisible) {
         populateCalibrationStreams();
         updateCalibStatus();
-        // calibPollInterval = setInterval(updateCalibStatus, 1000);
+        paramsSynced = false;
+        updateCaptureButtonState();
       } else {
-        // if (calibPollInterval) clearInterval(calibPollInterval);
-        // calibPollInterval = null;
         clearCalibrationStreams();
         resetCalibration();
         document.getElementById('calib-streams').innerHTML = '';
@@ -984,7 +1032,11 @@ Extrinsic calibration requires 1 sample per camera</div>
         if (!countEl) continue;
         try {
           const data = await api('GET', `/api/calibration/status/${id}`);
-          countEl.textContent = `(${data.samples_count} samples)`;
+          if (data.started) {
+            countEl.textContent = `(${data.samples_count} samples)`;
+          } else {
+            countEl.textContent = `(Idle)`;
+          }
         } catch (e) {
           countEl.textContent = `(error)`;
           log(`Status check for ${id} failed`, 'error');
@@ -1050,16 +1102,12 @@ Extrinsic calibration requires 1 sample per camera</div>
     let skeletonWs = null;
     let skelPoints = []; // Current 3D points for the selected camera
     let selectedSkelCam = null;
+    let smoothedCenter = null;
+    let skelViewMode = 'projections'; // 'projections' or 'isometric'
 
     const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
     const SKEL_CONNS = [
       [22, 21], [21, 0], // Arm
-      [0, 1], [1, 2], [2, 3], [3, 4], // Thumb
-      [0, 5], [5, 6], [6, 7], [7, 8], // Index
-      [5, 9], [9, 10], [10, 11], [11, 12], // Middle
-      [9, 13], [13, 14], [14, 15], [15, 16], // Ring
-      [13, 17], [17, 18], [18, 19], [19, 20], // Pinky
-      [5, 9], [9, 13], [13, 17], // Palm
     ];
 
     function populateSkelVizCams() {
@@ -1079,6 +1127,7 @@ Extrinsic calibration requires 1 sample per camera</div>
       selectedSkelCam = document.getElementById('skel-viz-cam')?.value;
       // Clear current viz if changing camera
       skelPoints = [];
+      smoothedCenter = null;
       drawSkeleton3D([]);
       document.getElementById('skel-table-body').innerHTML = '';
     }
@@ -1091,21 +1140,31 @@ Extrinsic calibration requires 1 sample per camera</div>
       const container = document.getElementById('skeleton-viz');
       canvas.width = container.clientWidth;
       canvas.height = container.clientHeight;
-
+      
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       if (!landmarks || landmarks.length === 0) return;
-
+      
       // Initial pass: filter for physically plausible depth (> 10cm)
       const plausiblePoints = landmarks.filter(p => p && !isNaN(p[0]) && p[2] > 0.1);
       if (plausiblePoints.length === 0) return;
-
+      
       // Auto-centering: find the average center of the plausible points
-      const center = {
+      const rawCenter = {
         x: plausiblePoints.reduce((sum, p) => sum + p[0], 0) / plausiblePoints.length,
         y: plausiblePoints.reduce((sum, p) => sum + p[1], 0) / plausiblePoints.length,
         z: plausiblePoints.reduce((sum, p) => sum + p[2], 0) / plausiblePoints.length,
       };
-
+      
+      if (!smoothedCenter) {
+        smoothedCenter = { ...rawCenter };
+      } else {
+        const alpha = 0.1;
+        smoothedCenter.x += alpha * (rawCenter.x - smoothedCenter.x);
+        smoothedCenter.y += alpha * (rawCenter.y - smoothedCenter.y);
+        smoothedCenter.z += alpha * (rawCenter.z - smoothedCenter.z);
+      }
+      const center = smoothedCenter;
+      
       // Spatial Filter: only keep points within 0.5m of the center to reject background "jumps"
       const isValid = (p) => {
         if (!p || isNaN(p[0]) || p[2] <= 0.1) return false;
@@ -1114,44 +1173,115 @@ Extrinsic calibration requires 1 sample per camera</div>
           Math.pow(p[1] - center.y, 2) + 
           Math.pow(p[2] - center.z, 2)
         );
-        return dist < 0.5;
+        return dist < 1.0;
       };
-
+      
       const validPoints = landmarks.filter(isValid);
       if (validPoints.length === 0) return;
-
+      
       // Adaptive scaling: find max spread among valid points to fit in view
       let maxSpread = 0.1; 
       validPoints.forEach(p => {
         maxSpread = Math.max(maxSpread, Math.abs(p[0] - center.x), Math.abs(p[1] - center.y), Math.abs(p[2] - center.z));
       });
-      const scale = (canvas.width / 6) / maxSpread;
+      const scale = (canvas.width / 8) / maxSpread;
 
-      const viewW = canvas.width / 3;
-      const viewH = canvas.height;
-      
-      const views = [
-        { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0] - center.x, y: p[2] - center.z }), offset: 0 },
-        { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0] - center.x, y: p[1] - center.y }), offset: viewW },
-        { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - center.z, y: p[1] - center.y }), offset: viewW * 2 },
-      ];
-
-      views.forEach(view => {
-        const centerX = view.offset + viewW / 2;
-        const centerY = viewH / 2;
+      if (skelViewMode === 'projections') {
+        const viewW = canvas.width / 3;
+        const viewH = canvas.height;
         
-        ctx.fillStyle = '#6b6b80';
-        ctx.font = '10px SF Mono';
-        ctx.fillText(view.label, view.offset + 10, 20);
+        const views = [
+          { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0] - center.x, y: p[2] - center.z }), offset: 0 },
+          { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0] - center.x, y: p[1] - center.y }), offset: viewW },
+          { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - center.z, y: p[1] - center.y }), offset: viewW * 2 },
+        ];
+        
+        views.forEach(view => {
+          const centerX = view.offset + viewW / 2;
+          const centerY = viewH / 2;
+          
+          ctx.fillStyle = '#6b6b80';
+          ctx.font = '10px SF Mono';
+          ctx.fillText(view.label, view.offset + 10, 20);
+          
+          ctx.strokeStyle = '#5b7fff';
+          ctx.lineWidth = 2;
+          ctx.fillStyle = '#fff';
+          
+          SKEL_CONNS.forEach(([a, b]) => {
+            if (isValid(landmarks[a]) && isValid(landmarks[b])) {
+              const proj1 = view.proj(landmarks[a]);
+              const proj2 = view.proj(landmarks[b]);
+              ctx.beginPath();
+              ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
+              ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
+              ctx.stroke();
+            }
+          });
+          
+          landmarks.forEach((p, i) => {
+            if (![0, 21, 22].includes(i) || !isValid(p)) return;
+            const proj = view.proj(p);
+            ctx.beginPath();
+            ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
+            ctx.fill();
+          });
+        });
+      } else {
+        // Isometric View
+        const centerX = canvas.width / 2;
+        const centerY = canvas.height / 2;
+        
+        const projectIso = (p) => {
+          // Relative to center
+          const dx = p[0] - center.x;
+          const dy = p[1] - center.y;
+          const dz = p[2] - center.z;
+          
+          // Rotation 45 deg around Y
+          const x1 = dx * Math.cos(Math.PI/4) + dz * Math.sin(Math.PI/4);
+          const z1 = -dx * Math.sin(Math.PI/4) + dz * Math.cos(Math.PI/4);
+          
+          // Rotation 30 deg around X
+          const y2 = dy * Math.cos(Math.PI/6) - z1 * Math.sin(Math.PI/6);
+          
+          return { x: x1, y: y2 };
+        };
 
+        // Draw World Axes (X: red, Y: green, Z: blue)
+        const axisLen = 0.2;
+        const origin = [0, 0, 0];
+        const projOrigin = projectIso(origin);
+        
+        const axes = [
+          { p: [axisLen, 0, 0], color: '#ff5b5b', label: 'X' },
+          { p: [0, axisLen, 0], color: '#5bff5b', label: 'Y' },
+          { p: [0, 0, axisLen], color: '#5b7fff', label: 'Z' },
+        ];
+        
+        axes.forEach(axis => {
+          const pEnd = projectIso(axis.p);
+          ctx.strokeStyle = axis.color;
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(centerX + projOrigin.x * scale, centerY - projOrigin.y * scale);
+          ctx.lineTo(centerX + pEnd.x * scale, centerY - pEnd.y * scale);
+          ctx.stroke();
+          
+          ctx.fillStyle = axis.color;
+          ctx.font = '10px SF Mono';
+          ctx.fillText(axis.label, centerX + pEnd.x * scale + 2, centerY - pEnd.y * scale);
+        });
+
+        // Draw Skeleton
         ctx.strokeStyle = '#5b7fff';
         ctx.lineWidth = 2;
         ctx.fillStyle = '#fff';
 
         SKEL_CONNS.forEach(([a, b]) => {
           if (isValid(landmarks[a]) && isValid(landmarks[b])) {
-            const proj1 = view.proj(landmarks[a]);
-            const proj2 = view.proj(landmarks[b]);
+            const proj1 = projectIso(landmarks[a]);
+            const proj2 = projectIso(landmarks[b]);
             ctx.beginPath();
             ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
             ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
@@ -1160,13 +1290,13 @@ Extrinsic calibration requires 1 sample per camera</div>
         });
 
         landmarks.forEach((p, i) => {
-          if (!isValid(p)) return;
-          const proj = view.proj(p);
+          if (![0, 21, 22].includes(i) || !isValid(p)) return;
+          const proj = projectIso(p);
           ctx.beginPath();
           ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
           ctx.fill();
         });
-      });
+      }
     }
 
     function updateSkeletonUI(deviceId, landmarks) {
@@ -1194,6 +1324,11 @@ Extrinsic calibration requires 1 sample per camera</div>
         populateSkelVizCams();
         updateSkelStatus();
       }
+    }
+
+    function toggleSkelView() {
+      skelViewMode = skelViewMode === 'projections' ? 'isometric' : 'projections';
+      document.getElementById('btn-skel-view').textContent = `View: ${skelViewMode === 'projections' ? 'Projections' : 'Isometric'}`;
     }
 
     async function updateSkelStatus() {
