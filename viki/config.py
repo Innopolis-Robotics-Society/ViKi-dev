@@ -11,25 +11,55 @@ tweak without hunting through request handlers.
 INTRINSICS_FILENAME = "data/intrinsics_calibration.json"
 EXTRINSICS_FILENAME = "data/extrinsics_calibration.json"
 
-# ── Camera-start defaults (mirror StartRequest)
-DEFAULT_FPS = 30
-DEFAULT_COLOR_WIDTH = 1280, 720 # TODO changed from 640, 480
-DEFAULT_COLOR_HEIGHT = 480
+# ── Camera-start defaults
+DEFAULT_FPS = 15
+DEFAULT_COLOR_WIDTH = 1280
+DEFAULT_COLOR_HEIGHT = 720
 DEFAULT_DEPTH_MODE = "NFOV_UNBINNED"
+DEFAULT_TIMEOUT_MS = 5000
+
+# ── Kinect Sync defaults
+DEFAULT_WIRED_SYNC_MODE = 0  # dont change, this is just a fallback. 0: Standalone, 1: Master, 2: Subordinate
+DEFAULT_SUBORDINATE_DELAY_US = 0  # Delay in microseconds
+DEFAULT_SYNCHRONIZED_IMAGES_ONLY = False
+
+# ── Buffer settings
+FRAME_BUFFER_SIZE = 12  # Number of frames kept per camera for sync queries
 
 # ── Depth visualisation
 DEPTH_EMA_ALPHA = 0.05
-
 DEPTH_MIN_VALID_FRACTION = 0.05
 
 # ── Streaming / encoding
 JPEG_QUALITY = 80
 STREAM_IDLE_SLEEP = 0.005
-PLACEHOLDER_SIZE = (1280, 720) # TODO changed from 640, 480
+PLACEHOLDER_SIZE = (1280, 720)
 
-# -- whether the depth for all recorded video frames is saved in .npy along side the
-RECORD_DEPTH = False
+# ── Recording
+RECORD_DEPTH = False # controls if depth is recorded in a .npy format for each frame alongside the mp4 videos, 
+                     # can be disk-space consuming
 
-# -- 
+# ── Detection
 CAMERAS_MIRRORED = False
 HAND_TO_DETECT = "right"
+
+# ── Calibration defaults
+CALIB_MODE = "manual"  # "auto" (worker captures) or "manual" (via add_sample)
+CALIB_BOARD_TYPE = "aruco"  # "chess" or "aruco"
+
+# Chessboard parameters
+CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)
+CALIB_CHESS_SQUARE_SIZE = 0.025  # metres
+
+# Aruco parameters
+CALIB_ARUCO_BOARD_SIZE = (10, 8)  # (cols, rows) dont use 8, 10 for the board we've been using, 
+                                  #              it is specifically 10, 8
+CALIB_ARUCO_SQUARE_SIZE = 0.05    # metres, the size of the black square
+CALIB_ARUCO_MARKER_SIZE = 0.035   # metres, the size of the markers inside the white squares
+# The Aruco dictionary ID is an integer used by OpenCV to identify which 
+# marker set to use. Common IDs:
+# 0: DICT_4X4_50, 1: DICT_4X4_100, 2: DICT_4X4_250, 3: DICT_4X4_1000
+# 4: DICT_5X5_50, 5: DICT_5X5_100, 6: DICT_5X5_250, 7: DICT_5X5_1000
+# 8: DICT_6X6_50, 9: DICT_6X6_100, 10: DICT_6X6_250, 11: DICT_6X6_1000
+# 12: DICT_7X7_50, 13: DICT_7X7_100, 14: DICT_7X7_250, 15: DICT_7X7_1000
+CALIB_ARUCO_DICT = 4  # cv2.aruco.DICT_5X5_50, we have 40 markers each 5x5 squares

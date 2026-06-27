@@ -591,27 +591,58 @@ Extrinsic calibration requires 1 sample per camera</div>
 
   <div id="log"></div>
 
-  <script>
-    // Per-camera config definitions
-    const CAMERA_CONFIG = {
-      realsense: {
-        resolutions: ['640x480', '1280x720', '1920x1080'],
-        defaultRes: '640x480',
-        fps: [15, 30],
-        defaultFps: 30,
-        depthModes: null,
-      },
-      kinect: {
-        resolutions: ['1280x720', '1920x1080', '2048x1536'],
-        defaultRes: '1280x720',
-        fps: [5, 15, 30],
-        defaultFps: 15,
-        depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
-        defaultDepth: 'NFOV_UNBINNED',
-        // WFOV_UNBINNED hardware limitation: max 15 fps
-        depthModeMaxFps: {'WFOV_UNBINNED': 15},
-      },
-    };
+    <script>
+      const FRONTEND_CONFIG = {
+        cameras: {
+          realsense: {
+            defaultRes: '1280x720',
+            defaultFps: 15,
+          },
+          kinect: {
+            defaultRes: '1280x720',
+            defaultFps: 15,
+            defaultDepth: 'NFOV_UNBINNED',
+          }
+        },
+        calibration: {
+          chess: {
+            boardSize: [8, 6],
+            squareSize: 0.025,
+          },
+          aruco: {
+            boardSize: [10, 8],
+            squareSize: 0.05,
+            markerSize: 0.035,
+            defaultDict: 'DICT_5X5_50',
+          }
+        },
+        recording: {
+          duration: 10.0,
+          fps: 15,
+        }
+      };
+
+      // Per-camera config definitions
+      const CAMERA_CONFIG = {
+        realsense: {
+          resolutions: ['640x480', '1280x720', '1920x1080'],
+          defaultRes: FRONTEND_CONFIG.cameras.realsense.defaultRes,
+          fps: [15, 30],
+          defaultFps: FRONTEND_CONFIG.cameras.realsense.defaultFps,
+          depthModes: null,
+        },
+        kinect: {
+          resolutions: ['1280x720', '1920x1080', '2048x1536'],
+          defaultRes: FRONTEND_CONFIG.cameras.kinect.defaultRes,
+          fps: [5, 15, 30],
+          defaultFps: FRONTEND_CONFIG.cameras.kinect.defaultFps,
+          depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
+          defaultDepth: FRONTEND_CONFIG.cameras.kinect.defaultDepth,
+          // WFOV_UNBINNED hardware limitation: max 15 fps
+          depthModeMaxFps: {'WFOV_UNBINNED': 15},
+        },
+      };
+
 
     const ARUCO_DICTS = [
       'DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
@@ -628,7 +659,7 @@ Extrinsic calibration requires 1 sample per camera</div>
         const opt = document.createElement("option");
         opt.value = name;
         opt.textContent = name;
-        if (name == "DICT_5X5_50") opt.selected = true;
+        if (name == FRONTEND_CONFIG.calibration.aruco.defaultDict) opt.selected = true;
         select.appendChild(opt);
       });
     }
@@ -637,20 +668,21 @@ Extrinsic calibration requires 1 sample per camera</div>
       const boardType = document.getElementById("board-type").value;
       const arucoFields = document.getElementById("aruco-fields");
       arucoFields.style.display = boardType === 'aruco' ? 'block' : 'none';
-
+  
       if (boardType === 'chess') {
-        document.getElementById('board-width').value = 8;
-        document.getElementById('board-height').value = 6;
-        document.getElementById('square-size').value = 0.025;
+        document.getElementById('board-width').value = FRONTEND_CONFIG.calibration.chess.boardSize[0];
+        document.getElementById('board-height').value = FRONTEND_CONFIG.calibration.chess.boardSize[1];
+        document.getElementById('square-size').value = FRONTEND_CONFIG.calibration.chess.squareSize;
       } else {
-        document.getElementById('board-width').value = 8;
-        document.getElementById('board-height').value = 6;
-        document.getElementById('square-size').value = 0.05;
-        document.getElementById('marker-size').value = 0.035;
+        document.getElementById('board-width').value = FRONTEND_CONFIG.calibration.aruco.boardSize[0];
+        document.getElementById('board-height').value = FRONTEND_CONFIG.calibration.aruco.boardSize[1];
+        document.getElementById('square-size').value = FRONTEND_CONFIG.calibration.aruco.squareSize;
+        document.getElementById('marker-size').value = FRONTEND_CONFIG.calibration.aruco.markerSize;
       }
       await syncBoardParameters();
       await startCalibrationSession(true);
     }
+
 
     async function syncBoardParameters() {
       const boardType = document.getElementById("board-type").value;
@@ -885,9 +917,9 @@ Extrinsic calibration requires 1 sample per camera</div>
 
     async function startRGBDRecording() {
       const btn = document.getElementById('btn-record-rgbd');
-      const duration = 10.0;
-      const fps = 15;
-
+      const duration = FRONTEND_CONFIG.recording.duration;
+      const fps = FRONTEND_CONFIG.recording.fps;
+  
       log('Starting RGB-D recording...');
       try {
         const res = await api('POST', '/api/record/start', {
@@ -895,13 +927,13 @@ Extrinsic calibration requires 1 sample per camera</div>
           fps: fps
         });
         log(`Recording started: ${res.status}`, 'ok');
-
+  
         // Visual feedback
         btn.disabled = true;
         btn.textContent = 'Recording...';
         btn.classList.remove('primary');
         btn.classList.add('danger');
-
+  
         setTimeout(() => {
           btn.disabled = false;
           btn.textContent = '🔴 Record RGB-D';
@@ -909,11 +941,12 @@ Extrinsic calibration requires 1 sample per camera</div>
           btn.classList.add('primary');
           log('Recording duration elapsed', 'ok');
         }, duration * 1000);
-
+  
       } catch (e) {
         log('Recording failed: ' + e, 'error');
       }
     }
+
 
     async function stopCamera(id) {
       log(`Stopping ${id}...`);

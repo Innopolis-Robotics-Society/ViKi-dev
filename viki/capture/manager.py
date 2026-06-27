@@ -15,10 +15,16 @@ from collections import deque
 from typing import Optional
 from concurrent.futures import ThreadPoolExecutor
 
-from .base import CameraBackend, Frame
+from viki.config import (
+    FRAME_BUFFER_SIZE,
+    DEFAULT_FPS,
+    DEFAULT_COLOR_WIDTH,
+    DEFAULT_COLOR_HEIGHT,
+    DEFAULT_DEPTH_MODE,
+)
 
 # Frames kept per camera for timestamp-based sync queries.
-_FRAME_BUFFER_SIZE = 12
+_FRAME_BUFFER_SIZE = FRAME_BUFFER_SIZE
 
 
 class _CameraWorker:
@@ -117,10 +123,10 @@ class CameraManager:
     def start(
         self,
         device_id: str,
-        fps: int = 30,
-        color_width: int = 640,
-        color_height: int = 480,
-        depth_mode: str = "NFOV_UNBINNED",
+        fps: int = DEFAULT_FPS,
+        color_width: int = DEFAULT_COLOR_WIDTH,
+        color_height: int = DEFAULT_COLOR_HEIGHT,
+        depth_mode: str = DEFAULT_DEPTH_MODE,
         **kwargs,
     ) -> None:
         if device_id in self._workers:
@@ -137,10 +143,10 @@ class CameraManager:
         self,
         master_id: str,
         subordinate_ids: list,
-        fps: int = 30,
-        color_width: int = 1280,
-        color_height: int = 720,
-        depth_mode: str = "NFOV_UNBINNED",
+        fps: int = DEFAULT_FPS,
+        color_width: int = DEFAULT_COLOR_WIDTH,
+        color_height: int = DEFAULT_COLOR_HEIGHT,
+        depth_mode: str = DEFAULT_DEPTH_MODE,
         subordinate_delay_us: int = 0,
     ) -> None:
         """
