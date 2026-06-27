@@ -4,8 +4,10 @@ scripts/live_demo.py
 Live skeleton overlay from a 2D webcam using the new modular detector stack
 in LIVE_STREAM mode.
 
-Default configuration is arm-only (MediaPipeArm). Hand chains in the overlay
-stay invisible automatically because their slots are NaN.
+Default configuration runs MediaPipeArm + MediaPipeHand together via
+CompositeLandmarkDetector in FusionMode.ANY — arm chain (slots 0, 21, 22)
+plus full 21 hand keypoints (slots 0..20). Slot 0 (WRIST) is resolved by
+priority: arm (priority=0) wins over hand (priority=10).
 
 Usage:
     python scripts/live_demo.py [--camera 0] [--hand right] [--width 640]
@@ -20,24 +22,26 @@ import time
 import cv2
 import numpy as np
 
-
-
 from viki.capture.base import Frame
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
     MediaPipeArm,
+    MediaPipeHand,
 )
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
 from viki.skeleton.stats import SkeletonStats, pretty_print
 
-# Default landmarks for post-analysis: arm chain (filled by MediaPipeArm).
+# Default landmarks for post-analysis: wrist (arm) + all fingertips (hand).
 _DEFAULT_ANALYSIS_LM = [
     LM.WRIST,
-    LM.ELBOW,
-    LM.SHOULDER,
+    LM.THUMB_TIP,
+    LM.INDEX_TIP,
+    LM.MIDDLE_TIP,
+    LM.RING_TIP,
+    LM.PINKY_TIP,
 ]
 
 
@@ -180,8 +184,14 @@ def main():
         print(f"Cannot open camera {args.camera}")
         return
 
+    # Arm + hand together. ANY mode → a kept frame requires only one
+    # detector to succeed, so missing-hand or missing-arm frames are still
+    # rendered with whatever is available.
     detector = CompositeLandmarkDetector(
-        detectors=[MediaPipeArm(hand=args.hand, mode="live")],
+        detectors=[
+            MediaPipeArm(hand=args.hand, mode="live"),
+            # MediaPipeHand(hand=args.hand, mode="live"),
+        ],
         mode=FusionMode.ANY,
     )
     stats = SkeletonStats(window=150)
