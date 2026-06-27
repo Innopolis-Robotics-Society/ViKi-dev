@@ -20,13 +20,13 @@ DEFAULT_TIMEOUT_MS = 5000
 
 # ── Kinect Sync defaults
 DEFAULT_WIRED_SYNC_MODE = 0  # dont change, this is just a fallback. 0: Standalone, 1: Master, 2: Subordinate
-DEFAULT_SUBORDINATE_DELAY_US = 0  # Delay in microseconds
+DEFAULT_SUBORDINATE_DELAY_US = 0  # Delay in microseconds, probably dont change
 DEFAULT_SYNCHRONIZED_IMAGES_ONLY = False
 
 # ── Buffer settings
 FRAME_BUFFER_SIZE = 12  # Number of frames kept per camera for sync queries
 
-# ── Depth visualisation
+# ── Depth visualisation, probably dont change
 DEPTH_EMA_ALPHA = 0.05
 DEPTH_MIN_VALID_FRACTION = 0.05
 
