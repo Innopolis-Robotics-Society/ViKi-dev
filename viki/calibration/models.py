@@ -62,7 +62,7 @@ class CalibrationExtrinsics:
     @property
     def rotation_matrix(self) -> np.ndarray:
         R, _ = cv2.Rodrigues(self.rvec)
-        return R
+        return np.array(R)
 
     @property
     def trasnform_matrix(self) -> np.ndarray:
@@ -70,4 +70,4 @@ class CalibrationExtrinsics:
         T = np.eye(4)
         T[:3, :3] = R
         T[:3, 3] = self.tvec.flatten()
-        return T
+        return np.array(T)

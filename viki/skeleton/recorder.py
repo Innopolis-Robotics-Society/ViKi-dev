@@ -12,23 +12,24 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from viki.skeleton.models import SkeletonFrame
+from viki.skeleton.models import SkeletonFrame, LM
 
 
 class SkeletonRecorder:
     """
     Records a sequence of SkeletonFrames to a JSON file.
     """
- 
-    def __init__(self, base_dir: str | Path = "data", filter_indices: list[int] | None = None) -> None:
+
+    def __init__(
+        self, base_dir: str | Path = "data", filter_indices: list[LM] | None = None
+    ) -> None:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._filter_indices = filter_indices
         self._current_file = None
         self._frames: List[dict] = []
- 
-    def start(self) -> str:
 
+    def start(self) -> str:
         """
         Start a new recording session.
         Returns the filename of the recording.
@@ -47,30 +48,22 @@ class SkeletonRecorder:
         if self._current_file is None:
             return
 
-        if np.isnan(frame.landmarks).all():
+        if np.isnan([vec for _, vec in frame.points.items()]).all():
             return
 
         # Filter landmarks if filter_indices is provided (e.g. arm only)
-        landmarks = frame.landmarks
-        source = frame.source
-        confidence = frame.confidence
-        origin = frame.origin
-        
+        landmarks = frame.points
+
         if self._filter_indices:
-            landmarks = landmarks[self._filter_indices]
-            source = source[self._filter_indices]
-            confidence = confidence[self._filter_indices]
-            origin = origin[self._filter_indices]
+            landmarks = [landmarks[index] for index in self._filter_indices]
 
         # Convert numpy arrays to lists for JSON serialization
-        self._frames.append({
-            "ts": frame.timestamp_us,
-            "landmarks": landmarks.tolist(),
-            "source": [str(s) for s in source],
-            "confidence": confidence.tolist(),
-            "origin": [str(o) for o in origin],
-        })
-
+        self._frames.append(
+            {
+                "ts": frame.timestamp_us,
+                "landmarks": landmarks,
+            }
+        )
 
     def stop(self) -> str | None:
         """

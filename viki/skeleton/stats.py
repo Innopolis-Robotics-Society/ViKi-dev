@@ -13,23 +13,35 @@ from typing import Optional, Sequence, Union
 
 import numpy as np
 
-from viki.skeleton.models import LM, LandmarkSource, Landmarks3D, SkeletonFrame
+from viki.skeleton.models import LM, Landmarks3D, SkeletonFrame
 
 # Skeleton bone connections for 3-D plots.
 _BONES: list[tuple[int, int]] = [
-    (LM.WRIST, LM.THUMB_CMC),  (LM.THUMB_CMC, LM.THUMB_MCP),
-    (LM.THUMB_MCP, LM.THUMB_IP),(LM.THUMB_IP,  LM.THUMB_TIP),
-    (LM.WRIST, LM.INDEX_MCP),  (LM.INDEX_MCP,  LM.INDEX_PIP),
-    (LM.INDEX_PIP, LM.INDEX_DIP),(LM.INDEX_DIP, LM.INDEX_TIP),
-    (LM.WRIST, LM.MIDDLE_MCP), (LM.MIDDLE_MCP, LM.MIDDLE_PIP),
-    (LM.MIDDLE_PIP,LM.MIDDLE_DIP),(LM.MIDDLE_DIP,LM.MIDDLE_TIP),
-    (LM.WRIST, LM.RING_MCP),   (LM.RING_MCP,   LM.RING_PIP),
-    (LM.RING_PIP,  LM.RING_DIP),(LM.RING_DIP,   LM.RING_TIP),
-    (LM.WRIST, LM.PINKY_MCP),  (LM.PINKY_MCP,  LM.PINKY_PIP),
-    (LM.PINKY_PIP, LM.PINKY_DIP),(LM.PINKY_DIP, LM.PINKY_TIP),
-    (LM.INDEX_MCP, LM.MIDDLE_MCP),(LM.MIDDLE_MCP, LM.RING_MCP),
-    (LM.RING_MCP,  LM.PINKY_MCP),
-    (LM.SHOULDER,  LM.ELBOW),  (LM.ELBOW, LM.WRIST),
+    (LM.WRIST, LM.THUMB_CMC),
+    (LM.THUMB_CMC, LM.THUMB_MCP),
+    (LM.THUMB_MCP, LM.THUMB_IP),
+    (LM.THUMB_IP, LM.THUMB_TIP),
+    (LM.WRIST, LM.INDEX_MCP),
+    (LM.INDEX_MCP, LM.INDEX_PIP),
+    (LM.INDEX_PIP, LM.INDEX_DIP),
+    (LM.INDEX_DIP, LM.INDEX_TIP),
+    (LM.WRIST, LM.MIDDLE_MCP),
+    (LM.MIDDLE_MCP, LM.MIDDLE_PIP),
+    (LM.MIDDLE_PIP, LM.MIDDLE_DIP),
+    (LM.MIDDLE_DIP, LM.MIDDLE_TIP),
+    (LM.WRIST, LM.RING_MCP),
+    (LM.RING_MCP, LM.RING_PIP),
+    (LM.RING_PIP, LM.RING_DIP),
+    (LM.RING_DIP, LM.RING_TIP),
+    (LM.WRIST, LM.PINKY_MCP),
+    (LM.PINKY_MCP, LM.PINKY_PIP),
+    (LM.PINKY_PIP, LM.PINKY_DIP),
+    (LM.PINKY_DIP, LM.PINKY_TIP),
+    (LM.INDEX_MCP, LM.MIDDLE_MCP),
+    (LM.MIDDLE_MCP, LM.RING_MCP),
+    (LM.RING_MCP, LM.PINKY_MCP),
+    (LM.SHOULDER, LM.ELBOW),
+    (LM.ELBOW, LM.WRIST),
 ]
 
 LandmarkSpec = Optional[Union[Sequence[int], int]]
@@ -37,11 +49,26 @@ LandmarkSpec = Optional[Union[Sequence[int], int]]
 # Human-readable names indexed by LM constants
 _LM_NAMES: list[str] = [
     "WRIST",
-    "THUMB_CMC", "THUMB_MCP", "THUMB_IP",  "THUMB_TIP",
-    "INDEX_MCP", "INDEX_PIP", "INDEX_DIP", "INDEX_TIP",
-    "MIDDLE_MCP","MIDDLE_PIP","MIDDLE_DIP","MIDDLE_TIP",
-    "RING_MCP",  "RING_PIP",  "RING_DIP",  "RING_TIP",
-    "PINKY_MCP", "PINKY_PIP", "PINKY_DIP", "PINKY_TIP",
+    "THUMB_CMC",
+    "THUMB_MCP",
+    "THUMB_IP",
+    "THUMB_TIP",
+    "INDEX_MCP",
+    "INDEX_PIP",
+    "INDEX_DIP",
+    "INDEX_TIP",
+    "MIDDLE_MCP",
+    "MIDDLE_PIP",
+    "MIDDLE_DIP",
+    "MIDDLE_TIP",
+    "RING_MCP",
+    "RING_PIP",
+    "RING_DIP",
+    "RING_TIP",
+    "PINKY_MCP",
+    "PINKY_PIP",
+    "PINKY_DIP",
+    "PINKY_TIP",
     "ELBOW",
     "SHOULDER",
 ]
@@ -71,8 +98,8 @@ class SkeletonStats:
     """
 
     def __init__(self, window: int = 150) -> None:
-        self._window  = window
-        self._lock    = threading.Lock()
+        self._window = window
+        self._lock = threading.Lock()
         self._start_t = time.monotonic()
         self._reset_state()
 
@@ -101,12 +128,12 @@ class SkeletonStats:
 
             # Normalise to (points, source, confidence_value)
             if isinstance(frame, SkeletonFrame):
-                pts        = frame.landmarks          # (23, 3)
-                source     = frame.source             # (23,) LandmarkSource
+                pts = frame.landmarks  # (23, 3)
+                source = frame.source  # (23,) LandmarkSource
                 conf_value = float(np.nanmean(frame.confidence))
             else:  # Landmarks3D
-                pts        = frame.points             # (23, 3)
-                source     = frame.source             # (23,) LandmarkSource
+                pts = frame.points  # (23, 3)
+                source = frame.source  # (23,) LandmarkSource
                 conf_value = float(confidence) if confidence is not None else 0.0
 
             self._conf_window.append(conf_value)
@@ -138,7 +165,6 @@ class SkeletonStats:
         with self._lock:
             self._start_t = time.monotonic()
             self._reset_state()
-            
 
     def position_over_time(
         self, landmarks: LandmarkSpec = None
@@ -158,7 +184,7 @@ class SkeletonStats:
                 empty = np.empty((0, len(ids), 3), dtype=np.float32)
                 return empty, np.empty((0,), dtype=np.float32), ids
             pos = np.stack(self._pos_history, axis=0)[:, ids, :].astype(np.float32)
-            t   = np.array(self._ts_history, dtype=np.float32)
+            t = np.array(self._ts_history, dtype=np.float32)
         return pos, t, ids
 
     def speed_over_time(
@@ -175,9 +201,13 @@ class SkeletonStats:
         """
         pos, t, ids = self.position_over_time(landmarks)
         if pos.shape[0] < 2:
-            return np.empty((0, len(ids)), dtype=np.float32), np.empty((0,), dtype=np.float32), ids
-        dt    = np.diff(t)[:, None]                        # (T-1, 1)
-        dp    = np.diff(pos, axis=0)                       # (T-1, L, 3)
+            return (
+                np.empty((0, len(ids)), dtype=np.float32),
+                np.empty((0,), dtype=np.float32),
+                ids,
+            )
+        dt = np.diff(t)[:, None]  # (T-1, 1)
+        dp = np.diff(pos, axis=0)  # (T-1, L, 3)
         speed = np.linalg.norm(dp, axis=-1) / np.where(dt > 0, dt, np.nan)  # (T-1, L)
         t_mid = (t[:-1] + t[1:]) / 2
         return speed.astype(np.float32), t_mid, ids
@@ -196,8 +226,12 @@ class SkeletonStats:
         """
         speed, t_mid, ids = self.speed_over_time(landmarks)
         if speed.shape[0] < 2:
-            return np.empty((0, len(ids)), dtype=np.float32), np.empty((0,), dtype=np.float32), ids
-        dt    = np.diff(t_mid)[:, None]
+            return (
+                np.empty((0, len(ids)), dtype=np.float32),
+                np.empty((0,), dtype=np.float32),
+                ids,
+            )
+        dt = np.diff(t_mid)[:, None]
         accel = np.diff(speed, axis=0) / np.where(dt > 0, dt, np.nan)
         t_acc = (t_mid[:-1] + t_mid[1:]) / 2
         return accel.astype(np.float32), t_acc, ids
@@ -226,9 +260,9 @@ class SkeletonStats:
         import matplotlib.pyplot as plt
 
         pos, t, ids = self.position_over_time(landmarks)
-        axis_map  = {"x": 0, "y": 1, "z": 2}
+        axis_map = {"x": 0, "y": 1, "z": 2}
         ax_indices = [axis_map[a] for a in axes.lower() if a in axis_map]
-        colors     = {"x": "tab:red", "y": "tab:green", "z": "tab:blue"}
+        colors = {"x": "tab:red", "y": "tab:green", "z": "tab:blue"}
         axis_names = {0: "X", 1: "Y", 2: "Z"}
 
         n = len(ids)
@@ -238,8 +272,14 @@ class SkeletonStats:
         for row, (lm_idx, ax) in enumerate(zip(ids, axs[:, 0])):
             for ai in ax_indices:
                 series = pos[:, row, ai]
-                label  = axis_names[ai]
-                ax.plot(t, series, label=label, color=colors[list(axis_map)[ai]], linewidth=0.9)
+                label = axis_names[ai]
+                ax.plot(
+                    t,
+                    series,
+                    label=label,
+                    color=colors[list(axis_map)[ai]],
+                    linewidth=0.9,
+                )
             ax.set_ylabel(_LM_NAMES[lm_idx], fontsize=8)
             ax.legend(fontsize=7, loc="upper right")
             ax.grid(True, linewidth=0.4)
@@ -314,22 +354,29 @@ class SkeletonStats:
         id_to_row = {lm: r for r, lm in enumerate(ids)}
 
         fig = plt.figure(figsize=(10, 8))
-        ax  = fig.add_subplot(111, projection="3d")
+        ax = fig.add_subplot(111, projection="3d")
 
-        cmap   = plt.get_cmap("tab20")
+        cmap = plt.get_cmap("tab20")
         colors = [cmap(i % 20) for i in range(len(ids))]
 
         for row, lm_idx in enumerate(ids):
-            xyz   = pos[:, row, :]
+            xyz = pos[:, row, :]
             valid = ~np.isnan(xyz[:, 0])
             if valid.sum() < 2:
                 continue
             x, y, z = xyz[valid, 0], xyz[valid, 1], xyz[valid, 2]
-            ax.plot(x, y, z, linewidth=0.8, color=colors[row], alpha=0.7,
-                    label=_LM_NAMES[lm_idx])
+            ax.plot(
+                x,
+                y,
+                z,
+                linewidth=0.8,
+                color=colors[row],
+                alpha=0.7,
+                label=_LM_NAMES[lm_idx],
+            )
             ax.scatter(x[-1], y[-1], z[-1], s=20, color=colors[row], zorder=5)
 
-        T      = pos.shape[0]
+        T = pos.shape[0]
         stride = max(1, T // 60)
         for t_idx in range(0, T, stride):
             frame_pts = pos[t_idx]
@@ -337,8 +384,14 @@ class SkeletonStats:
                 pa, pb = frame_pts[id_to_row[a]], frame_pts[id_to_row[b]]
                 if np.isnan(pa).any() or np.isnan(pb).any():
                     continue
-                ax.plot([pa[0], pb[0]], [pa[1], pb[1]], [pa[2], pb[2]],
-                        color="gray", linewidth=0.6, alpha=0.15)
+                ax.plot(
+                    [pa[0], pb[0]],
+                    [pa[1], pb[1]],
+                    [pa[2], pb[2]],
+                    color="gray",
+                    linewidth=0.6,
+                    alpha=0.15,
+                )
 
         # Last frame bones drawn prominently
         last_valid_idx = np.where(~np.isnan(pos[:, 0, 0]))[0]
@@ -347,10 +400,18 @@ class SkeletonStats:
             for a, b in _BONES:
                 pa, pb = last[id_to_row[a]], last[id_to_row[b]]
                 if not (np.isnan(pa).any() or np.isnan(pb).any()):
-                    ax.plot([pa[0], pb[0]], [pa[1], pb[1]], [pa[2], pb[2]],
-                            "k-", linewidth=1.4, alpha=0.7)
+                    ax.plot(
+                        [pa[0], pb[0]],
+                        [pa[1], pb[1]],
+                        [pa[2], pb[2]],
+                        "k-",
+                        linewidth=1.4,
+                        alpha=0.7,
+                    )
 
-        ax.set_xlabel("X (m)"); ax.set_ylabel("Y (m)"); ax.set_zlabel("Z (m)")
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
         ax.set_title("3-D landmark traces")
         ax.view_init(elev=90, azim=-90)
         ax.legend(fontsize=6, loc="upper left", ncol=2)
@@ -386,34 +447,39 @@ class SkeletonStats:
             raise ValueError("No recorded frames to animate.")
 
         id_to_row = {lm: r for r, lm in enumerate(ids)}
-        cmap      = plt.get_cmap("tab20")
-        colors    = [cmap(i % 20) for i in range(len(ids))]
+        cmap = plt.get_cmap("tab20")
+        colors = [cmap(i % 20) for i in range(len(ids))]
 
         # Pre-compute axis limits from valid data
         valid_pos = pos[~np.isnan(pos[:, :, 0].any(axis=1))]
-        all_xyz   = pos.reshape(-1, 3)
-        all_xyz   = all_xyz[~np.isnan(all_xyz[:, 0])]
-        pad       = 0.05
+        all_xyz = pos.reshape(-1, 3)
+        all_xyz = all_xyz[~np.isnan(all_xyz[:, 0])]
+        pad = 0.05
         xlim = (all_xyz[:, 0].min() - pad, all_xyz[:, 0].max() + pad)
         ylim = (all_xyz[:, 1].min() - pad, all_xyz[:, 1].max() + pad)
         zlim = (all_xyz[:, 2].min() - pad, all_xyz[:, 2].max() + pad)
 
         fig = plt.figure(figsize=(9, 8))
-        ax  = fig.add_subplot(111, projection="3d")
-        ax.set_xlim(*xlim); ax.set_ylim(*ylim); ax.set_zlim(*zlim)
-        ax.set_xlabel("X (m)"); ax.set_ylabel("Y (m)"); ax.set_zlabel("Z (m)")
+        ax = fig.add_subplot(111, projection="3d")
+        ax.set_xlim(*xlim)
+        ax.set_ylim(*ylim)
+        ax.set_zlim(*zlim)
+        ax.set_xlabel("X (m)")
+        ax.set_ylabel("Y (m)")
+        ax.set_zlabel("Z (m)")
         ax.view_init(elev=90, azim=90)
 
         # Scatter artists for landmark dots
         scatters = [
-            ax.plot([], [], [], "o", markersize=4, color=colors[r],
-                    label=_LM_NAMES[lm])[0]
+            ax.plot(
+                [], [], [], "o", markersize=4, color=colors[r], label=_LM_NAMES[lm]
+            )[0]
             for r, lm in enumerate(ids)
         ]
         # Line artists for bones
         bone_lines = []
         for a, b in _BONES:
-            line, = ax.plot([], [], [], "k-", linewidth=1.0, alpha=0.6)
+            (line,) = ax.plot([], [], [], "k-", linewidth=1.0, alpha=0.6)
             bone_lines.append((line, id_to_row[a], id_to_row[b]))
 
         title = ax.set_title("")
@@ -449,12 +515,14 @@ class SkeletonStats:
             return [sc for sc in scatters] + [l for l, _, _ in bone_lines] + [title]
 
         interval_ms = 1000.0 / fps
-        anim = FuncAnimation(fig, _update, frames=T, init_func=_init,
-                             interval=interval_ms, blit=False)
+        anim = FuncAnimation(
+            fig, _update, frames=T, init_func=_init, interval=interval_ms, blit=False
+        )
 
         if save_path is not None:
             import os
             from matplotlib.animation import FFMpegWriter
+
             ext = os.path.splitext(save_path)[1].lower()
             if not ext:
                 save_path += ".gif"
@@ -471,40 +539,40 @@ class SkeletonStats:
                 anim.save(save_path, fps=fps)
             plt.close(fig)
             return None
-        
+
         if len(ids) <= 10:
             ax.legend(fontsize=7, loc="upper left")
         fig.tight_layout()
         return anim
 
     def _reset_state(self) -> None:
-        self._total_frames    = 0
+        self._total_frames = 0
         self._detected_frames = 0
 
-        self._conf_window: deque[float]       = deque(maxlen=self._window)
-        self._pos_window:  deque[np.ndarray]  = deque(maxlen=self._window)  # each (23,3)
+        self._conf_window: deque[float] = deque(maxlen=self._window)
+        self._pos_window: deque[np.ndarray] = deque(maxlen=self._window)  # each (23,3)
 
         # Full session history (unbounded) — used by analytics / viz methods
-        self._pos_history: list[np.ndarray] = []   # each (23, 3)
-        self._ts_history:  list[float]       = []   # monotonic seconds
+        self._pos_history: list[np.ndarray] = []  # each (23, 3)
+        self._ts_history: list[float] = []  # monotonic seconds
 
         # Global source counts per landmark (not windowed — full session)
-        self._src_depth   = np.zeros(LM.N, dtype=np.int64)
-        self._src_mpz     = np.zeros(LM.N, dtype=np.int64)
+        self._src_depth = np.zeros(LM.N, dtype=np.int64)
+        self._src_mpz = np.zeros(LM.N, dtype=np.int64)
         self._src_missing = np.zeros(LM.N, dtype=np.int64)
 
     def _compute(self) -> dict:
-        total    = self._total_frames
+        total = self._total_frames
         detected = self._detected_frames
-        elapsed  = time.monotonic() - self._start_t
+        elapsed = time.monotonic() - self._start_t
 
         out: dict = {
-            "frame_count":      total,
-            "detected_count":   detected,
-            "detection_rate":   round(detected / total, 4) if total else 0.0,
+            "frame_count": total,
+            "detected_count": detected,
+            "detection_rate": round(detected / total, 4) if total else 0.0,
             "session_duration_s": round(elapsed, 2),
-            "confidence":       self._conf_stats(),
-            "landmarks":        self._landmark_stats(),
+            "confidence": self._conf_stats(),
+            "landmarks": self._landmark_stats(),
         }
         return out
 
@@ -513,11 +581,11 @@ class SkeletonStats:
             return {}
         arr = np.array(self._conf_window, dtype=np.float32)
         return {
-            "mean":   _f(np.mean(arr)),
+            "mean": _f(np.mean(arr)),
             "median": _f(np.median(arr)),
-            "std":    _f(np.std(arr)),
-            "min":    _f(np.min(arr)),
-            "max":    _f(np.max(arr)),
+            "std": _f(np.std(arr)),
+            "min": _f(np.min(arr)),
+            "max": _f(np.max(arr)),
         }
 
     def _landmark_stats(self) -> list[dict]:
@@ -535,17 +603,19 @@ class SkeletonStats:
 
             entry: dict = {
                 "index": i,
-                "name":  _LM_NAMES[i],
+                "name": _LM_NAMES[i],
                 "source": {
-                    "depth":   _f(self._src_depth[i]   / total_src) if total_src else 0.0,
-                    "mp_z":    _f(self._src_mpz[i]     / total_src) if total_src else 0.0,
-                    "missing": _f(self._src_missing[i] / total_src) if total_src else 0.0,
+                    "depth": _f(self._src_depth[i] / total_src) if total_src else 0.0,
+                    "mp_z": _f(self._src_mpz[i] / total_src) if total_src else 0.0,
+                    "missing": (
+                        _f(self._src_missing[i] / total_src) if total_src else 0.0
+                    ),
                 },
             }
 
             if pos_arr is not None:
                 lm_pts = pos_arr[:, i, :]  # (W, 3)
-                valid  = ~np.isnan(lm_pts[:, 0])
+                valid = ~np.isnan(lm_pts[:, 0])
 
                 if valid.sum() >= 2:
                     lm_valid = lm_pts[valid]  # (V, 3)
@@ -553,25 +623,29 @@ class SkeletonStats:
                     # Position stats (metres)
                     entry["position"] = {
                         "mean": _xyz(np.mean(lm_valid, axis=0)),
-                        "std":  _xyz(np.std(lm_valid,  axis=0)),
-                        "min":  _xyz(np.min(lm_valid,  axis=0)),
-                        "max":  _xyz(np.max(lm_valid,  axis=0)),
+                        "std": _xyz(np.std(lm_valid, axis=0)),
+                        "min": _xyz(np.min(lm_valid, axis=0)),
+                        "max": _xyz(np.max(lm_valid, axis=0)),
                     }
 
                     # Jitter: frame-to-frame displacement in mm.
                     # Zero-displacement diffs are stale results (LIVE mode returns
                     # cached result while callback hasn't fired yet) — exclude them
                     # so median/mean reflect actual motion, not polling artifacts.
-                    diffs = np.linalg.norm(np.diff(lm_pts[valid], axis=0), axis=1) * 1000
+                    diffs = (
+                        np.linalg.norm(np.diff(lm_pts[valid], axis=0), axis=1) * 1000
+                    )
                     real_diffs = diffs[diffs > 1e-6]  # exclude exact duplicates
-                    stale_rate = _f(1.0 - len(real_diffs) / len(diffs)) if len(diffs) else 0.0
+                    stale_rate = (
+                        _f(1.0 - len(real_diffs) / len(diffs)) if len(diffs) else 0.0
+                    )
                     if len(real_diffs) >= 1:
                         entry["jitter_mm"] = {
-                            "mean":       _f(np.mean(real_diffs)),
-                            "median":     _f(np.median(real_diffs)),
-                            "std":        _f(np.std(real_diffs)),
-                            "p95":        _f(np.percentile(real_diffs, 95)),
-                            "max":        _f(np.max(real_diffs)),
+                            "mean": _f(np.mean(real_diffs)),
+                            "median": _f(np.median(real_diffs)),
+                            "std": _f(np.std(real_diffs)),
+                            "p95": _f(np.percentile(real_diffs, 95)),
+                            "max": _f(np.max(real_diffs)),
                             "stale_rate": stale_rate,  # fraction of duplicate frames
                         }
 
@@ -582,36 +656,43 @@ class SkeletonStats:
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def pretty_print(summary: dict) -> None:
     """Print a SkeletonStats.summary() dict in a readable format."""
     s = summary
     print("─" * 52)
-    print(f"  Frames   {s['detected_count']:>5} / {s['frame_count']:<5}  "
-          f"({s['detection_rate']*100:.1f}% detected)  "
-          f"{s['session_duration_s']:.1f}s")
+    print(
+        f"  Frames   {s['detected_count']:>5} / {s['frame_count']:<5}  "
+        f"({s['detection_rate']*100:.1f}% detected)  "
+        f"{s['session_duration_s']:.1f}s"
+    )
 
     c = s.get("confidence", {})
     if c:
-        print(f"  Conf     mean={c['mean']:.3f}  "
-              f"median={c['median']:.3f}  "
-              f"std={c['std']:.3f}  "
-              f"[{c['min']:.2f}–{c['max']:.2f}]")
+        print(
+            f"  Conf     mean={c['mean']:.3f}  "
+            f"median={c['median']:.3f}  "
+            f"std={c['std']:.3f}  "
+            f"[{c['min']:.2f}–{c['max']:.2f}]"
+        )
 
     print("─" * 52)
-    print(f"  {'Landmark':<14} {'miss%':>5}  {'jit med':>7}  {'jit p95':>7}  {'jit max':>8}")
+    print(
+        f"  {'Landmark':<14} {'miss%':>5}  {'jit med':>7}  {'jit p95':>7}  {'jit max':>8}"
+    )
     print("─" * 52)
     for lm in s.get("landmarks", []):
-        miss  = lm["source"]["missing"] * 100
-        jit   = lm.get("jitter_mm", {})
-        med   = f"{jit['median']:>7.1f}" if jit else "      -"
-        p95   = f"{jit['p95']:>7.1f}"   if jit else "      -"
-        jmax  = f"{jit['max']:>8.1f}"   if jit else "       -"
-        flag  = " !" if miss > 5 else ""
+        miss = lm["source"]["missing"] * 100
+        jit = lm.get("jitter_mm", {})
+        med = f"{jit['median']:>7.1f}" if jit else "      -"
+        p95 = f"{jit['p95']:>7.1f}" if jit else "      -"
+        jmax = f"{jit['max']:>8.1f}" if jit else "       -"
+        flag = " !" if miss > 5 else ""
         print(f"  {lm['name']:<14} {miss:>4.1f}%  {med}  {p95}  {jmax}{flag}")
     print("─" * 52)
 
 
-def _f(x) -> float: 
+def _f(x) -> float:
     """Round float to 4 decimal places for clean JSON output."""
     return round(float(x), 4)
 

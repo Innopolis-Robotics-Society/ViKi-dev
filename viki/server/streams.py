@@ -25,7 +25,6 @@ from viki.viz.mjpeg import mjpeg_chunk, placeholder
 from viki.config import INTRINSICS_FILENAME
 
 
-
 def camera_stream(
     mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
 ) -> Iterator[bytes]:
