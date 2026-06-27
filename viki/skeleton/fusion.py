@@ -1,30 +1,10 @@
 """
 viki.skeleton.fusion
-<<<<<<< HEAD
---------------------
-
-Currently it fused LandMarks3D from two cameras into a single SkeletonFrame
-based on simple priority rules.
-In the future we could experiment with complex fusion strategies (per mark stuff etc)
-e.g. Kalman Filter, or just weighted sum, or confidence based approaches
-
-Current Fusion strategy (per landmark)
--------------------------------
-Priority 1 — kinect_0 DEPTH     : best quality, no transform needed.
-Priority 2 — kinect_1 DEPTH     : transform P_cam0 = R @ P_cam1 + T.
-Priority 3 — kinect_0 MP_Z      : metric but less accurate.
-Priority 4 — kinect_1 MP_Z      : transform same as above.
-Priority 5 — MISSING from both  : point stays nan, source = MISSING.
-
-=======
->>>>>>> feat/fusion
 """
 
 from __future__ import annotations
 
 import numpy as np
-import cv2
-import json
 
 from viki.calibration.models import CalibrationExtrinsics
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame
@@ -53,9 +33,13 @@ def fuse(
         for index, vec in ps.items():
 
             pos_mtx = np.eye(4)
+            if len(vec.flatten()) != 3:
+                vec = np.full(3, np.nan, dtype=np.float32)
             pos_mtx[:3, 3] = vec
-            world_vec = (pos_mtx @ T)[:3, 3].flatten()
+            world_vec = (T @ pos_mtx)[:3, 3].flatten()
 
+            if index not in observations:
+                observations[index] = {}
             observations[index][dev_id] = world_vec
 
     if not observations:

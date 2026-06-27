@@ -77,9 +77,11 @@ async def skeleton_stream(websocket: WebSocket):
                 # Serialize result to dict
                 data = {
                     "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
-                    "landmarks": sanitize_nan(frame.points.values) if frame else [],
+                    "landmarks": (
+                        sanitize_nan(list(frame.points.values())) if frame else []
+                    ),
                     "detections": {
-                        dev_id: (sanitize_nan(det.points.values) if det else [])
+                        dev_id: (sanitize_nan(list(det.points.values())) if det else [])
                         for dev_id, det in detections.items()
                     },
                 }

@@ -68,9 +68,7 @@ class CalibrationManager:
             bs = board_size or CALIB_ARUCO_BOARD_SIZE
             ss = square_size or CALIB_ARUCO_SQUARE_SIZE
             ms = marker_size or CALIB_ARUCO_MARKER_SIZE
-            board_params = ArucoBoardParameters(
-                bs, ss, ms, aruco_dict
-            )
+            board_params = ArucoBoardParameters(bs, ss, ms, aruco_dict)
             worker = ArucoWorker(self._mgr, device_id, board_params)
         if mode == "auto":
             worker.start()
@@ -100,8 +98,10 @@ class CalibrationManager:
         if board_type == "chess":
             params = BoardParameters(board_size, square_size)
         else:
-            params = ArucoBoardParameters(board_size, square_size, marker_size, aruco_dict)
-        
+            params = ArucoBoardParameters(
+                board_size, square_size, marker_size, aruco_dict
+            )
+
         for worker in self._workers.values():
             worker.set_board_params(params)
 
@@ -200,6 +200,7 @@ class CalibrationManager:
         )
 
         write_device_extrinsics(device_id, extrinsics, results_path)
+        self.set_extrinsics(device_id, extrinsics)
 
         return extrinsics
 
