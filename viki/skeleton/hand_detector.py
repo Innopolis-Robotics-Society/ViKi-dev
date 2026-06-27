@@ -202,15 +202,13 @@ class HandDetector:
             
         elif self._mode == "live":
             # Submit async — results arrive in callbacks, return last known result
-            if self._hands:
-                if timestamp_ms <= self._last_timestamp_ms:
-                    timestamp_ms = self._last_timestamp_ms + 1
-                self._last_timestamp_ms = timestamp_ms
-                self._hands.detect_async(mp_image, timestamp_ms)
-            
             if timestamp_ms <= self._last_timestamp_ms:
                 timestamp_ms = self._last_timestamp_ms + 1
             self._last_timestamp_ms = timestamp_ms
+
+            if self._hands:
+                self._hands.detect_async(mp_image, timestamp_ms)
+            
             self._pose.detect_async(mp_image, timestamp_ms)
             
             with self._lock:

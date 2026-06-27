@@ -10,12 +10,13 @@ Tested with libk4a 1.4.1 on Ubuntu 22.04 inside Docker.
 from __future__ import annotations
 
 import ctypes
+import logging
 import cv2
 import numpy as np
 
 from .base import CameraBackend, CameraIntrinsics, Frame
 
-# ── Load libk4a ───────────────────────────────────────────────────────────────
+logger = logging.getLogger(__name__)
 
 
 def _load_libk4a() -> ctypes.CDLL:
@@ -86,6 +87,14 @@ class K4ADeviceConfig(ctypes.Structure):
 K4ADevice = ctypes.c_void_p
 K4ACapture = ctypes.c_void_p
 K4AImage = ctypes.c_void_p
+K4ACalibration = ctypes.c_void_p
+
+class K4AFloat3(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float), ("z", ctypes.c_float)]
+
+class K4AFloat2(ctypes.Structure):
+    _fields_ = [("x", ctypes.c_float), ("y", ctypes.c_float)]
+
 
 # ── Function signatures ───────────────────────────────────────────────────────
 
@@ -144,6 +153,27 @@ _lib.k4a_device_get_serialnum.argtypes = [
     ctypes.c_char_p,
     ctypes.POINTER(ctypes.c_size_t),
 ]
+
+# Calibration functions
+_lib.k4a_calibration_3d_to_2d.restype = ctypes.c_int
+_lib.k4a_calibration_3d_to_2d.argtypes = [
+    K4ACalibration,
+    ctypes.POINTER(K4AFloat3),
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(K4AFloat2),
+    ctypes.POINTER(ctypes.c_int),
+]
+
+_lib.k4a_calibration_3d_to_3d.restype = ctypes.c_int
+_lib.k4a_calibration_3d_to_3d.argtypes = [
+    K4ACalibration,
+    ctypes.POINTER(K4AFloat3),
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(K4AFloat3),
+]
+
 
 # Calibration & transformation
 K4ACalibration = ctypes.c_void_p
@@ -267,6 +297,7 @@ class KinectBackend(CameraBackend):
         self._synchronized_images_only = synchronized_images_only
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
+        self._calibration: K4ACalibration = K4ACalibration(None)
         self._serial_str: str = f"kinect_{device_index}"
         self._running = False
 
@@ -308,20 +339,22 @@ class KinectBackend(CameraBackend):
             _lib.k4a_device_close(self._handle)
             raise RuntimeError(f"k4a_device_start_cameras failed (result={res})")
 
-        # Create transformation handle for depth->color alignment
-        if self._align_depth:
-            # k4a_calibration_t is a large struct (~1KB) — allocate as byte buffer
-            cal_buf = ctypes.create_string_buffer(4096)
-            res = _lib.k4a_device_get_calibration(
-                self._handle,
-                _DEPTH_MODE_MAP[self._depth_mode],
-                _COLOR_RES_MAP[self._color_resolution],
-                cal_buf,
-            )
-            if res == K4A_RESULT_SUCCEEDED:
+        # Get calibration for reprojection and alignment
+        cal_buf = ctypes.create_string_buffer(8192)
+        res = _lib.k4a_device_get_calibration(
+            self._handle,
+            _DEPTH_MODE_MAP[self._depth_mode],
+            _COLOR_RES_MAP[self._color_resolution],
+            cal_buf,
+        )
+        if res == K4A_RESULT_SUCCEEDED:
+            self._calibration = ctypes.cast(cal_buf, K4ACalibration)
+            if self._align_depth:
                 self._transform = _lib.k4a_transformation_create(cal_buf)
-            else:
-                self._align_depth = False  # fallback: no alignment
+                logger.info(f"[{self._serial_str}] Depth alignment initialized successfully.")
+        else:
+            logger.error(f"[{self._serial_str}] Failed to get calibration.")
+            self._align_depth = False
 
         self._running = True
 
@@ -385,6 +418,47 @@ class KinectBackend(CameraBackend):
             depth_intrinsics=None,
         )
 
+    def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
+        """Project a 3D point in camera space to a 2D pixel. Coordinates in metres."""
+        if not self._calibration:
+            logger.error(f"[{self._serial_str}] project_3d_to_2d failed: no calibration handle")
+            return None
+        
+        # SDK expects millimetres
+        p = K4AFloat3(x * 1000, y * 1000, z * 1000)
+        pix = K4AFloat2()
+        valid = ctypes.c_int()
+        
+        res = _lib.k4a_calibration_3d_to_2d(
+            self._calibration, ctypes.byref(p), cam_type, cam_type, ctypes.byref(pix), ctypes.byref(valid)
+        )
+        
+        if res == K4A_RESULT_SUCCEEDED and valid.value:
+            return pix.x, pix.y
+        
+        logger.debug(f"[{self._serial_str}] SDK project_3d_to_2d result={res}, valid={valid.value} for P=({x}, {y}, {z})")
+        return None
+
+    def transform_3d_to_3d(self, x: float, y: float, z: float, src_type: int, dst_type: int) -> tuple[float, float, float] | None:
+        """Transform a 3D point from one camera coordinate system to another. Coordinates in metres."""
+        if not self._calibration:
+            logger.error(f"[{self._serial_str}] transform_3d_to_3d failed: no calibration handle")
+            return None
+            
+        # SDK expects millimetres
+        p_src = K4AFloat3(x * 1000, y * 1000, z * 1000)
+        p_dst = K4AFloat3()
+        
+        res = _lib.k4a_calibration_3d_to_3d(
+            self._calibration, ctypes.byref(p_src), src_type, dst_type, ctypes.byref(p_dst)
+        )
+        
+        if res == K4A_RESULT_SUCCEEDED:
+            return p_dst.x / 1000, p_dst.y / 1000, p_dst.z / 1000
+        
+        logger.debug(f"[{self._serial_str}] SDK transform_3d_to_3d result={res} for P=({x}, {y}, {z})")
+        return None
+
     @property
     def device_id(self) -> str:
         return self._serial_str
@@ -399,25 +473,23 @@ class KinectBackend(CameraBackend):
         """Transform depth image into color camera space."""
         w = _lib.k4a_image_get_width_pixels(color_img)
         h = _lib.k4a_image_get_height_pixels(color_img)
-        stride = ctypes.c_int64(w * 2)  # uint16 = 2 bytes per pixel
-
+        dw = _lib.k4a_image_get_width_pixels(depth_img)
+        dh = _lib.k4a_image_get_height_pixels(depth_img)
+        
+        logger.debug(f"[{self._serial_str}] Transforming depth ({dw}x{dh}) to color ({w}x{h})")
+        
         transformed = K4AImage(None)
-        res = _lib.k4a_image_create(
-            K4A_IMAGE_FORMAT_DEPTH16, w, h, stride, ctypes.byref(transformed)
-        )
-        if res != K4A_RESULT_SUCCEEDED:
-            return self._image_to_numpy_depth(depth_img)
-
         res = _lib.k4a_transformation_depth_image_to_color_camera(
             self._transform, depth_img, ctypes.byref(transformed)
         )
         if res != K4A_RESULT_SUCCEEDED:
-            _lib.k4a_image_release(transformed)
+            logger.error(f"[{self._serial_str}] k4a_transformation_depth_image_to_color_camera failed (res={res})")
             return self._image_to_numpy_depth(depth_img)
-
+        
         result = self._image_to_numpy_depth(transformed)
         _lib.k4a_image_release(transformed)
         return result
+
 
     @staticmethod
     def _image_to_numpy_bgr(img: K4AImage) -> np.ndarray:

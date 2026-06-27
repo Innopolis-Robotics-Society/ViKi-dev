@@ -5,17 +5,22 @@ Public orchestrator for the skeleton detection pipeline.a
 """
 
 from __future__ import annotations
+ 
+from concurrent.futures import ThreadPoolExecutor
+from time import sleep
 
 from typing import Dict, Optional, Literal
 import logging
 
 from viki.calibration.models import CalibrationExtrinsics
+from viki.capture.kinect import KinectBackend
 
 logger = logging.getLogger(__name__)
 
 import numpy as np
 
 from viki.capture.base import SyncedFrameGroup
+from viki.capture.manager import CameraManager
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
 from viki.skeleton.fusion import fuse
@@ -31,6 +36,7 @@ from viki.skeleton.models import (
     HandDetection,
     PreparedFrame,
 )
+import viki.config
 
 
 class SkeletonPipeline:
@@ -54,17 +60,17 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        detector: Optional[CompositeLandmarkDetector] = None,
-        hand: Literal["right", "left"] = "right",
+        manager: CameraManager,
+        hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
+        self._hand = hand
         self._calibrator = calibrator
+        self._manager = manager
         self._cache = UndistortCache()
-        if detector is None:
-            detector = CompositeLandmarkDetector(
-                detectors=[MediaPipeArm(hand=hand, mode="live")],
-                mode=FusionMode.ANY,
-            )
-        self._detector = detector
+        self._detectors: dict[str, CompositeLandmarkDetector] = {}
+        self._hand_type = hand
+        self._executor = ThreadPoolExecutor(max_workers=4)
+
         self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
@@ -82,25 +88,43 @@ class SkeletonPipeline:
         """
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
-
-        # Process all frames in the group
-        for dev_id, frame in group.frames.items():
-            # logger.debug(f"got frame from {dev_id}")
-            prepared = self._prepare_camera(dev_id, group)
-            if prepared is None:
-                detections[dev_id] = None
-                lms_3d[dev_id] = None
-                continue
-
-            det = self._detector.detect(prepared)
+ 
+        # 1. Run detections in parallel across all cameras
+        futures = {
+            self._executor.submit(self._detect_camera, dev_id, group): dev_id 
+            for dev_id in group.frames.keys()
+        }
+ 
+        for future in futures:
+            dev_id, det, prepared = future.result()
             detections[dev_id] = det
-            if det is None:
-                lms_3d[dev_id] = None
-            else:
-                lms_3d[dev_id] = lift_to_3d(det, prepared)
-            # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
+            # 2. Lift to 3D (sequential, but fast)
+            lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
+ 
+        # Fusion logic:
+ 
+        # Master camera is the first device in the group.
+        # Subordinate camera is the second device (if available).
+        dev_ids = list(group.frames.keys())
 
-        dev_ids = group.device_ids
+        # # Process all frames in the group
+        # for dev_id, frame in group.frames.items():
+        #     # logger.debug(f"got frame from {dev_id}")
+        #     prepared = self._prepare_camera(dev_id, group)
+        #     if prepared is None:
+        #         detections[dev_id] = None
+        #         lms_3d[dev_id] = None
+        #         continue
+
+        #     det = self._detector.detect(prepared)
+        #     detections[dev_id] = det
+        #     if det is None:
+        #         lms_3d[dev_id] = None
+        #     else:
+        #         lms_3d[dev_id] = lift_to_3d(det, prepared)
+        #     # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
+
+        # dev_ids = group.device_ids
         if not dev_ids:
             return PipelineResult(fused_frame=None, detections={})
 
@@ -116,51 +140,26 @@ class SkeletonPipeline:
 
         return PipelineResult(fused_frame=fused, detections=detections)
 
-    def _get_relative_extrinsics(
-        self, master_id: str, subordinate_id: str
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Build the relative transform.
-
-        Returns identity R and zero T if either device's extrinsics are missing.
-        """
-        key = (master_id, subordinate_id)
-        cached = self._ext_cache.get(key)
-        if cached is not None:
-            return cached
-
-        # I assume that extrinsics should be already uploaded in main module
-        # However, keep this as fallback
-        self._calibrator.load_extrinsics(master_id)
-        self._calibrator.load_extrinsics(subordinate_id)
-
-        ext_master = self._calibrator.get_extrinsics(master_id)
-        ext_sub = self._calibrator.get_extrinsics(subordinate_id)
-        if ext_master is None or ext_sub is None:
-            logger.debug(
-                "SkeletonPipeline: missing extrinsics for master=%s or sub=%s; "
-                "falling back to identity R and zero T",
-                master_id,
-                subordinate_id,
+    def _detect_camera(self, dev_id: str, group: SyncedFrameGroup) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
+        """Helper for parallel detection."""
+        prepared = self._prepare_camera(dev_id, group)
+        if prepared is None:
+            return dev_id, None, None
+        
+        if dev_id not in self._detectors:
+            self._detectors[dev_id] = CompositeLandmarkDetector(
+                detectors=[MediaPipeArm(hand=self._hand, mode="live")], # pyright: ignore
+                mode=FusionMode.ANY,
             )
-            R = np.eye(3, dtype=np.float64)
-            T = np.zeros((3, 1), dtype=np.float64)
-            # Do not cache the fallback so a later calibration write is picked up.
-            return R, T
-
-        R_master = np.asarray(ext_master.rotation_matrix, dtype=np.float64)
-        R_sub = np.asarray(ext_sub.rotation_matrix, dtype=np.float64)
-        t_master = np.asarray(ext_master.tvec, dtype=np.float64).reshape(3, 1)
-        t_sub = np.asarray(ext_sub.tvec, dtype=np.float64).reshape(3, 1)
-
-        R = R_master @ R_sub.T
-        T = t_master - R @ t_sub
-        self._ext_cache[key] = (R, T)
-        return R, T
+        
+        det = self._detectors[dev_id].detect(prepared)
+        return dev_id, det, prepared
 
     def close(self) -> None:
         """Release MediaPipe resources."""
-        self._detector.close()
+        self._executor.shutdown(wait=False)
+        for detector in self._detectors.values():
+            detector.close()
 
     def __enter__(self) -> "SkeletonPipeline":
         return self
@@ -190,14 +189,20 @@ class SkeletonPipeline:
         return prepare_frame(frame, K, dist, self._cache)
 
     def _lift_camera(
-        self, device_id: str, group: SyncedFrameGroup, detection: HandDetection
+        self, device_id: str, group: SyncedFrameGroup, detection: Optional[HandDetection], prepared: Optional[PreparedFrame] = None
     ) -> Optional[Landmarks3D]:
         """Stage 3: lift 2D detection to 3D."""
-
-        # Use the same preparation logic as _prepare_camera to ensure we have
-        # a fallback K matrix if calibration is missing.
-        prepared = self._prepare_camera(device_id, group)
+        if detection is None:
+            return None
+ 
+        # Use the provided prepared frame, or re-prepare if missing
+        if prepared is None:
+            prepared = self._prepare_camera(device_id, group)
+        
         if prepared is None:
             return None
-
-        return lift_to_3d(detection, prepared)
+            
+        backend = self._manager.get_backend(device_id)
+        if backend is None or not isinstance(backend, KinectBackend):
+            return None
+        return lift_to_3d(detection, prepared, backend)

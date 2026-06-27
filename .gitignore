@@ -6,6 +6,7 @@ intrinsics.json
 *.zip
 depth/
 data/
+debug/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

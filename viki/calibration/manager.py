@@ -9,7 +9,18 @@ from viki.calibration.models import (
     CalibrationIntrinsics,
     CalibrationExtrinsics,
 )
-from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
+from viki.config import (
+    INTRINSICS_FILENAME,
+    EXTRINSICS_FILENAME,
+    CALIB_MODE,
+    CALIB_BOARD_TYPE,
+    CALIB_CHESS_BOARD_SIZE,
+    CALIB_CHESS_SQUARE_SIZE,
+    CALIB_ARUCO_BOARD_SIZE,
+    CALIB_ARUCO_SQUARE_SIZE,
+    CALIB_ARUCO_MARKER_SIZE,
+    CALIB_ARUCO_DICT,
+)
 from viki.calibration.file import (
     read_device_intrinsics,
     read_device_extrinsics,
@@ -32,12 +43,12 @@ class CalibrationManager:
     def start(
         self,
         device_id: str,
-        mode="manual",
-        board_type="chess",
-        board_size=(8, 6),
-        square_size=0.05,
-        marker_size=0.035,
-        aruco_dict=cv2.aruco.DICT_5X5_100,
+        mode=CALIB_MODE,
+        board_type=CALIB_BOARD_TYPE,
+        board_size=None,
+        square_size=None,
+        marker_size=None,
+        aruco_dict=CALIB_ARUCO_DICT,
     ) -> None:
         """
         mode: str = ["auto", "manual"], manual - capture image manually, via add_sample(), auto - worker will try to capture image itself
@@ -49,11 +60,16 @@ class CalibrationManager:
             return
 
         if board_type == "chess":
-            board_params = BoardParameters(board_size, square_size)
+            bs = board_size or CALIB_CHESS_BOARD_SIZE
+            ss = square_size or CALIB_CHESS_SQUARE_SIZE
+            board_params = BoardParameters(bs, ss)
             worker = ChessboardWorker(self._mgr, device_id, board_params)
         else:
+            bs = board_size or CALIB_ARUCO_BOARD_SIZE
+            ss = square_size or CALIB_ARUCO_SQUARE_SIZE
+            ms = marker_size or CALIB_ARUCO_MARKER_SIZE
             board_params = ArucoBoardParameters(
-                board_size, square_size, marker_size, aruco_dict
+                bs, ss, ms, aruco_dict
             )
             worker = ArucoWorker(self._mgr, device_id, board_params)
         if mode == "auto":
@@ -78,8 +94,8 @@ class CalibrationManager:
         board_type: str,
         board_size: tuple[int, int],
         square_size: float,
-        marker_size: float = 0.025,
-        aruco_dict: int = cv2.aruco.DICT_6X6_250,
+        marker_size: float = CALIB_ARUCO_MARKER_SIZE,
+        aruco_dict: int = CALIB_ARUCO_DICT,
     ) -> None:
         if board_type == "chess":
             params = BoardParameters(board_size, square_size)
