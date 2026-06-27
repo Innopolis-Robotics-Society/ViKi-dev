@@ -17,11 +17,10 @@ from viki.skeleton.models import (
     LM,
 )
 
-
-from viki.skeleton.pipeline import SkeletonPipeline
+# from viki.skeleton.pipeline import SkeletonPipeline
 
 __all__ = [
-    "SkeletonPipeline",
+    # "SkeletonPipeline",
     "PreparedFrame",
     "HandDetection",
     "Landmarks3D",
