@@ -91,7 +91,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
         z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
         if z_rel_wrist != 0.0:
             mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
-        logger.debug("did not find the wrist, using fallback")
+        # logger.debug("did not find the wrist, using fallback")
  
     points = np.full((LM.N, 3), np.nan, dtype=np.float32)
     source = np.array([LandmarkSource.MISSING] * LM.N, dtype=object)

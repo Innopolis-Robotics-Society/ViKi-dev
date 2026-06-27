@@ -335,9 +335,6 @@ class KinectBackend(CameraBackend):
         _lib.k4a_device_close(self._handle)
         self._handle = K4ADevice(None)
         self._running = False
-        import time
-
-        time.sleep(2.0)  # give USB time to fully release before next open
 
     def get_frame(self) -> Frame:
         if not self._running:
