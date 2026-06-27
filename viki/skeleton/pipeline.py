@@ -17,7 +17,7 @@ import numpy as np
 from viki.capture.base import SyncedFrameGroup
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
-from viki.skeleton.fusion import fuse, load_extrinsics
+from viki.skeleton.fusion import fuse
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.hand_detector import HandDetector
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
@@ -30,13 +30,7 @@ class SkeletonPipeline:
     Parameters
     ----------
     calibrator : CalibrationManager
-        Running calibrator. Used to read intrinsics per camera.
-    calib_path : str
-        Path to calibration_results.npz
-    master_id : str
-        Device ID of the master camera (world frame origin). Default: "kinect_0".
-    subordinate_id : str
-        Device ID of the subordinate camera. Default: "kinect_1".
+        Running calibrator. Used to read per-device intrinsics and extrinsics
     hand : {"right", "left"}
         Which hand to track.
     """
@@ -44,13 +38,11 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        calib_path: str = "viki/capture/calibration_results.npz", #TODO move to loading calibration from data/intrinsics_calibration.json
-        hand: Literal["right", "left"] = "right", #TODO move hand and mirrored configuration from multiple files (defined in multiple files (hand_detector.py and pipeline.py))
+        hand: Literal["right", "left"] = "right",
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()
         self._detector = HandDetector(hand=hand, mode="live")
-        self._R, self._T = load_extrinsics(calib_path)
 
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
@@ -83,10 +75,8 @@ class SkeletonPipeline:
             det = self._detector.detect(prepared)
             detections[dev_id] = det
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
-            # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
  
         # Fusion logic:
-
         # Master camera is the first device in the group.
         # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())
@@ -95,16 +85,62 @@ class SkeletonPipeline:
 
         master_id = dev_ids[0]
         lm0 = lms_3d.get(master_id)
-        
+
         if len(dev_ids) >= 2:
             sub_id = dev_ids[1]
             lm1 = lms_3d.get(sub_id)
-            fused = fuse(lm0, lm1, self._R, self._T, group.sync_timestamp_us)
+            R, T = self._get_relative_extrinsics(master_id, sub_id)
+            fused = fuse(lm0, lm1, R, T, group.sync_timestamp_us)
         else:
-            # Single camera case: just use the first camera as origin
-            fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
-        
+            # Single camera case: extrinsics are unused inside fuse() when lm1 is None.
+            # todo: to remove in future
+            R = np.eye(3, dtype=np.float64)
+            T = np.zeros((3, 1), dtype=np.float64)
+            fused = fuse(lm0, None, R, T, group.sync_timestamp_us)
+
         return PipelineResult(fused_frame=fused, detections=detections)
+
+    def _get_relative_extrinsics(
+        self, master_id: str, subordinate_id: str
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Build the relative transform.
+
+        Returns identity R and zero T if either device's extrinsics are missing.
+        """
+        key = (master_id, subordinate_id)
+        cached = self._ext_cache.get(key)
+        if cached is not None:
+            return cached
+
+        # I assume that extrinsics should be already uploaded in main module
+        # However, keep this as fallback
+        self._calibrator.load_extrinsics(master_id)
+        self._calibrator.load_extrinsics(subordinate_id)
+
+        ext_master = self._calibrator.get_extrinsics(master_id)
+        ext_sub = self._calibrator.get_extrinsics(subordinate_id)
+        if ext_master is None or ext_sub is None:
+            logger.debug(
+                "SkeletonPipeline: missing extrinsics for master=%s or sub=%s; "
+                "falling back to identity R and zero T",
+                master_id,
+                subordinate_id,
+            )
+            R = np.eye(3, dtype=np.float64)
+            T = np.zeros((3, 1), dtype=np.float64)
+            # Do not cache the fallback so a later calibration write is picked up.
+            return R, T
+
+        R_master = np.asarray(ext_master.rotation_matrix, dtype=np.float64)
+        R_sub = np.asarray(ext_sub.rotation_matrix, dtype=np.float64)
+        t_master = np.asarray(ext_master.tvec, dtype=np.float64).reshape(3, 1)
+        t_sub = np.asarray(ext_sub.tvec, dtype=np.float64).reshape(3, 1)
+
+        R = R_master @ R_sub.T
+        T = t_master - R @ t_sub
+        self._ext_cache[key] = (R, T)
+        return R, T
 
     def close(self) -> None:
         """Release MediaPipe resources."""

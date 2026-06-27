@@ -15,17 +15,9 @@ Priority 3 — kinect_0 MP_Z      : metric but less accurate.
 Priority 4 — kinect_1 MP_Z      : transform same as above.
 Priority 5 — MISSING from both  : point stays nan, source = MISSING.
 
-Extrinsics convention
----------------------
-R, T loaded from calibration_results.npz satisfy:
-    P_cam0 = R @ P_cam1 + T
-where P_cam0 and P_cam1 are column vectors (3, 1).
-T is in metres.
 """
 
 from __future__ import annotations
-
-from pathlib import Path
 
 import numpy as np
 
@@ -38,26 +30,6 @@ _PRIORITY = [
     (LandmarkSource.MP_Z,  "master"),
     (LandmarkSource.MP_Z,  "subordinate"),
 ]
-
-
-def load_extrinsics(path: str | Path = "viki/capture/calibration_results.npz") -> tuple[np.ndarray, np.ndarray]: #TODO move to loading calibration from data/intrinsics_calibration.json
-    """
-    Load R and T from the calibration npz file. Returns identity R and zero T if file missing.
-
-    Returns
-    -------
-    R : (3, 3) float64
-    T : (3, 1) float64
-    """
-    try:
-        data = np.load(path, allow_pickle=True)
-        ext = data["extrinsic_data"].item()
-        R = np.asarray(ext["R"], dtype=np.float64)
-        T = np.asarray(ext["T"], dtype=np.float64).reshape(3, 1)
-        return R, T
-    except (FileNotFoundError, KeyError, AttributeError):
-        # Return identity and zero if calibration is missing or corrupt
-        return np.eye(3, dtype=np.float64), np.zeros((3, 1), dtype=np.float64)
 
 
 def _transform_to_cam0(points: np.ndarray, R: np.ndarray, T: np.ndarray) -> np.ndarray:

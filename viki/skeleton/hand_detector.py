@@ -9,11 +9,6 @@ Running modes
 IMAGE  - per-image detection.  
 VIDEO  — uses temporal coherence between frames (tracking).
 LIVE   — fully asynchronous, non-blocking.
-
-Handedness
-----------
-MediaPipe was trained on selfie (mirrored) images.
-So two modes implemented for test is mirrored=True and mirrored=False for main usage
 """
 
 from __future__ import annotations
@@ -86,21 +81,17 @@ class HandDetector:
         Detection/tracking confidence threshold for hands [0, 1].
     min_pose_confidence : float
         Detection/tracking confidence threshold for pose [0, 1].
-    mirrored : bool
-        True  — selfie/front camera.
-        False — rear/fixed camera (Kinect)
     """
 
     def __init__(
         self,
-        hand: Literal["right", "left"] = "right", #TODO move this selection to frontend
+        hand: Literal["right", "left"] = "right",
         mode: Literal["image", "video", "live"] = "image",
         hand_model: str | None = None,
         pose_model: str | None = None,
         models_dir: str = "models",
         min_hand_confidence: float = 0.5,
         min_pose_confidence: float = 0.3,
-        mirrored: bool = False, # TODO swapped to true
     ) -> None:
         import mediapipe as mp
         from mediapipe.tasks import python
@@ -108,11 +99,8 @@ class HandDetector:
  
         self._hand = hand
         self._mode = mode
- 
-        if mirrored:
-            self._target_label = "Left" if hand == "right" else "Right"
-        else:
-            self._target_label = "Right" if hand == "right" else "Left" 
+
+        self._target_label = "Right" if hand == "right" else "Left"
 
         hand_path = hand_model or _ensure_model("hand_landmarker.task", models_dir)
         pose_path = pose_model or _ensure_model("pose_landmarker.task", models_dir)
