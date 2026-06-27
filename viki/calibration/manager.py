@@ -35,9 +35,9 @@ class CalibrationManager:
         mode="manual",
         board_type="chess",
         board_size=(8, 6),
-        square_size=0.025,
-        marker_size=0.025,
-        aruco_dict=cv2.aruco.DICT_6X6_250,
+        square_size=0.05,
+        marker_size=0.035,
+        aruco_dict=cv2.aruco.DICT_5X5_100,
     ) -> None:
         """
         mode: str = ["auto", "manual"], manual - capture image manually, via add_sample(), auto - worker will try to capture image itself
@@ -72,6 +72,22 @@ class CalibrationManager:
     def stop_all(self) -> None:
         for device_id in list(self._workers):
             self.stop(device_id)
+
+    def sync_params(
+        self,
+        board_type: str,
+        board_size: tuple[int, int],
+        square_size: float,
+        marker_size: float = 0.025,
+        aruco_dict: int = cv2.aruco.DICT_6X6_250,
+    ) -> None:
+        if board_type == "chess":
+            params = BoardParameters(board_size, square_size)
+        else:
+            params = ArucoBoardParameters(board_size, square_size, marker_size, aruco_dict)
+        
+        for worker in self._workers.values():
+            worker.set_board_params(params)
 
     def is_device_active(self, device_id: str) -> bool:
         if self._workers.get(device_id):
@@ -221,11 +237,14 @@ class CalibrationManager:
     def samples_count(self, device_id: str) -> int:
         worker = self._workers.get(device_id)
         if not worker:
-            self._logger.warning(
-                f"CalibrationManager samples_amount: {device_id} not in workers list"
+            self._logger.debug(
+                f"CalibrationManager samples_amount: {device_id} is not in worker list"
             )
             return 0
         return worker.samples_count
 
-    def status(self, device_id: str) -> int:
-        return self.samples_count(device_id)
+    def status(self, device_id: str) -> dict:
+        worker = self._workers.get(device_id)
+        if not worker:
+            return {"samples_count": 0, "started": False}
+        return {"samples_count": worker.samples_count, "started": True}

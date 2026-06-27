@@ -23,6 +23,8 @@ Priority 5 — MISSING from both  : point stays nan, source = MISSING.
 from __future__ import annotations
 
 import numpy as np
+import cv2
+import json
 
 from viki.calibration.models import CalibrationExtrinsics
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame

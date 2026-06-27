@@ -11,6 +11,8 @@ import cv2
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
+import logging
+logger = logging.getLogger(__name__)
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
@@ -35,6 +37,31 @@ async def reset(cal: CalibrationManager = Depends(get_calibrator)):
     return {"status": "success"}
 
 
+@router.post("/sync")
+async def sync(
+    params: ArucoBoardParametersData | BoardParametersData, 
+    board_type: str,
+    cal: CalibrationManager = Depends(get_calibrator)
+):
+    # Extract common params
+    board_size = params.board_size
+    square_size = params.square_size
+    
+    # Extract aruco specific
+    marker_size = 0.025
+    aruco_dict = cv2.aruco.DICT_6X6_250
+    
+    if board_type == "aruco" and hasattr(params, "marker_size"):
+        marker_size = params.marker_size
+        try:
+            aruco_dict = getattr(cv2.aruco, params.aruco_dict)
+        except:
+            raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
+            
+    cal.sync_params(board_type, board_size, square_size, marker_size, aruco_dict)
+    return {"status": "success"}
+
+
 @router.post("/capture/{device_id}")
 async def capture(
     device_id: str,
@@ -47,6 +74,11 @@ async def capture(
 async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    if not cal._workers:
+        raise HTTPException(
+            400, 
+            "Calibration session not started. Please click 'Sync Parameters' first."
+        )
     cal.capture_all()
 
 
@@ -75,9 +107,9 @@ async def start_aruco_worker(
 ):
     if not params:
         board_size = (10, 8)
-        square_size = 1.0
-        marker_size = 1.0
-        aruco_dict = cv2.aruco.DICT_6X6_250
+        square_size = 0.05
+        marker_size = 0.035
+        aruco_dict = cv2.aruco.DICT_5X5_100
     else:
         board_size = params.board_size
         square_size = params.square_size
@@ -93,7 +125,8 @@ async def start_aruco_worker(
 
 @router.get("/status/{device_id}")
 async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
-    return {"samples_count": cal.status(device_id)}
+    # logger.debug(f"calibration status for {device_id}: {cal.status(device_id)}")
+    return cal.status(device_id)
 
 
 @router.get("/samples_count/{device_id}")
@@ -144,6 +177,39 @@ async def intrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
         cy=intrinsics.cy,
         dist_coeffs=intrinsics.dist_coeffs.tolist(),
     )
+
+
+@router.post("/extrinsics", response_model=list[ExtrinsicsResponse])
+async def extrinsics_post_all(
+    cal: CalibrationManager = Depends(get_calibrator),
+    mgr: CameraManager = Depends(get_manager),
+):
+    results = []
+    active_devices = mgr.active_device_ids()
+    if not active_devices:
+        raise HTTPException(400, "No active cameras to calibrate")
+
+    for device_id in active_devices:
+        try:
+            extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
+            results.append(ExtrinsicsResponse(
+                rvec=extr.rvec.flatten().tolist(),
+                tvec=extr.tvec.flatten().tolist(),
+            ))
+        except Exception as e:
+            logger.error(f"Extrinsics calibration failed for {device_id}: {e}")
+            continue
+    
+    if not results:
+        # If we got here, it means all active devices failed to calibrate
+        # (e.g. due to lack of samples)
+        raise HTTPException(
+            422, 
+            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples."
+        )
+        
+    return results
+
 
 
 @router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)

@@ -13,6 +13,7 @@ import time
 import numpy as np
 from collections import deque
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
 
 from .base import CameraBackend, Frame
 
@@ -204,11 +205,8 @@ class CameraManager:
             worker.stop()
 
     def stop_all(self) -> None:
-        workers = [self._workers.pop(did) for did in list(self._workers)]
-        for w in workers:
-            w.stop()   # signal all first (non-blocking)
-        for w in workers:
-            w.join()   # then wait for all backend cleanup to finish
+        with ThreadPoolExecutor() as executor:
+            executor.map(self.stop, list(self._workers))
 
     # ── Frame access ──────────────────────────────────────────────────────────
 
