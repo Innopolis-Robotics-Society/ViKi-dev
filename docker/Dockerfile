@@ -14,6 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libegl1-mesa \
     libglvnd0 \
     python3 python3-pip \
+    g++ \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Intel RealSense SDK ───────────────────────────────────────────────────────

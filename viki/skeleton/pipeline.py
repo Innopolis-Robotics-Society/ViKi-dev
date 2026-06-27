@@ -45,9 +45,11 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
+        manager: CameraManager,
         hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
         self._calibrator = calibrator
+        self._manager = manager
         self._cache = UndistortCache()
         self._detectors: dict[str, HandDetector] = {}
         self._hand_type = hand
@@ -83,7 +85,7 @@ class SkeletonPipeline:
             
             # Ensure we have a dedicated detector per camera to avoid state bleeding in "live" mode
             if dev_id not in self._detectors:
-                self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="live")
+                self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="video")
             
             det = self._detectors[dev_id].detect(prepared)
             detections[dev_id] = det
@@ -154,4 +156,5 @@ class SkeletonPipeline:
         if prepared is None:
             return None
             
-        return lift_to_3d(detection, prepared)
+        backend = self._manager.get_backend(device_id)
+        return lift_to_3d(detection, prepared, backend)

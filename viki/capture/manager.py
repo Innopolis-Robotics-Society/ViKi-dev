@@ -210,6 +210,11 @@ class CameraManager:
         worker = self._workers.get(device_id)
         return worker.latest() if worker else None
 
+    def get_backend(self, device_id: str) -> Optional[CameraBackend]:
+        """Return the backend instance for the given device_id."""
+        worker = self._workers.get(device_id)
+        return worker.backend if worker else None
+
     def get_info(self, device_id: str) -> Optional[dict]:
         worker = self._workers.get(device_id)
         if not worker:

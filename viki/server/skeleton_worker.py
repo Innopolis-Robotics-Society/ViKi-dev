@@ -171,9 +171,8 @@ class SkeletonWorker:
         import random
         from viki.skeleton.models import LM
         
-        os.makedirs("debug", exist_ok=True)
+        os.makedirs("data/debug", exist_ok=True)
         
-        # Pick a random camera and a random landmark
         dev_ids = list(group.frames.keys())
         if not dev_ids: return
         dev_id = random.choice(dev_ids)
@@ -189,7 +188,13 @@ class SkeletonWorker:
         frame = group.frames.get(dev_id)
         if frame is None: return
         
-        visualize_color_depth_mapping(frame.color, frame.depth, u, v)
+        # We need K and backend for the updated viz tool
+        prepared = self._pipeline._prepare_camera(dev_id, group)
+        if prepared is None: return
+        
+        backend = self._manager.get_backend(dev_id)
+        
+        visualize_color_depth_mapping(frame.color, frame.depth, u, v, K=prepared.K, backend=backend)
 
     @property
     def is_recording(self) -> bool:
