@@ -14,16 +14,11 @@ from viki.skeleton.models import (
     HandDetection,
     Landmarks3D,
     SkeletonFrame,
-    LandmarkSource,
     LM,
 )
 
-def __getattr__(name: str):
-    if name == "SkeletonPipeline":
-        from viki.skeleton.pipeline import SkeletonPipeline
-        return SkeletonPipeline
-    raise AttributeError(f"module 'viki.skeleton' has no attribute {name!r}")
 
+from viki.skeleton.pipeline import SkeletonPipeline
 
 __all__ = [
     "SkeletonPipeline",
@@ -31,6 +26,5 @@ __all__ = [
     "HandDetection",
     "Landmarks3D",
     "SkeletonFrame",
-    "LandmarkSource",
     "LM",
 ]

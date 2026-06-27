@@ -1,7 +1,13 @@
 """
 scripts/live_demo.py
 --------------------
-Live hand skeleton overlay from webcam using HandDetector in LIVE_STREAM mode.
+Live skeleton overlay from a 2D webcam using the new modular detector stack
+in LIVE_STREAM mode.
+
+Default configuration runs MediaPipeArm + MediaPipeHand together via
+CompositeLandmarkDetector in FusionMode.ANY — arm chain (slots 0, 21, 22)
+plus full 21 hand keypoints (slots 0..20). Slot 0 (WRIST) is resolved by
+priority: arm (priority=0) wins over hand (priority=10).
 
 Usage:
     python scripts/live_demo.py [--camera 0] [--hand right] [--width 640]
@@ -17,13 +23,18 @@ import cv2
 import numpy as np
 
 from viki.capture.base import Frame
-from viki.skeleton.stats import SkeletonStats, pretty_print
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
-from viki.skeleton.hand_detector import HandDetector
+from viki.skeleton.detectors import (
+    CompositeLandmarkDetector,
+    FusionMode,
+    MediaPipeArm,
+    MediaPipeHand,
+)
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
+from viki.skeleton.stats import SkeletonStats, pretty_print
 
-# Default landmarks for post-analysis: wrist + all fingertips
+# Default landmarks for post-analysis: wrist (arm) + all fingertips (hand).
 _DEFAULT_ANALYSIS_LM = [
     LM.WRIST,
     LM.THUMB_TIP,
@@ -137,7 +148,6 @@ def main():
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--hand", default="right", choices=["right", "left"])
     parser.add_argument("--width", type=int, default=640)
-    parser.add_argument("--mirrored", action="store_true")
     parser.add_argument(
         "--landmarks",
         default=",".join(str(i) for i in _DEFAULT_ANALYSIS_LM),
@@ -174,7 +184,16 @@ def main():
         print(f"Cannot open camera {args.camera}")
         return
 
-    detector = HandDetector(hand=args.hand, mode="live", mirrored=args.mirrored)
+    # Arm + hand together. ANY mode → a kept frame requires only one
+    # detector to succeed, so missing-hand or missing-arm frames are still
+    # rendered with whatever is available.
+    detector = CompositeLandmarkDetector(
+        detectors=[
+            MediaPipeArm(hand=args.hand, mode="live"),
+            # MediaPipeHand(hand=args.hand, mode="live"),
+        ],
+        mode=FusionMode.ANY,
+    )
     stats = SkeletonStats(window=150)
     cache = UndistortCache()
 
@@ -241,7 +260,7 @@ def main():
         display = proc.copy()
         if detection is not None:
             display = draw_skeleton(display, detection)
-            wrist = detection.px[LM.WRIST]
+            wrist = detection.points[LM.WRIST]
             cv2.putText(
                 display,
                 f"conf={detection.confidence:.2f}",

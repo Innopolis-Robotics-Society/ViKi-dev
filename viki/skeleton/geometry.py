@@ -17,17 +17,23 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from viki.skeleton.models import HandDetection, LandmarkSource, Landmarks3D, LM, PreparedFrame
+from viki.skeleton.models import HandDetection, Landmarks3D, LM, PreparedFrame
 
 
 def _pixel_to_3d(
-    u: float, v: float, Z: float,
-    fx: float, fy: float, cx: float, cy: float,
+    u: float,
+    v: float,
+    Z: float,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
 ) -> np.ndarray:
     """Deproject a single pixel into 3-D camera space. Returns (X, Y, Z) metres."""
     X = (u - cx) * Z / fx
     Y = (v - cy) * Z / fy
     return np.array([X, Y, Z], dtype=np.float32)
+
 
 # So this is only needed if we don't get anything from depth cameras
 # in real case not needed
@@ -35,9 +41,9 @@ _FALLBACK_WRIST_Z_M = 0.7  # assumed wrist depth (metres) when no real depth sen
 
 
 def _wrist_scale(
-    wrist_px: np.ndarray,   # (2,) [u, v]
+    wrist_px: np.ndarray,  # (2,) [u, v]
     wrist_z_rel: float,
-    depth_m: np.ndarray,    # (H, W)
+    depth_m: np.ndarray,  # (H, W)
 ) -> float | None:
     """
     Compute the scale factor to convert MediaPipe relative z to metres.
@@ -67,7 +73,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     Parameters
     ----------
     detection : HandDetection
-        23 pixel-space landmarks from hand_detector.
+        23 pixel-space landmarks from CompositeLandmarkDetector.
     frame : PreparedFrame
         Provides depth_m and intrinsic matrix K.
  
@@ -82,22 +88,18 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
 
-    # for _ in range(240):
-    mp_z_scale = _wrist_scale(detection.px[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
-    #     if mp_z_scale is not None:
-    #         break
-    #     sleep(0.2)
+    mp_z_scale = _wrist_scale(
+        detection.points[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m
+    )
     if mp_z_scale is None:
         z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
         if z_rel_wrist != 0.0:
             mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
         # logger.debug("did not find the wrist, using fallback")
  
-    points = np.full((LM.N, 3), np.nan, dtype=np.float32)
-    source = np.array([LandmarkSource.MISSING] * LM.N, dtype=object)
- 
+    points = {LM(idx): np.full(2, np.nan, dtype=np.float32) for idx in range(LM.N)}
     for i in range(LM.N):
-        u, v = detection.px[i, 0], detection.px[i, 1]
+        u, v = detection.points[LM(i)][0], detection.points[LM(i)][1]
         if np.isnan(u) or np.isnan(v):
             continue
         ui, vi = int(round(u)), int(round(v))
@@ -119,19 +121,15 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
  
         if not np.isnan(Z):
             # Valid depth
-            points[i] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
-            source[i] = LandmarkSource.DEPTH
+            points[LM(i)] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
  
         elif mp_z_scale is not None:
             # No depth, we estimate Z
             Z_approx = float(detection.lm_z_rel[i]) * mp_z_scale
             if Z_approx > 0:
-                points[i] = _pixel_to_3d(u, v, Z_approx, fx, fy, cx, cy)
-                source[i] = LandmarkSource.MP_Z
- 
+                points[LM(i)] = _pixel_to_3d(u, v, Z_approx, fx, fy, cx, cy)
     return Landmarks3D(
         points=points,
-        source=source,
         device_id=detection.device_id,
         timestamp_us=detection.timestamp_us,
     )
