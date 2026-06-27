@@ -143,10 +143,10 @@ class SkeletonWorker:
                                 self._recorder.record(result.fused_frame)
                             
                             # Debug visualization every 2 seconds
-                            now = time.monotonic()
-                            if now - self._last_viz_time > 2.0:
-                                self._last_viz_time = now
-                                self._trigger_debug_viz(group, result)
+                            # now = time.monotonic()
+                            # if now - self._last_viz_time > 2.0:
+                            #     self._last_viz_time = now
+                            #     self._trigger_debug_viz(group, result)
                     else:
                         # No synced frames - if recording, we could write a duplicate here
                         # but for now we just let it be (MultiCameraSync returns None)

@@ -5,7 +5,8 @@ Public orchestrator for the skeleton detection pipeline.a
 """
 
 from __future__ import annotations
-
+ 
+from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 from typing import Optional, Literal
 import logging
@@ -54,6 +55,7 @@ class SkeletonPipeline:
         self._detectors: dict[str, HandDetector] = {}
         self._hand_type = hand
         self._R, self._T = load_extrinsics()
+        self._executor = ThreadPoolExecutor(max_workers=4)
 
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
@@ -74,23 +76,17 @@ class SkeletonPipeline:
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
  
-        # Process all frames in the group
-        for dev_id, frame in group.frames.items():
-            # logger.debug(f"got frame from {dev_id}")
-            prepared = self._prepare_camera(dev_id, group)
-            if prepared is None:
-                detections[dev_id] = None
-                lms_3d[dev_id] = None
-                continue
-            
-            # Ensure we have a dedicated detector per camera to avoid state bleeding in "live" mode
-            if dev_id not in self._detectors:
-                self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="video")
-            
-            det = self._detectors[dev_id].detect(prepared)
+        # 1. Run detections in parallel across all cameras
+        futures = {
+            self._executor.submit(self._detect_camera, dev_id, group): dev_id 
+            for dev_id in group.frames.keys()
+        }
+ 
+        for future in futures:
+            dev_id, det, prepared = future.result()
             detections[dev_id] = det
-            lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
-            # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
+            # 2. Lift to 3D (sequential, but fast)
+            lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
  
         # Fusion logic:
  
@@ -113,8 +109,21 @@ class SkeletonPipeline:
         
         return PipelineResult(fused_frame=fused, detections=detections)
 
+    def _detect_camera(self, dev_id: str, group: SyncedFrameGroup) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
+        """Helper for parallel detection."""
+        prepared = self._prepare_camera(dev_id, group)
+        if prepared is None:
+            return dev_id, None, None
+        
+        if dev_id not in self._detectors:
+            self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="video")
+        
+        det = self._detectors[dev_id].detect(prepared)
+        return dev_id, det, prepared
+
     def close(self) -> None:
         """Release MediaPipe resources."""
+        self._executor.shutdown(wait=False)
         for detector in self._detectors.values():
             detector.close()
 
@@ -144,15 +153,16 @@ class SkeletonPipeline:
         return prepare_frame(frame, K, dist, self._cache)
 
     def _lift_camera(
-        self, device_id: str, group: SyncedFrameGroup, detection: Optional[HandDetection]
+        self, device_id: str, group: SyncedFrameGroup, detection: Optional[HandDetection], prepared: Optional[PreparedFrame] = None
     ) -> Optional[Landmarks3D]:
         """Stage 3: lift 2D detection to 3D."""
         if detection is None:
             return None
-
-        # Use the same preparation logic as _prepare_camera to ensure we have
-        # a fallback K matrix if calibration is missing.
-        prepared = self._prepare_camera(device_id, group)
+ 
+        # Use the provided prepared frame, or re-prepare if missing
+        if prepared is None:
+            prepared = self._prepare_camera(device_id, group)
+        
         if prepared is None:
             return None
             
