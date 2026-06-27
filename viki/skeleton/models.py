@@ -149,7 +149,7 @@ class LM(IntEnum):
         return (self.SHOULDER, self.ELBOW, self.WRIST)
 
 
-_HAND_LM_ORDER = [
+HAND_LM_ORDER = [
     LM.WRIST,  # 0
     LM.THUMB_CMC,  # 1
     LM.THUMB_MCP,  # 2
@@ -172,4 +172,4 @@ _HAND_LM_ORDER = [
     LM.PINKY_DIP,  # 19
     LM.PINKY_TIP,  # 20
 ]
-_ARM_LM_ORDER = [LM.ELBOW, LM.SHOULDER]  # indices 21, 22
+ARM_LM_ORDER = [LM.ELBOW, LM.SHOULDER]  # indices 21, 22

@@ -3,10 +3,10 @@ viki.skeleton.fusion
 <<<<<<< HEAD
 --------------------
 
-Currently it fused LandMarks3D from two cameras into a single SkeletonFrame 
+Currently it fused LandMarks3D from two cameras into a single SkeletonFrame
 based on simple priority rules.
 In the future we could experiment with complex fusion strategies (per mark stuff etc)
-e.g. Kalman Filter, or just weighted sum, or confidence based approaches 
+e.g. Kalman Filter, or just weighted sum, or confidence based approaches
 
 Current Fusion strategy (per landmark)
 -------------------------------
@@ -24,27 +24,8 @@ from __future__ import annotations
 
 import numpy as np
 
-<<<<<<< HEAD
-from viki.skeleton.models import LandmarkSource, Landmarks3D, LM, SkeletonFrame
-
-# Priority order used in fuse() — lower index wins.
-_PRIORITY = [
-    (LandmarkSource.DEPTH, "master"),
-    (LandmarkSource.DEPTH, "subordinate"),
-    (LandmarkSource.MP_Z,  "master"),
-    (LandmarkSource.MP_Z,  "subordinate"),
-]
-
-
-def _transform_to_cam0(points: np.ndarray, R: np.ndarray, T: np.ndarray) -> np.ndarray:
-    """
-    Transform (N, 3) points from cam1 frame to cam0 frame.
-    """
-    return (R @ points.T + T).T.astype(np.float32)
-=======
 from viki.calibration.models import CalibrationExtrinsics
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame
->>>>>>> feat/fusion
 
 
 def fuse(

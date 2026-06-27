@@ -11,6 +11,7 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
+from numpy._core import indices
 
 from viki.skeleton.detectors.base import (
     FusionMode,
@@ -119,7 +120,7 @@ class CompositeLandmarkDetector:
                 return None
 
         # Merge into the global N-slot buffers.
-        px = np.full((self._n, 2), np.nan, dtype=np.float32)
+        px = {LM(idx): np.full(2, np.nan, dtype=np.float32) for d in self._detectors for idx in d.indices}
         z = np.full(self._n, np.nan, dtype=np.float32)
         per_slot_conf = np.zeros(self._n, dtype=np.float32)
         slot_owner_priority: Dict[int, int] = {}
@@ -143,7 +144,7 @@ class CompositeLandmarkDetector:
                 p = partial.px[k]
                 if np.isnan(p).any():
                     continue
-                px[slot] = p
+                px[LM(slot)] = p
                 z[slot] = partial.lm_z_rel[k]
                 per_slot_conf[slot] = partial.per_index_confidence[k]
                 slot_owner_priority[slot] = d.priority
@@ -161,7 +162,7 @@ class CompositeLandmarkDetector:
         any_partial = successes[0][1]
         assert any_partial is not None
         return HandDetection(
-            px=px,
+            points=px,
             lm_z_rel=z,
             confidence=scalar_conf,
             device_id=any_partial.device_id,

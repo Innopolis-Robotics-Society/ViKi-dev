@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Dict, Optional, Literal
 import logging
 
-from viki.calibration.models import CalibrationExtrinsics, CalibrationIntrinsics
+from viki.calibration.models import CalibrationExtrinsics
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,6 @@ from viki.skeleton.detectors import (
 )
 from viki.skeleton.models import (
     Landmarks3D,
-    LM,
-    SkeletonFrame,
     PipelineResult,
     HandDetection,
     PreparedFrame,
@@ -73,11 +71,6 @@ class SkeletonPipeline:
         """
         Run the full pipeline on one SyncedFrameGroup.
 
-<<<<<<< HEAD
-=======
-        Returns a PipelineResult containing the fused 3D frame and per-camera 2D detections.
-
->>>>>>> feat/fusion
         Parameters
         ----------
         group : SyncedFrameGroup

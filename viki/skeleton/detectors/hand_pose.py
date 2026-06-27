@@ -38,7 +38,7 @@ class MediaPipeHand(PartialLandmarkDetector):
     """Partial detector for one hand (21 landmarks)."""
 
     name = "hand"
-    indices = tuple(range(21))   # WRIST..PINKY_TIP, 1:1 with MediaPipe Hand
+    indices = tuple(range(21))  # WRIST..PINKY_TIP, 1:1 with MediaPipe Hand
     priority = 10
 
     def __init__(
@@ -66,13 +66,16 @@ class MediaPipeHand(PartialLandmarkDetector):
         self._target_label = _LABEL_RIGHT if hand == "right" else _LABEL_LEFT
 
         model_path = hand_model or ensure_model(
-            "hand_landmarker.task", _HAND_URL, models_dir,
+            "hand_landmarker.task",
+            _HAND_URL,
+            models_dir,
         )
 
         # Detector-specific config stays in the closure; runner only sees
         # shared infrastructure pieces.
         def _factory(base_options, running_mode, result_callback):
             from mediapipe.tasks.python import vision
+
             opts = vision.HandLandmarkerOptions(
                 base_options=base_options,
                 running_mode=running_mode,
@@ -80,11 +83,7 @@ class MediaPipeHand(PartialLandmarkDetector):
                 min_hand_detection_confidence=min_hand_confidence,
                 min_hand_presence_confidence=min_hand_confidence,
                 min_tracking_confidence=min_hand_confidence,
-                **(
-                    {"result_callback": result_callback}
-                    if result_callback
-                    else {}
-                ),
+                **({"result_callback": result_callback} if result_callback else {}),
             )
             return vision.HandLandmarker.create_from_options(opts)
 
@@ -137,7 +136,7 @@ class MediaPipeHand(PartialLandmarkDetector):
             return None
 
         h, w = frame.rgb.shape[:2]
-        lms = raw.hand_landmarks[match_idx]   # 21 NormalizedLandmark
+        lms = raw.hand_landmarks[match_idx]  # 21 NormalizedLandmark
 
         px = np.zeros((21, 2), dtype=np.float32)
         z = np.zeros(21, dtype=np.float32)

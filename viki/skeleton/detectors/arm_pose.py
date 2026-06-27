@@ -36,6 +36,7 @@ _LEFT = (15, 13, 11)
 
 class MediaPipeArm(PartialLandmarkDetector):
     """Partial detector for one arm."""
+
     name = "arm_pose"
     indices = (0, 21, 22)
     priority = 0
@@ -65,24 +66,23 @@ class MediaPipeArm(PartialLandmarkDetector):
         self._pose_indices = _RIGHT if hand == "right" else _LEFT
 
         model_path = pose_model or ensure_model(
-            "pose_landmarker.task", _POSE_URL, models_dir,
+            "pose_landmarker.task",
+            _POSE_URL,
+            models_dir,
         )
 
         # Closure captures detector-specific config (thresholds). Runner
         # supplies the shared infrastructure pieces as call args.
         def _factory(base_options, running_mode, result_callback):
             from mediapipe.tasks.python import vision
+
             opts = vision.PoseLandmarkerOptions(
                 base_options=base_options,
                 running_mode=running_mode,
                 min_pose_detection_confidence=min_pose_confidence,
                 min_pose_presence_confidence=min_pose_confidence,
                 min_tracking_confidence=min_pose_confidence,
-                **(
-                    {"result_callback": result_callback}
-                    if result_callback
-                    else {}
-                ),
+                **({"result_callback": result_callback} if result_callback else {}),
             )
             return vision.PoseLandmarker.create_from_options(opts)
 
