@@ -53,9 +53,13 @@ def fuse(
         for index, vec in ps.items():
 
             pos_mtx = np.eye(4)
+            if len(vec.flatten()) != 3:
+                vec = np.full(3, np.nan, dtype=np.float32)
             pos_mtx[:3, 3] = vec
             world_vec = (pos_mtx @ T)[:3, 3].flatten()
 
+            if index not in observations:
+                observations[index] = {}
             observations[index][dev_id] = world_vec
 
     if not observations:
