@@ -1,3 +1,13 @@
+// =============================================================================================================================================================================
+//
+// To get intrinsics of kinect 0 run:
+// docker compose run --rm terminal bash -c "apt-get update && apt-get install -y g++ && g++ -O3 viki/pull_from_sdk.cpp -o extract_intrinsics -lk4a && ./extract_intrinsics 0"
+//
+// to instead get the ones for kinect 1 just put a 1 instead of a 0, 
+// however, the ones that are already in the intrinsics_calibration.json will most likely be the same
+//
+// =============================================================================================================================================================================
+
 #include <k4a/k4a.h>
 #include <iostream>
 #include <iomanip>
