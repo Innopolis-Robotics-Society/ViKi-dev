@@ -1,7 +1,11 @@
 """
 scripts/live_demo.py
 --------------------
-Live hand skeleton overlay from webcam using HandDetector in LIVE_STREAM mode.
+Live skeleton overlay from a 2D webcam using the new modular detector stack
+in LIVE_STREAM mode.
+
+Default configuration is arm-only (MediaPipeArm). Hand chains in the overlay
+stay invisible automatically because their slots are NaN.
 
 Usage:
     python scripts/live_demo.py [--camera 0] [--hand right] [--width 640]
@@ -16,21 +20,24 @@ import time
 import cv2
 import numpy as np
 
+
+
 from viki.capture.base import Frame
-from viki.skeleton.stats import SkeletonStats, pretty_print
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
-from viki.skeleton.hand_detector import HandDetector
+from viki.skeleton.detectors import (
+    CompositeLandmarkDetector,
+    FusionMode,
+    MediaPipeArm,
+)
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
+from viki.skeleton.stats import SkeletonStats, pretty_print
 
-# Default landmarks for post-analysis: wrist + all fingertips
+# Default landmarks for post-analysis: arm chain (filled by MediaPipeArm).
 _DEFAULT_ANALYSIS_LM = [
     LM.WRIST,
-    LM.THUMB_TIP,
-    LM.INDEX_TIP,
-    LM.MIDDLE_TIP,
-    LM.RING_TIP,
-    LM.PINKY_TIP,
+    LM.ELBOW,
+    LM.SHOULDER,
 ]
 
 
@@ -137,7 +144,6 @@ def main():
     parser.add_argument("--camera", type=int, default=0)
     parser.add_argument("--hand", default="right", choices=["right", "left"])
     parser.add_argument("--width", type=int, default=640)
-    parser.add_argument("--mirrored", action="store_true")
     parser.add_argument(
         "--landmarks",
         default=",".join(str(i) for i in _DEFAULT_ANALYSIS_LM),
@@ -174,7 +180,10 @@ def main():
         print(f"Cannot open camera {args.camera}")
         return
 
-    detector = HandDetector(hand=args.hand, mode="live", mirrored=args.mirrored)
+    detector = CompositeLandmarkDetector(
+        detectors=[MediaPipeArm(hand=args.hand, mode="live")],
+        mode=FusionMode.ANY,
+    )
     stats = SkeletonStats(window=150)
     cache = UndistortCache()
 

@@ -63,7 +63,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     Parameters
     ----------
     detection : HandDetection
-        23 pixel-space landmarks from hand_detector.
+        23 pixel-space landmarks from CompositeLandmarkDetector.
     frame : PreparedFrame
         Provides depth_m and intrinsic matrix K.
 

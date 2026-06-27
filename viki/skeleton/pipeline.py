@@ -17,9 +17,13 @@ import numpy as np
 from viki.capture.base import SyncedFrameGroup
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
+from viki.skeleton.detectors import (
+    CompositeLandmarkDetector,
+    FusionMode,
+    MediaPipeArm,
+)
 from viki.skeleton.fusion import fuse
 from viki.skeleton.geometry import lift_to_3d
-from viki.skeleton.hand_detector import HandDetector
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
 
 
@@ -30,27 +34,38 @@ class SkeletonPipeline:
     Parameters
     ----------
     calibrator : CalibrationManager
-        Running calibrator. Used to read per-device intrinsics and extrinsics
+        Provides per-device intrinsics and extrinsics for prep, lift, fusion.
+    detector : optional CompositeLandmarkDetector.
+        If None, a default composite is created with only MediaPipeArm in
+        FusionMode.ANY (arm-pose only configuration). To enable additional
+        detectors later, build the composite explicitly and pass
+        it here.
     hand : {"right", "left"}
-        Which hand to track.
+        Which arm to track for the default detector. Ignored when `detector`
+        is supplied explicitly.
     """
 
     def __init__(
         self,
         calibrator: CalibrationManager,
+        detector: Optional[CompositeLandmarkDetector] = None,
         hand: Literal["right", "left"] = "right",
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()
-        self._detector = HandDetector(hand=hand, mode="live")
+        if detector is None:
+            detector = CompositeLandmarkDetector(
+                detectors=[MediaPipeArm(hand=hand, mode="live")],
+                mode=FusionMode.ANY,
+            )
+        self._detector = detector
+        self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
         """
         Run the full pipeline on one SyncedFrameGroup.
- 
-        Returns a PipelineResult containing the fused 3D frame and per-camera 2D detections.
- 
+
         Parameters
         ----------
         group : SyncedFrameGroup
