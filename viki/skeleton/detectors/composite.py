@@ -120,7 +120,7 @@ class CompositeLandmarkDetector:
                 return None
 
         # Merge into the global N-slot buffers.
-        px = {LM(idx): np.full(2, np.nan, dtype=np.float32) for d in self._detectors for idx in d.indices}
+        px = {LM(idx): np.full(2, np.nan, dtype=np.float32) for idx in range(self._n)}
         z = np.full(self._n, np.nan, dtype=np.float32)
         per_slot_conf = np.zeros(self._n, dtype=np.float32)
         slot_owner_priority: Dict[int, int] = {}
