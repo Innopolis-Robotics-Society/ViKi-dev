@@ -15,6 +15,7 @@ import cv2
 import numpy as np
 
 from .base import CameraBackend, CameraIntrinsics, Frame
+from .aligner import DepthAligner
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +299,7 @@ class KinectBackend(CameraBackend):
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._calibration: K4ACalibration = K4ACalibration(None)
+        self._aligner: Optional[DepthAligner] = None
         self._serial_str: str = f"kinect_{device_index}"
         self._running = False
 
@@ -350,8 +352,26 @@ class KinectBackend(CameraBackend):
         if res == K4A_RESULT_SUCCEEDED:
             self._calibration = ctypes.cast(cal_buf, K4ACalibration)
             if self._align_depth:
-                self._transform = _lib.k4a_transformation_create(cal_buf)
-                logger.info(f"[{self._serial_str}] Depth alignment initialized successfully.")
+                # Fixed-Matrix Projection Pipeline
+                depth_res_map = {
+                    "NFOV_UNBINNED": (640, 576),
+                    "NFOV_2X2BINNED": (320, 288),
+                    "WFOV_UNBINNED": (1024, 1024),
+                    "WFOV_2X2BINNED": (512, 512),
+                }
+                depth_res = depth_res_map.get(self._depth_mode, (640, 576))
+                try:
+                    self._aligner = DepthAligner(
+                        device_id=self._serial_str,
+                        depth_res=depth_res,
+                        color_res=self._color_resolution
+                    )
+                    # Maintain SDK transform for fallback/comparison
+                    self._transform = _lib.k4a_transformation_create(cal_buf)
+                    logger.info(f"[{self._serial_str}] Custom DepthAligner initialized.")
+                except Exception as e:
+                    logger.error(f"[{self._serial_str}] Custom DepthAligner failed: {e}. Falling back to SDK.")
+                    self._transform = _lib.k4a_transformation_create(cal_buf)
         else:
             logger.error(f"[{self._serial_str}] Failed to get calibration.")
             self._align_depth = False
@@ -364,6 +384,7 @@ class KinectBackend(CameraBackend):
         if self._transform:
             _lib.k4a_transformation_destroy(self._transform)
             self._transform = K4ATransformation(None)
+        self._aligner = None
         _lib.k4a_device_stop_cameras(self._handle)
         _lib.k4a_device_close(self._handle)
         self._handle = K4ADevice(None)
@@ -417,6 +438,31 @@ class KinectBackend(CameraBackend):
             color_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR),
             depth_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_DEPTH),
         )
+
+    def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
+        """Project a color pixel and depth into a depth image pixel."""
+        if self._aligner:
+            return self._aligner.project_color_to_depth(u, v, z)
+        
+        # SDK Fallback
+        from viki.capture.kinect import K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH
+        p_color = K4AFloat3(u * 1.0, v * 1.0, z * 1000.0) # This is actually wrong, need to use intrinsics
+        # ... actually the fallback should just use the existing methods
+        
+        # 1. Color Pixel -> 3D Point (via SDK)
+        # We don't have a direct SDK function for pixel -> 3D without intrinsics
+        # But we can use our existing helper to get intrinsic matrix
+        ci = self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR)
+        x = (u - ci.cx) * z / ci.fx
+        y = (v - ci.cy) * z / ci.fy
+        
+        # 2. 3D Color -> 3D Depth
+        p_depth = self.transform_3d_to_3d(x, y, z, K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH)
+        if p_depth is None:
+            return None
+            
+        # 3. 3D Depth -> 2D Depth
+        return self.project_3d_to_2d(*p_depth, K4A_CALIBRATION_TYPE_DEPTH)
 
     def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
         """Project a 3D point in camera space to a 2D pixel. Coordinates in metres."""
@@ -517,6 +563,12 @@ class KinectBackend(CameraBackend):
         
         logger.debug(f"[{self._serial_str}] Transforming depth ({dw}x{dh}) to color ({w}x{h})")
         
+        # Use custom aligner if available
+        if self._aligner:
+            depth_np = self._image_to_numpy_depth(depth_img)
+            return self._aligner.align(depth_np)
+
+        # SDK Fallback
         transformed = K4AImage(None)
         res = _lib.k4a_transformation_depth_image_to_color_camera(
             self._transform, depth_img, ctypes.byref(transformed)

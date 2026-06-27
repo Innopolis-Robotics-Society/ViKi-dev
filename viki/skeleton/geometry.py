@@ -39,42 +39,18 @@ def _pixel_to_3d(
 
 def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: KinectBackend) -> tuple[float, float] | None:
     """
-    Maps a pixel from the color camera to the depth camera coordinate space using SDK calibration.
+    Maps a pixel from the color camera to the depth camera coordinate space.
     
     Args:
         u, v: Color pixel coordinates (undistorted)
         Z: Depth in metres
         K: Color intrinsic matrix (3, 3)
-        backend: Kinect backend providing SDK calibration
+        backend: Kinect backend providing calibration
     
     Returns:
         (u_depth, v_depth) or None if projection fails.
     """
-    # 1. Color Pixel (undistorted) -> 3D Point in Color Space
-    fx, fy = K[0, 0], K[1, 1]
-    cx, cy = K[0, 2], K[1, 2]
-    p_color = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
-    
-    # 2. Color Space -> Depth Space
-    from viki.capture.kinect import K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH
-    p_depth = backend.transform_3d_to_3d(
-        p_color[0], p_color[1], p_color[2], 
-        K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH
-    )
-    
-    if p_depth is None:
-        logger.debug(f"SDK transform_3d_to_3d failed for pixel ({u}, {v}) at Z={Z}")
-        return None
-    
-    # 3. Depth 3D Point -> Depth Pixel
-    res = backend.project_3d_to_2d(
-        p_depth[0], p_depth[1], p_depth[2], 
-        K4A_CALIBRATION_TYPE_DEPTH
-    )
-    if res is None:
-        logger.debug(f"SDK project_3d_to_2d failed for P_depth={p_depth} (u={u}, v={v}, Z={Z})")
-        
-    return res
+    return backend.project_color_to_depth(u, v, Z)
 
 # So this is only needed if we don't get anything from depth cameras
 # in real case not needed

@@ -66,6 +66,7 @@ class DepthColorizer:
         return img
 
 
+# ... existing code ...
 class Undistorter:
     """Apply intrinsic undistortion to colour images, caching the remap tables."""
 
@@ -83,3 +84,38 @@ class Undistorter:
                 self.mtx, self.dist, None, self.mtx, (w, h), cv2.CV_32FC1
             )
         return cv2.remap(img, self._map1, self._map2, cv2.INTER_LINEAR)
+
+
+class DepthStabilizer:
+    """Removes temporal jitter and noise from depth maps."""
+
+    def __init__(
+        self, 
+        window_size: int = 5, 
+        use_bilateral: bool = False
+    ) -> None:
+        self.window_size = window_size
+        self.use_bilateral = use_bilateral
+        self.buffer: list[np.ndarray] = []
+
+    def stabilize(self, depth: np.ndarray) -> np.ndarray:
+        """Apply temporal median and optional bilateral filtering."""
+        self.buffer.append(depth)
+        if len(self.buffer) > self.window_size:
+            self.buffer.pop(0)
+
+        if len(self.buffer) < 2:
+            return depth
+
+        # Temporal median filter
+        stack = np.stack(self.buffer, axis=0)
+        median_depth = np.median(stack, axis=0).astype(np.uint16)
+
+        if self.use_bilateral:
+            # Bilateral filter expects float32 or uint8
+            float_depth = median_depth.astype(np.float32)
+            smoothed = cv2.bilateralFilter(float_depth, d=5, sigmaColor=50, sigmaSpace=5)
+            median_depth = smoothed.astype(np.uint16)
+
+        return median_depth
+

@@ -39,7 +39,8 @@ PLACEHOLDER_SIZE = (1280, 720)
 
 # ── Recording
 RECORD_DEPTH = False  # controls if depth is recorded in a .npy format for each frame alongside the mp4 videos,
-# can be disk-space consuming
+                      # can be disk-space consuming
+DEPTH_PROJECTION_DEBUG = True # controls wether the debug plotting of depth projection is enabled
 
 # ── Detection
 CAMERAS_MIRRORED = False
