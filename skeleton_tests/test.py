@@ -8,7 +8,11 @@ from mpl_toolkits.mplot3d import Axes3D  # noqa: F401
 
 from viki.capture.base import Frame
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
-from viki.skeleton.hand_detector import HandDetector
+from viki.skeleton.detectors import (
+    CompositeLandmarkDetector,
+    FusionMode,
+    MediaPipeArm,
+)
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
 from viki.skeleton.stats import SkeletonStats
@@ -19,7 +23,11 @@ MAX_SAVED = 50
 missed_frames: list[np.ndarray] = []
 
 cap = cv2.VideoCapture("/home/tomatocoder/Desktop/ViKi-dev/skeleton_tests/move_open.mp4")
-detector = HandDetector(hand="left", mirrored=True, mode="video")
+# Arm-only configuration: hand slots (1..20) stay NaN; downstream handles MISSING.
+detector = CompositeLandmarkDetector(
+    detectors=[MediaPipeArm(hand="left", mode="video")],
+    mode=FusionMode.ANY,
+)
 stats = SkeletonStats(window=150)
 cache = UndistortCache()
 
@@ -166,7 +174,8 @@ print(f"\nDone: {detected}/{frame_idx} frames detected")
 
 # ── 3D visualisation ──────────────────────────────────────────────────────────
 
-_post_analysis(stats, landmarks=[0, 16, 20], save_anim="skeleton_animation", plots_dir="post_analysis_plots")
+# Arm slots: WRIST (0), ELBOW (21), SHOULDER (22) — those MediaPipeArm fills.
+_post_analysis(stats, landmarks=[LM.WRIST, LM.ELBOW, LM.SHOULDER], save_anim="skeleton_animation", plots_dir="post_analysis_plots")
 
 
 # if not all_points:

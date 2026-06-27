@@ -41,6 +41,7 @@ async def lifespan(app: FastAPI):
     app.state.sync = MultiCameraSync(app.state.manager)
     app.state.skeleton_pipeline = SkeletonPipeline(app.state.calibrator, app.state.manager)
     from viki.skeleton.models import LM
+
     app.state.skeleton_recorder = SkeletonRecorder()
 
     app.state.skeleton_worker = SkeletonWorker(

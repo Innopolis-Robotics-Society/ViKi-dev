@@ -8,20 +8,34 @@ from __future__ import annotations
  
 from concurrent.futures import ThreadPoolExecutor
 from time import sleep
-from typing import Optional, Literal
+
+from typing import Dict, Optional, Literal
 import logging
+
+from viki.calibration.models import CalibrationExtrinsics
+from viki.capture.kinect import KinectBackend
 
 logger = logging.getLogger(__name__)
 
 import numpy as np
 
 from viki.capture.base import SyncedFrameGroup
+from viki.capture.manager import CameraManager
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
-from viki.skeleton.fusion import fuse, load_extrinsics
+from viki.skeleton.fusion import fuse
 from viki.skeleton.geometry import lift_to_3d
-from viki.skeleton.hand_detector import HandDetector
-from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
+from viki.skeleton.detectors import (
+    CompositeLandmarkDetector,
+    FusionMode,
+    MediaPipeArm,
+)
+from viki.skeleton.models import (
+    Landmarks3D,
+    PipelineResult,
+    HandDetection,
+    PreparedFrame,
+)
 import viki.config
 
 
@@ -32,15 +46,15 @@ class SkeletonPipeline:
     Parameters
     ----------
     calibrator : CalibrationManager
-        Running calibrator. Used to read intrinsics per camera.
-    calib_path : str
-        Path to calibration_results.npz
-    master_id : str
-        Device ID of the master camera (world frame origin). Default: "kinect_0".
-    subordinate_id : str
-        Device ID of the subordinate camera. Default: "kinect_1".
+        Provides per-device intrinsics and extrinsics for prep, lift, fusion.
+    detector : optional CompositeLandmarkDetector.
+        If None, a default composite is created with only MediaPipeArm in
+        FusionMode.ANY (arm-pose only configuration). To enable additional
+        detectors later, build the composite explicitly and pass
+        it here.
     hand : {"right", "left"}
-        Which hand to track.
+        Which arm to track for the default detector. Ignored when `detector`
+        is supplied explicitly.
     """
 
     def __init__(
@@ -49,26 +63,25 @@ class SkeletonPipeline:
         manager: CameraManager,
         hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
+        self._hand = hand
         self._calibrator = calibrator
         self._manager = manager
         self._cache = UndistortCache()
-        self._detectors: dict[str, HandDetector] = {}
+        self._detectors: dict[str, CompositeLandmarkDetector] = {}
         self._hand_type = hand
-        self._R, self._T = load_extrinsics()
         self._executor = ThreadPoolExecutor(max_workers=4)
 
+        self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
         """
         Run the full pipeline on one SyncedFrameGroup.
- 
-        Returns a PipelineResult containing the fused 3D frame and per-camera 2D detections.
- 
+
         Parameters
         ----------
         group : SyncedFrameGroup
             Output of MultiCameraSync.get_synced_frame().
- 
+
         Returns
         -------
         PipelineResult
@@ -93,20 +106,38 @@ class SkeletonPipeline:
         # Master camera is the first device in the group.
         # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())
+
+        # # Process all frames in the group
+        # for dev_id, frame in group.frames.items():
+        #     # logger.debug(f"got frame from {dev_id}")
+        #     prepared = self._prepare_camera(dev_id, group)
+        #     if prepared is None:
+        #         detections[dev_id] = None
+        #         lms_3d[dev_id] = None
+        #         continue
+
+        #     det = self._detector.detect(prepared)
+        #     detections[dev_id] = det
+        #     if det is None:
+        #         lms_3d[dev_id] = None
+        #     else:
+        #         lms_3d[dev_id] = lift_to_3d(det, prepared)
+        #     # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
+
+        # dev_ids = group.device_ids
         if not dev_ids:
             return PipelineResult(fused_frame=None, detections={})
- 
-        master_id = dev_ids[0]
-        lm0 = lms_3d.get(master_id)
-        
-        if len(dev_ids) >= 2:
-            sub_id = dev_ids[1]
-            lm1 = lms_3d.get(sub_id)
-            fused = fuse(lm0, lm1, self._R, self._T, group.sync_timestamp_us)
-        else:
-            # Single camera case: just use the first camera as origin
-            fused = fuse(lm0, None, self._R, self._T, group.sync_timestamp_us)
-        
+
+        extrinsics: Dict[str, CalibrationExtrinsics] = {}
+        for dev_id in dev_ids:
+            extr = self._calibrator.get_extrinsics(dev_id)
+            if not extr:
+                extrinsics[dev_id] = CalibrationExtrinsics()
+            else:
+                extrinsics[dev_id] = extr
+
+        fused = fuse(dev_ids, lms_3d, extrinsics, group.sync_timestamp_us)
+
         return PipelineResult(fused_frame=fused, detections=detections)
 
     def _detect_camera(self, dev_id: str, group: SyncedFrameGroup) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
@@ -116,7 +147,10 @@ class SkeletonPipeline:
             return dev_id, None, None
         
         if dev_id not in self._detectors:
-            self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="video")
+            self._detectors[dev_id] = CompositeLandmarkDetector(
+                detectors=[MediaPipeArm(hand=self._hand, mode="live")], # pyright: ignore
+                mode=FusionMode.ANY,
+            )
         
         det = self._detectors[dev_id].detect(prepared)
         return dev_id, det, prepared
@@ -133,7 +167,9 @@ class SkeletonPipeline:
     def __exit__(self, *_) -> None:
         self.close()
 
-    def _prepare_camera(self, device_id: str, group: SyncedFrameGroup) -> Optional[PreparedFrame]:
+    def _prepare_camera(
+        self, device_id: str, group: SyncedFrameGroup
+    ) -> Optional[PreparedFrame]:
         """Stage 1: prepare frame for detection."""
         frame = group.frames.get(device_id)
         if frame is None:
@@ -149,7 +185,7 @@ class SkeletonPipeline:
         else:
             K = intrinsics.camera_matrix
             dist = intrinsics.dist_coeffs
-            
+
         return prepare_frame(frame, K, dist, self._cache)
 
     def _lift_camera(
@@ -167,4 +203,6 @@ class SkeletonPipeline:
             return None
             
         backend = self._manager.get_backend(device_id)
+        if backend is None or not isinstance(backend, KinectBackend):
+            return None
         return lift_to_3d(detection, prepared, backend)
