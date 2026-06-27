@@ -44,12 +44,14 @@ from viki.skeleton.pipeline import SkeletonPipeline
 from viki.skeleton.stats import SkeletonStats, pretty_print
 
 CALIB_PATH = "viki/capture/calibration_results.npz"
-MASTER_ID  = "kinect_0"
-SUB_ID     = "kinect_1"
+MASTER_ID = "kinect_0"
+SUB_ID = "kinect_1"
+
 
 def fail(msg):
     print(f"FAIL: {msg}")
     sys.exit(1)
+
 
 # ── 1. Start cameras ──────────────────────────────────────────────────────────
 print("Starting cameras...")
@@ -74,8 +76,7 @@ for _ in range(30):
 else:
     fail("Timed out waiting for frames")
 
-print(f"[1/8] cameras OK  "
-      f"kinect_0={f0.color.shape}  kinect_1={f1.color.shape}")
+print(f"[1/8] cameras OK  " f"kinect_0={f0.color.shape}  kinect_1={f1.color.shape}")
 
 # ── 2. Calibration ────────────────────────────────────────────────────────────
 cal0 = manager.get_calibration(MASTER_ID)
@@ -87,12 +88,15 @@ R, T = load_extrinsics(CALIB_PATH)
 if abs(np.linalg.det(R) - 1.0) > 1e-4:
     fail(f"det(R) = {np.linalg.det(R):.6f}, expected 1.0")
 
-print(f"[2/8] calibration OK  det(R)={np.linalg.det(R):.6f}  "
-      f"|T|={np.linalg.norm(T)*100:.1f}cm")
+print(
+    f"[2/8] calibration OK  det(R)={np.linalg.det(R):.6f}  "
+    f"|T|={np.linalg.norm(T)*100:.1f}cm"
+)
 
 # ── 3. prepare_frame ──────────────────────────────────────────────────────────
 import cv2
-K0   = np.asarray(cal0["mtx"], dtype=np.float32)
+
+K0 = np.asarray(cal0["mtx"], dtype=np.float32)
 dist0 = np.asarray(cal0["dist"], dtype=np.float32)
 cache = UndistortCache()
 prep = prepare_frame(f0, K0, dist0, cache)
@@ -106,9 +110,11 @@ if prep.depth_m.dtype != np.float32:
 
 valid_depth = np.sum(~np.isnan(prep.depth_m))
 total = prep.depth_m.size
-print(f"[3/8] prepare_frame OK  "
-      f"rgb={prep.rgb.shape}  depth_m={prep.depth_m.shape}  "
-      f"valid_depth={valid_depth/total*100:.1f}%")
+print(
+    f"[3/8] prepare_frame OK  "
+    f"rgb={prep.rgb.shape}  depth_m={prep.depth_m.shape}  "
+    f"valid_depth={valid_depth/total*100:.1f}%"
+)
 
 # ── 4. HandDetection ─────────────────────────────────────────────────────────
 print("     >>> Put your RIGHT hand in front of the cameras <<<")
@@ -126,19 +132,21 @@ for _ in range(60):
 
 if detection is None:
     fail("No hand detected on kinect_0 after 3s — is hand in frame?")
-if detection.px.shape != (23, 2):
-    fail(f"px.shape={detection.px.shape}, expected (23, 2)")
+if detection.points.shape != (23, 2):
+    fail(f"px.shape={detection.points.shape}, expected (23, 2)")
 if detection.lm_z_rel.shape != (23,):
     fail(f"lm_z_rel.shape={detection.lm_z_rel.shape}, expected (23,)")
 
-print(f"[4/8] hand detected on kinect_0  confidence={detection.confidence:.2f}  "
-      f"wrist_px=({detection.px[LM.WRIST,0]:.0f}, {detection.px[LM.WRIST,1]:.0f})")
+print(
+    f"[4/8] hand detected on kinect_0  confidence={detection.confidence:.2f}  "
+    f"wrist_px=({detection.points[LM.WRIST,0]:.0f}, {detection.points[LM.WRIST,1]:.0f})"
+)
 
 # ── 5. lift_to_3d ─────────────────────────────────────────────────────────────
 lm3d = lift_to_3d(detection, prep)
 
-n_depth   = np.sum(lm3d.source == LandmarkSource.DEPTH)
-n_mpz     = np.sum(lm3d.source == LandmarkSource.MP_Z)
+n_depth = np.sum(lm3d.source == LandmarkSource.DEPTH)
+n_mpz = np.sum(lm3d.source == LandmarkSource.MP_Z)
 n_missing = np.sum(lm3d.source == LandmarkSource.MISSING)
 
 if lm3d.points.shape != (23, 3):
@@ -150,8 +158,10 @@ wrist_z = lm3d.points[LM.WRIST, 2]
 if np.isnan(wrist_z) or not (0.1 < wrist_z < 2.0):
     fail(f"Wrist Z={wrist_z:.3f}m out of plausible range [0.1, 2.0]")
 
-print(f"[5/8] DEPTH={n_depth}  MP_Z={n_mpz}  MISSING={n_missing}  (kinect_0)  "
-      f"wrist_Z={wrist_z:.3f}m")
+print(
+    f"[5/8] DEPTH={n_depth}  MP_Z={n_mpz}  MISSING={n_missing}  (kinect_0)  "
+    f"wrist_Z={wrist_z:.3f}m"
+)
 
 # ── 6. SkeletonFrame via full pipeline ────────────────────────────────────────
 detector.close()
@@ -178,15 +188,20 @@ wrist = skeleton.landmarks[LM.WRIST]
 if np.isnan(wrist).any():
     fail(f"Wrist is nan in fused SkeletonFrame")
 
-print(f"[6/8] SkeletonFrame OK  "
-      f"wrist={wrist.tolist()}  "
-      f"ts={skeleton.timestamp_us}")
+print(
+    f"[6/8] SkeletonFrame OK  "
+    f"wrist={wrist.tolist()}  "
+    f"ts={skeleton.timestamp_us}"
+)
 
 # ── 7. Fusion origin ──────────────────────────────────────────────────────────
 from collections import Counter
+
 origin_counts = Counter(skeleton.origin.tolist())
-print(f"[7/8] origin counts: "
-      + "  ".join(f"{k}={v}" for k, v in sorted(origin_counts.items())))
+print(
+    f"[7/8] origin counts: "
+    + "  ".join(f"{k}={v}" for k, v in sorted(origin_counts.items()))
+)
 
 if origin_counts.get("missing", 0) == 23:
     fail("All 23 points are missing — fusion produced empty frame")
@@ -217,11 +232,15 @@ if "confidence" not in summary or not summary["confidence"]:
 stats.reset()
 summary2 = stats.summary()
 if summary2["frame_count"] != 0 or summary2["detected_count"] != 0:
-    fail(f"after reset: frame_count={summary2['frame_count']} detected={summary2['detected_count']}")
+    fail(
+        f"after reset: frame_count={summary2['frame_count']} detected={summary2['detected_count']}"
+    )
 
-print(f"[8/8] SkeletonStats OK  "
-      f"detection_rate={summary['detection_rate']:.2f}  "
-      f"landmarks={len(summary['landmarks'])}")
+print(
+    f"[8/8] SkeletonStats OK  "
+    f"detection_rate={summary['detection_rate']:.2f}  "
+    f"landmarks={len(summary['landmarks'])}"
+)
 pretty_print(summary)
 
 # ── Cleanup ───────────────────────────────────────────────────────────────────

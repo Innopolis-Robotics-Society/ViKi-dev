@@ -241,7 +241,7 @@ def main():
         display = proc.copy()
         if detection is not None:
             display = draw_skeleton(display, detection)
-            wrist = detection.px[LM.WRIST]
+            wrist = detection.points[LM.WRIST]
             cv2.putText(
                 display,
                 f"conf={detection.confidence:.2f}",

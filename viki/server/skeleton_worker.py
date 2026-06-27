@@ -26,12 +26,12 @@ class SkeletonWorker:
     """
 
     def __init__(
-        self, 
-        manager: CameraManager, 
-        sync: MultiCameraSync, 
-        pipeline: SkeletonPipeline, 
+        self,
+        manager: CameraManager,
+        sync: MultiCameraSync,
+        pipeline: SkeletonPipeline,
         recorder: SkeletonRecorder,
-        target_fps: float = 15.0
+        target_fps: float = 15.0,
     ) -> None:
         self._manager = manager
         self._sync = sync
@@ -42,15 +42,15 @@ class SkeletonWorker:
 
         self._enabled = False
         self._recording = False
-        
+
         # RGB-D Recording state
         self._rgbd_recording = False
         self._rgbd_recorder: Optional[RGBDRecorder] = None
         self._rgbd_stop_time: float = 0.0
-        
+
         self._latest_result: Optional[PipelineResult] = None
         self._lock = threading.Lock()
-        
+
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
 
@@ -79,19 +79,23 @@ class SkeletonWorker:
         """Enable or disable recording to disk."""
         if recording and not self._enabled:
             self._enabled = True  # Must be enabled to record
-        
+
         if recording and not self._recording:
             self._recorder.start()
         elif not recording and self._recording:
             self._recorder.stop()
-        
+
         self._recording = recording
 
-    def set_rgbd_recording(self, enabled: bool, duration: float = 10.0, output_dir: str = "data/videos") -> None:
+    def set_rgbd_recording(
+        self, enabled: bool, duration: float = 10.0, output_dir: str = "data/videos"
+    ) -> None:
         """Enable or disable synchronized RGB-D recording."""
         with self._lock:
             if enabled:
-                self._rgbd_recorder = RGBDRecorder(self._manager, output_base_dir=output_dir)
+                self._rgbd_recorder = RGBDRecorder(
+                    self._manager, output_base_dir=output_dir
+                )
                 self._rgbd_recording = True
                 self._rgbd_stop_time = time.monotonic() + duration
             else:
@@ -113,10 +117,11 @@ class SkeletonWorker:
     def _run(self) -> None:
         """Main loop of the worker thread."""
         import logging
+
         logger = logging.getLogger(__name__)
         while not self._stop_event.is_set():
             start_time = time.monotonic()
-            
+
             # Check for RGB-D recording timeout
             if self._rgbd_recording and time.monotonic() > self._rgbd_stop_time:
                 logger.info("RGB-D recording duration elapsed. Stopping...")
@@ -129,7 +134,7 @@ class SkeletonWorker:
                     if group:
                         # A. If RGB-D recording is active, save the raw synced group
                         if self._rgbd_recording and self._rgbd_recorder:
-                            self._rgbd_recorder.save_group(group, self._target_fps)
+                            self._rgbd_recorder.save_group(group, int(self._target_fps))
 
                         # B. Process skeleton if enabled
                         if self._enabled:
@@ -145,13 +150,12 @@ class SkeletonWorker:
                 except Exception as e:
                     logger.exception(f"Worker pipeline error: {e}")
                     time.sleep(1)
-            
+
             # Maintain target FPS
             elapsed = time.monotonic() - start_time
             sleep_time = self._interval - elapsed
             if sleep_time > 0:
                 time.sleep(sleep_time)
-
 
     @property
     def is_enabled(self) -> bool:
