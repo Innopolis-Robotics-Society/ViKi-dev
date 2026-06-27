@@ -48,7 +48,7 @@ class RGBDRecorder:
             if frame:
                 if frame.color_intrinsics:
                     ci = frame.color_intrinsics
-                    # Use calibrated values if available, else fall back to frame.color_intrinsics
+                    # Use calibrated values from JSON if available, else fall back to SDK frame intrinsics
                     intrinsics["color"] = {
                         "fx": calib_intrinsics.fx if calib_intrinsics else ci.fx,
                         "fy": calib_intrinsics.fy if calib_intrinsics else ci.fy,
@@ -59,8 +59,6 @@ class RGBDRecorder:
                     }
                 if frame.depth_intrinsics:
                     di = frame.depth_intrinsics
-                    # Usually depth intrinsics are kept as-is or also calibrated. 
-                    # For now, we use frame values for depth since calib_intrinsics is usually for color.
                     intrinsics["depth"] = {
                         "fx": di.fx, "fy": di.fy, "cx": di.cx, "cy": di.cy,
                         "width": di.width, "height": di.height,

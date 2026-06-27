@@ -414,8 +414,8 @@ class KinectBackend(CameraBackend):
             depth=depth,
             timestamp_us=ts,
             device_id=self._serial_str,
-            color_intrinsics=None,  # TODO: add via k4a_calibration
-            depth_intrinsics=None,
+            color_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR),
+            depth_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_DEPTH),
         )
 
     def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
@@ -458,6 +458,45 @@ class KinectBackend(CameraBackend):
         
         logger.debug(f"[{self._serial_str}] SDK transform_3d_to_3d result={res} for P=({x}, {y}, {z})")
         return None
+
+    def _get_intrinsics(self, cam_type: int) -> CameraIntrinsics:
+        """Infer intrinsic parameters using SDK projection."""
+        # Project (0,0,1) to get cx, cy
+        p0 = (0.0, 0.0, 1.0)
+        pix0 = self.project_3d_to_2d(*p0, cam_type)
+        
+        # Project (1,0,1) to get fx
+        pX = (1.0, 0.0, 1.0)
+        pixX = self.project_3d_to_2d(*pX, cam_type)
+        
+        # Project (0,1,1) to get fy
+        pY = (0.0, 1.0, 1.0)
+        pixY = self.project_3d_to_2d(*pY, cam_type)
+        
+        if pix0 is None or pixX is None or pixY is None:
+            return CameraIntrinsics(0, 0, 0, 0)
+            
+        cx, cy = pix0
+        fx = pixX[0] - cx
+        fy = pixY[1] - cy
+        
+        w, h = (0, 0)
+        if cam_type == K4A_CALIBRATION_TYPE_COLOR:
+            w, h = self._color_resolution
+        else:
+            mode = self._depth_mode
+            # Map depth mode to resolution
+            res_map = {
+                "NFOV_UNBINNED": (640, 576),
+                "NFOV_2X2BINNED": (320, 288),
+                "WFOV_UNBINNED": (1024, 1024),
+                "WFOV_2X2BINNED": (512, 512),
+            }
+            w, h = res_map.get(mode, (640, 576))
+            
+        return CameraIntrinsics(fx, fy, cx, cy, w, h)
+
+        return self._serial_str
 
     @property
     def device_id(self) -> str:
