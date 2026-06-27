@@ -9,6 +9,7 @@ import numpy as np
 
 from .base import SyncedFrameGroup
 from .sync import MultiCameraSync
+from viki.calibration.file import read_device_intrinsics, read_device_extrinsics
 from viki.viz.depth import DepthColorizer
 import viki.config
 
@@ -39,25 +40,34 @@ class RGBDRecorder:
             cam_dir = os.path.join(recording_dir, dev_id)
             os.makedirs(os.path.join(cam_dir, "depth"), exist_ok=True)
 
-            # Save intrinsics from the latest frame
+            # Save intrinsics
             frame = self.manager.latest_frame(dev_id)
+            calib_intrinsics = read_device_intrinsics(dev_id)
+            
+            intrinsics = {}
             if frame:
-                intrinsics = {}
                 if frame.color_intrinsics:
                     ci = frame.color_intrinsics
+                    # Use calibrated values if available, else fall back to frame.color_intrinsics
                     intrinsics["color"] = {
-                        "fx": ci.fx, "fy": ci.fy, "cx": ci.cx, "cy": ci.cy,
+                        "fx": calib_intrinsics.fx if calib_intrinsics else ci.fx,
+                        "fy": calib_intrinsics.fy if calib_intrinsics else ci.fy,
+                        "cx": calib_intrinsics.cx if calib_intrinsics else ci.cx,
+                        "cy": calib_intrinsics.cy if calib_intrinsics else ci.cy,
                         "width": ci.width, "height": ci.height,
-                        "dist_coeffs": ci.dist_coeffs.tolist()
+                        "dist_coeffs": calib_intrinsics.dist_coeffs.tolist() if calib_intrinsics else ci.dist_coeffs.tolist()
                     }
                 if frame.depth_intrinsics:
                     di = frame.depth_intrinsics
+                    # Usually depth intrinsics are kept as-is or also calibrated. 
+                    # For now, we use frame values for depth since calib_intrinsics is usually for color.
                     intrinsics["depth"] = {
                         "fx": di.fx, "fy": di.fy, "cx": di.cx, "cy": di.cy,
                         "width": di.width, "height": di.height,
                         "dist_coeffs": di.dist_coeffs.tolist()
                     }
-                
+            
+            if intrinsics:
                 with open(os.path.join(cam_dir, "intrinsics.json"), "w") as f:
                     json.dump(intrinsics, f, indent=4)
 
@@ -116,6 +126,21 @@ class RGBDRecorder:
 
         self.frame_idx += 1
 
+    def _save_extrinsics(self):
+        """Saves current extrinsics for all active devices to disk."""
+        extrinsics_data = {}
+        active_ids = self.manager.active_device_ids()
+        for dev_id in active_ids:
+            ext = read_device_extrinsics(dev_id)
+            if ext:
+                extrinsics_data[dev_id] = {
+                    "rvec": ext.rvec.tolist(),
+                    "tvec": ext.tvec.tolist()
+                }
+        
+        with open(os.path.join(self.current_recording_dir, "extrinsics.json"), "w") as f:
+            json.dump(extrinsics_data, f, indent=4)
+
     def stop(self):
         """Release writers and finalize metadata."""
         if not self._writers:
@@ -128,8 +153,7 @@ class RGBDRecorder:
         with open(os.path.join(self.current_recording_dir, "timestamps.json"), "w") as f:
             json.dump(self.timestamps, f, indent=4)
         
-        with open(os.path.join(self.current_recording_dir, "extrinsics.json"), "w") as f:
-            json.dump({}, f, indent=4)
+        self._save_extrinsics()
         
         self._writers = {}
         print(f"RGB-D recording finalized. Saved {self.frame_idx} frames.")
@@ -172,8 +196,7 @@ class RGBDRecorder:
         with open(os.path.join(self.current_recording_dir, "timestamps.json"), "w") as f:
             json.dump(self.timestamps, f, indent=4)
         
-        with open(os.path.join(self.current_recording_dir, "extrinsics.json"), "w") as f:
-            json.dump({}, f, indent=4)
+        self._save_extrinsics()
 
         print(f"Recording finished. Saved {self.frame_idx} frames.")
         return self.current_recording_dir
