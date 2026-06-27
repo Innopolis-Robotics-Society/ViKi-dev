@@ -35,8 +35,14 @@ class _CameraWorker:
         self._thread.start()
 
     def stop(self) -> None:
+        """Signal the loop thread to stop. Returns immediately."""
         self._stop_event.set()
-        self.backend.stop()
+        # backend.stop() is called inside _loop's finally block so it is
+        # never concurrent with backend.get_frame() on the same handle.
+
+    def join(self, timeout: float = 8.0) -> None:
+        """Wait for the loop thread and backend cleanup to finish."""
+        self._thread.join(timeout=timeout)
 
     def latest(self) -> Optional[Frame]:
         with self._lock:
@@ -52,17 +58,26 @@ class _CameraWorker:
             )
 
     def _loop(self) -> None:
-        while not self._stop_event.is_set():
+        try:
+            while not self._stop_event.is_set():
+                try:
+                    frame = self.backend.get_frame()
+                    frame.host_timestamp_us = time.time_ns() // 1000
+                    with self._lock:
+                        self._buffer.append(frame)
+                except TimeoutError:
+                    pass  # short timeout, check stop_event and retry
+                except Exception as exc:
+                    print(f"[worker:{self.backend.device_id}] error: {exc}")
+                    time.sleep(0.1)
+        finally:
+            # Always called from this thread, so it is never concurrent with
+            # get_frame() — eliminates the deadlock from calling backend.stop()
+            # on a handle that another thread is actively using.
             try:
-                frame = self.backend.get_frame()
-                frame.host_timestamp_us = time.time_ns() // 1000
-                with self._lock:
-                    self._buffer.append(frame)
-            except TimeoutError:
-                pass  # skip timed-out frame, keep running
+                self.backend.stop()
             except Exception as exc:
-                print(f"[worker:{self.backend.device_id}] error: {exc}")
-                time.sleep(0.1)
+                print(f"[worker:{self.backend.device_id}] stop error: {exc}")
 
 
 class CameraManager:
@@ -189,8 +204,11 @@ class CameraManager:
             worker.stop()
 
     def stop_all(self) -> None:
-        for device_id in list(self._workers):
-            self.stop(device_id)
+        workers = [self._workers.pop(did) for did in list(self._workers)]
+        for w in workers:
+            w.stop()   # signal all first (non-blocking)
+        for w in workers:
+            w.join()   # then wait for all backend cleanup to finish
 
     # ── Frame access ──────────────────────────────────────────────────────────
 
