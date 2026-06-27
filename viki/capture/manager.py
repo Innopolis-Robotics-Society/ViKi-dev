@@ -13,6 +13,7 @@ import time
 import numpy as np
 from collections import deque
 from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
 
 from .base import CameraBackend, Frame
 
@@ -189,8 +190,8 @@ class CameraManager:
             worker.stop()
 
     def stop_all(self) -> None:
-        for device_id in list(self._workers):
-            self.stop(device_id)
+        with ThreadPoolExecutor() as executor:
+            executor.map(self.stop, list(self._workers))
 
     # ── Frame access ──────────────────────────────────────────────────────────
 

@@ -27,4 +27,9 @@ JPEG_QUALITY = 80
 STREAM_IDLE_SLEEP = 0.005
 PLACEHOLDER_SIZE = (1280, 720) # TODO changed from 640, 480
 
+# -- whether the depth for all recorded video frames is saved in .npy along side the
 RECORD_DEPTH = False
+
+# -- 
+CAMERAS_MIRRORED = False
+HAND_TO_DETECT = "right"

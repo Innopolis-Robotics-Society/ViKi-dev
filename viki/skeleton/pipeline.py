@@ -21,6 +21,7 @@ from viki.skeleton.fusion import fuse, load_extrinsics
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.hand_detector import HandDetector
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame, PipelineResult, HandDetection, PreparedFrame
+import viki.config
 
 
 class SkeletonPipeline:
@@ -44,13 +45,13 @@ class SkeletonPipeline:
     def __init__(
         self,
         calibrator: CalibrationManager,
-        calib_path: str = "viki/capture/calibration_results.npz", #TODO move to loading calibration from data/intrinsics_calibration.json
-        hand: Literal["right", "left"] = "right", #TODO move hand and mirrored configuration from multiple files (defined in multiple files (hand_detector.py and pipeline.py))
+        hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
     ) -> None:
         self._calibrator = calibrator
         self._cache = UndistortCache()
-        self._detector = HandDetector(hand=hand, mode="live")
-        self._R, self._T = load_extrinsics(calib_path)
+        self._detectors: dict[str, HandDetector] = {}
+        self._hand_type = hand
+        self._R, self._T = load_extrinsics()
 
 
     def process(self, group: SyncedFrameGroup) -> PipelineResult:
@@ -80,19 +81,23 @@ class SkeletonPipeline:
                 lms_3d[dev_id] = None
                 continue
             
-            det = self._detector.detect(prepared)
+            # Ensure we have a dedicated detector per camera to avoid state bleeding in "live" mode
+            if dev_id not in self._detectors:
+                self._detectors[dev_id] = HandDetector(hand=self._hand_type, mode="live")
+            
+            det = self._detectors[dev_id].detect(prepared)
             detections[dev_id] = det
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det)
             # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
  
         # Fusion logic:
-
+ 
         # Master camera is the first device in the group.
         # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())
         if not dev_ids:
             return PipelineResult(fused_frame=None, detections={})
-
+ 
         master_id = dev_ids[0]
         lm0 = lms_3d.get(master_id)
         
@@ -108,7 +113,8 @@ class SkeletonPipeline:
 
     def close(self) -> None:
         """Release MediaPipe resources."""
-        self._detector.close()
+        for detector in self._detectors.values():
+            detector.close()
 
     def __enter__(self) -> "SkeletonPipeline":
         return self

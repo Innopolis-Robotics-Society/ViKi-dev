@@ -66,7 +66,7 @@ class SkeletonWorker:
         """Stop the background worker thread."""
         self._stop_event.set()
         if self._thread:
-            self._thread.join()
+            self._thread.join(timeout=1.0)
             self._thread = None
 
     def set_enabled(self, enabled: bool) -> None:

@@ -27,7 +27,7 @@ from viki.config import INTRINSICS_FILENAME
 
 
 def camera_stream(
-    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
+    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str, undistort: bool = True
 ) -> Iterator[bytes]:
     """
     Yield MJPEG chunks for one camera.
@@ -63,7 +63,7 @@ def camera_stream(
             last_ts = frame.host_timestamp_us
             if mode == "color":
                 img = frame.color
-                if undistorter is not None:
+                if undistort and undistorter is not None:
                     img = undistorter.apply(img)
             else:
                 img = colorizer.colorize(frame.depth)

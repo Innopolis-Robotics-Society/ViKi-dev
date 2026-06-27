@@ -30,6 +30,7 @@ services:
 
   terminal:
     <<: *common
+    network_mode: "host"
     container_name: viki-terminal
     stdin_open: true
     tty: true

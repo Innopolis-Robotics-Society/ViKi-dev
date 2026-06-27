@@ -10,8 +10,12 @@ relative z coordinate.
 """
 
 from __future__ import annotations
+from time import sleep
 
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 from viki.skeleton.models import HandDetection, LandmarkSource, Landmarks3D, LM, PreparedFrame
 
@@ -57,16 +61,16 @@ def _wrist_scale(
 def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     """
     Deproject all 23 pixel landmarks into 3-D camera space.
-
+ 
     For each landmark, it's checkeed whether depth_m has a valid value.
-
+ 
     Parameters
     ----------
     detection : HandDetection
         23 pixel-space landmarks from hand_detector.
     frame : PreparedFrame
         Provides depth_m and intrinsic matrix K.
-
+ 
     Returns
     -------
     Landmarks3D
@@ -78,40 +82,53 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame) -> Landmarks3D:
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
 
+    # for _ in range(240):
     mp_z_scale = _wrist_scale(detection.px[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
+    #     if mp_z_scale is not None:
+    #         break
+    #     sleep(0.2)
     if mp_z_scale is None:
         z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
         if z_rel_wrist != 0.0:
             mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
-
+        # logger.debug("did not find the wrist, using fallback")
+ 
     points = np.full((LM.N, 3), np.nan, dtype=np.float32)
     source = np.array([LandmarkSource.MISSING] * LM.N, dtype=object)
-
+ 
     for i in range(LM.N):
         u, v = detection.px[i, 0], detection.px[i, 1]
         if np.isnan(u) or np.isnan(v):
             continue
         ui, vi = int(round(u)), int(round(v))
-
+ 
         # Skip landmarks that projected outside the image boundary
         if not (0 <= vi < h and 0 <= ui < w):
             continue
-
-        Z = depth_m[vi, ui]
+        
+        # Robust depth sampling: take median of a 3x3 window around the point
+        v_start, v_end = max(0, vi - 1), min(h, vi + 2)
+        u_start, u_end = max(0, ui - 1), min(w, ui + 2)
+        window = depth_m[v_start:v_end, u_start:u_end]
+        valid_window = window[~np.isnan(window)]
+        
+        if valid_window.size > 0:
+            Z = np.median(valid_window)
+        else:
+            Z = np.nan
  
-        if not np.isnan(Z).any():
+        if not np.isnan(Z):
             # Valid depth
             points[i] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
             source[i] = LandmarkSource.DEPTH
-
-
+ 
         elif mp_z_scale is not None:
             # No depth, we estimate Z
             Z_approx = float(detection.lm_z_rel[i]) * mp_z_scale
             if Z_approx > 0:
                 points[i] = _pixel_to_3d(u, v, Z_approx, fx, fy, cx, cy)
                 source[i] = LandmarkSource.MP_Z
-
+ 
     return Landmarks3D(
         points=points,
         source=source,
