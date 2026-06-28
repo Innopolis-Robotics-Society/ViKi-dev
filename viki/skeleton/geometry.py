@@ -13,12 +13,13 @@ from __future__ import annotations
 from typing import Optional
 from time import sleep, time
 import random
+from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import logging
 import os
 
-from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG
+from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG, SKELETON_DEPTH_SUBTRACT_THRESHOLD
 logger = logging.getLogger(__name__)
 
 
@@ -27,6 +28,8 @@ from viki.skeleton.models import HandDetection, Landmarks3D, LM, PreparedFrame
 
 
 _last_depth_viz_time = 0.0
+_last_known_z = {LM(i): 1.0 for i in range(LM.N)}
+_viz_executor = ThreadPoolExecutor(max_workers=1)
 
 
 def _pixel_to_3d(
@@ -75,8 +78,9 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
     # 1. Calculate MediaPipe Z scale (Z_est)
     points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in range(LM.N)}
     
-    # If visualizing, pick one random landmark to avoid flooding disk
-    viz_target_lm = random.randint(0, LM.N - 1) if should_viz_this_frame else None
+    # If visualizing, we'll collect data for the arm chain
+    viz_data = []
+    arm_chain = (LM.SHOULDER, LM.ELBOW, LM.WRIST)
 
     for i in range(LM.N):
         u, v = detection.points[LM(i)][0], detection.points[LM(i)][1]
@@ -85,11 +89,11 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
 
         # --- Source 1: Deterministic Projection (Z_proj) ---
         Z_proj = np.nan
+        z_guess = 1.0 
         if SKELETON_ENABLE_DEPTH_VALIDATION:
             r = SKELETON_DEPTH_SAMP_RADIUS
             
-            # 1. Project color (u, v) to depth (ud, vd) using an initial Z guess
-            z_guess = 1.0
+            # 1. Project color (u, v) to depth (ud, vd)
             proj_res = backend.project_color_to_depth(u, v, z_guess)
             
             if proj_res is None:
@@ -124,7 +128,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
             
             # Sample absolute depth from current_roi where diff_roi is positive (object present)
             # and it's within the circular mask.
-            valid_mask = mask & ~np.isnan(current_roi) & (diff_roi > 0)
+            valid_mask = mask & ~np.isnan(current_roi) & (diff_roi > SKELETON_DEPTH_SUBTRACT_THRESHOLD)
             valid_vals = current_roi[valid_mask]
             
             if valid_vals.size > 0:
@@ -132,42 +136,35 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                 med = np.median(valid_vals)
                 mask_robust = (valid_vals >= 0.9 * med) & (valid_vals <= 1.1 * med)
                 robust_vals = valid_vals[mask_robust]
-                Z_proj = np.mean(robust_vals) if robust_vals.size > 0 else med
+                Z_proj = np.median(robust_vals) if robust_vals.size > 0 else med
+                _last_known_z[LM(i)] = Z_proj
             else:
                 logger.debug(f"LM {i}: No valid depth in masked ROI at ({ru}, {rv})")
                 Z_proj = np.nan
 
             # Visualization logic
-            if DEPTH_PROJECTION_DEBUG and i == viz_target_lm:
+            if DEPTH_PROJECTION_DEBUG and should_viz_this_frame and LM(i) in arm_chain:
                 status = "SUCCESS" if valid_vals.size > 0 else "NO_VALID_DEPTH"
-                from viki.skeleton.viz import visualize_depth_subtraction
-                logger.info(
-                    f"LM {i} [{status}] [u={u:.1f}, v={v:.1f}] img_size={depth_m.shape} "
-                    f"ROI({v_start}:{v_end}, {u_start}:{u_end}) "
-                    f"Shape={diff_roi.shape}, ValidPx={valid_vals.size}"
-                )
                 
                 # Final guess projection for the yellow dot
                 final_ud, final_vd = ud, vd
-                if not np.isnan(Z_proj):
-                    res_final = backend.project_color_to_depth(u, v, Z_proj)
-                    if res_final:
-                        final_ud, final_vd = res_final
+                z_for_dot = Z_proj if not np.isnan(Z_proj) else _last_known_z[LM(i)]
+                res_final = backend.project_color_to_depth(u, v, z_for_dot)
+                if res_final:
+                    final_ud, final_vd = res_final
+                
+                viz_data.append({
+                    "name": f"{LM(i).name}_{status}",
+                    "u": u, "v": v, "ud": final_ud, "vd": final_vd, "r": r,
+                    "v_start": v_start, "v_end": v_end,
+                    "u_start": u_start, "u_end": u_end,
+                    "diff_roi": diff_roi,
+                    "z_proj": Z_proj,
+                })
 
-                visualize_depth_subtraction(
-                    base_depth=frame.base_depth_m,
-                    current_depth=depth_m,
-                    u=u, v=v, ud=final_ud, vd=final_vd, r=r,
-                    v_start=v_start, v_end=v_end,
-                    u_start=u_start, u_end=u_end,
-                    diff_roi=diff_roi,
-                    z_proj=Z_proj,
-                    landmark_name=f"LM_{i}_{status}"
-                )
         else:
-            Z_guess = 1.0 
             for _ in range(3):
-                res = color_to_depth_pixel(u, v, Z_guess, K, backend, depth_m, frame.aligned_depth)
+                res = color_to_depth_pixel(u, v, z_guess, K, backend, depth_m, frame.aligned_depth)
                 if res is None:
                     break
                 
@@ -185,7 +182,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                 
                 if valid_window.size > 0:
                     Z_proj = np.median(valid_window)
-                    Z_guess = float(Z_proj)
+                    z_guess = float(Z_proj)
                 else:
                     Z_proj = np.nan
                     break
@@ -194,6 +191,17 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
 
         if not np.isnan(Z_final):
             points[LM(i)] = _pixel_to_3d(u, v, Z_final, fx, fy, cx, cy)
+
+    # Save multi-joint visualization if data was collected
+    if viz_data:
+        from viki.skeleton.viz import visualize_depth_subtraction
+        # Offload plotting to background thread to prevent pipeline freezes
+        _viz_executor.submit(
+            visualize_depth_subtraction,
+            base_depth=frame.base_depth_m,
+            current_depth=depth_m,
+            landmark_data=viz_data
+        )
 
     return Landmarks3D(
         points=points,

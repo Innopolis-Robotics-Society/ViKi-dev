@@ -45,6 +45,7 @@ DEPTH_PROJECTION_DEBUG = True # is the debug plotting of depth projection is ena
 SKELETON_DEPTH_SAMP_RADIUS = 20
 SKELETON_DEPTH_BASE_DIR = "data/depth_bases/"
 SKELETON_ENABLE_DEPTH_VALIDATION = True
+SKELETON_DEPTH_SUBTRACT_THRESHOLD = 0.01 # Minimum depth difference to consider object present (meters)
 
 
 # ── Detection

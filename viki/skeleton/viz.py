@@ -128,53 +128,72 @@ def visualize_color_depth_mapping(
 def visualize_depth_subtraction(
     base_depth: Optional[np.ndarray],
     current_depth: np.ndarray,
-    u: float,
-    v: float,
-    ud: float,
-    vd: float,
-    r: int,
-    v_start: int,
-    v_end: int,
-    u_start: int,
-    u_end: int,
-    diff_roi: np.ndarray,
-    z_proj: float,
-    landmark_name: str,
+    landmark_data: list[dict],
 ):
     """
-    Visualizes the depth subtraction process for a single landmark.
+    Visualizes the depth subtraction process for multiple landmarks in a grid.
+    
+    Args:
+        base_depth: The background depth map.
+        current_depth: The current depth map.
+        landmark_data: List of dicts containing:
+            - name: Landmark name (str)
+            - u, v: Color pixel coords
+            - ud, vd: Depth pixel coords
+            - r: Sample radius
+            - v_start, v_end, u_start, u_end: ROI bounds
+            - diff_roi: The subtracted ROI image
+            - z_proj: The projected Z value
     """
-    fig = plt.figure(figsize=(18, 6))
+    num_lms = len(landmark_data)
+    if num_lms == 0:
+        return
+
+    fig, axes = plt.subplots(num_lms, 3, figsize=(18, 6 * num_lms))
     
-    # 1. Base Depth
-    ax1 = fig.add_subplot(1, 3, 1)
-    if base_depth is not None:
-        ax1.imshow(np.nan_to_num(base_depth, nan=0.0), cmap='jet')
-        ax1.set_title(f"Base Depth\n{landmark_name}")
-    else:
-        ax1.text(0.5, 0.5, "No Base Depth", ha='center')
-        ax1.set_title(f"Base Depth (None)\n{landmark_name}")
-    
-    # 2. Current Depth + ROI Highlight
-    ax2 = fig.add_subplot(1, 3, 2)
-    ax2.imshow(np.nan_to_num(current_depth, nan=0.0), cmap='jet')
-    rect = patches.Rectangle((u_start - 0.5, v_start - 0.5), 
-                             u_end - u_start, v_end - v_start, 
-                             linewidth=2, edgecolor='r', facecolor='none')
-    ax2.add_patch(rect)
-    ax2.plot(u, v, 'ro', markersize=3) # Original color projection
-    ax2.plot(ud, vd, 'yo', markersize=5, markeredgecolor='k', label='Depth Guess') # Depth guess
-    ax2.set_title(f"Current Depth (ROI)\nZ_proj={z_proj:.3f}m")
-    ax2.legend()
-    
-    # 3. Subtracted ROI (Zoomed)
-    ax3 = fig.add_subplot(1, 3, 3)
-    ax3.imshow(np.nan_to_num(diff_roi, nan=0.0), cmap='magma')
-    ax3.set_title(f"Diff ROI (Subtracted)\nShape: {diff_roi.shape}")
-    
+    # Handle case where num_lms == 1 (axes becomes 1D)
+    if num_lms == 1:
+        axes = np.expand_dims(axes, axis=0)
+
+    for row, data in enumerate(landmark_data):
+        name = data["name"]
+        u, v = data["u"], data["v"]
+        ud, vd = data["ud"], data["vd"]
+        r = data["r"]
+        v_start, v_end = data["v_start"], data["v_end"]
+        u_start, u_end = data["u_start"], data["u_end"]
+        diff_roi = data["diff_roi"]
+        z_proj = data["z_proj"]
+
+        # 1. Base Depth
+        ax1 = axes[row, 0]
+        if base_depth is not None:
+            ax1.imshow(np.nan_to_num(base_depth, nan=0.0), cmap='jet')
+            ax1.set_title(f"Base Depth\n{name}")
+        else:
+            ax1.text(0.5, 0.5, "No Base Depth", ha='center')
+            ax1.set_title(f"Base Depth (None)\n{name}")
+
+        # 2. Current Depth + ROI Highlight
+        ax2 = axes[row, 1]
+        ax2.imshow(np.nan_to_num(current_depth, nan=0.0), cmap='jet')
+        rect = patches.Rectangle((u_start - 0.5, v_start - 0.5), 
+                                 u_end - u_start, v_end - v_start, 
+                                 linewidth=2, edgecolor='r', facecolor='none')
+        ax2.add_patch(rect)
+        ax2.plot(u, v, 'ro', markersize=2) # Original color projection
+        ax2.plot(ud, vd, 'yo', markersize=2, markeredgecolor='k', label='Depth Guess') # Depth guess
+        ax2.set_title(f"Current Depth (ROI)\nZ_proj={z_proj:.3f}m")
+        ax2.legend()
+
+        # 3. Subtracted ROI (Zoomed)
+        ax3 = axes[row, 2]
+        ax3.imshow(np.nan_to_num(diff_roi, nan=0.0), cmap='magma')
+        ax3.set_title(f"Diff ROI (Subtracted)\nShape: {diff_roi.shape}")
+
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    filename = f"data/debug/depth_sub_{landmark_name}_{timestamp}.png"
+    filename = f"data/debug/depth_sub_multi_{timestamp}.png"
     plt.savefig(filename)
     plt.close()
 
