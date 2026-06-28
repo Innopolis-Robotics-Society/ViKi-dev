@@ -21,7 +21,7 @@ class SkeletonRecorder:
     """
 
     def __init__(
-        self, base_dir: str | Path = "data", filter_indices: list[LM] | None = None
+        self, base_dir: str | Path = "data/skeleton_recs", filter_indices: list[LM] | None = None
     ) -> None:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)

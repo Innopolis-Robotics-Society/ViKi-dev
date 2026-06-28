@@ -130,6 +130,8 @@ def visualize_depth_subtraction(
     current_depth: np.ndarray,
     u: float,
     v: float,
+    ud: float,
+    vd: float,
     r: int,
     v_start: int,
     v_end: int,
@@ -160,8 +162,10 @@ def visualize_depth_subtraction(
                              u_end - u_start, v_end - v_start, 
                              linewidth=2, edgecolor='r', facecolor='none')
     ax2.add_patch(rect)
-    ax2.plot(u, v, 'ro', markersize=3)
+    ax2.plot(u, v, 'ro', markersize=3) # Original color projection
+    ax2.plot(ud, vd, 'yo', markersize=5, markeredgecolor='k', label='Depth Guess') # Depth guess
     ax2.set_title(f"Current Depth (ROI)\nZ_proj={z_proj:.3f}m")
+    ax2.legend()
     
     # 3. Subtracted ROI (Zoomed)
     ax3 = fig.add_subplot(1, 3, 3)

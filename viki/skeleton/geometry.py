@@ -18,7 +18,7 @@ import numpy as np
 import logging
 import os
 
-from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, MEDIAPIPE_ESTIMATION_CHECK, DEPTH_PROJECTION_DEBUG
+from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG
 logger = logging.getLogger(__name__)
 
 
@@ -54,35 +54,6 @@ def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: K
     """
     return backend.get_validated_depth(u, v, Z, raw_depth, aligned_depth)
 
-# So this is only needed if we don't get anything from depth cameras
-# in real case not needed
-_FALLBACK_WRIST_Z_M = 0.7  # assumed wrist depth (metres) when no real depth sensor
-
-
-def _wrist_scale(
-    wrist_px: np.ndarray,  # (2,) [u, v]
-    wrist_z_rel: float,
-    depth_m: np.ndarray,  # (H, W)
-) -> float | None:
-    """
-    Compute the scale factor to convert MediaPipe relative z to metres.
-    This method is needed only as a fallback if we don't get valid depth.
-
-    Returns None if the wrist depth pixel is nan or out of bounds.
-    """
-    # Ensure wrist coordinates are valid before rounding
-    if np.isnan(wrist_px[0]) or np.isnan(wrist_px[1]):
-        return None
-    u, v = int(round(wrist_px[0])), int(round(wrist_px[1]))
-    h, w = depth_m.shape[:2]
-    if not (0 <= v < h and 0 <= u < w):
-        return None
-    Z_wrist = depth_m[v, u]
-    if np.isnan(Z_wrist).any() or wrist_z_rel == 0.0:
-        return None
-    return float(abs(Z_wrist / wrist_z_rel))
-
-
 def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBackend) -> Landmarks3D:
     """
     Deproject all 23 pixel landmarks into 3-D camera space using converge/diverge priority.
@@ -102,12 +73,6 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
         _last_depth_viz_time = now
 
     # 1. Calculate MediaPipe Z scale (Z_est)
-    mp_z_scale = _wrist_scale(detection.points[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
-    if mp_z_scale is None:
-        z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
-        if z_rel_wrist != 0.0:
-            mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
-
     points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in range(LM.N)}
     
     # If visualizing, pick one random landmark to avoid flooding disk
@@ -124,8 +89,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
             r = SKELETON_DEPTH_SAMP_RADIUS
             
             # 1. Project color (u, v) to depth (ud, vd) using an initial Z guess
-            # We use the wrist scale as a baseline for the guess, ensuring it is positive
-            z_guess = mp_z_scale if (mp_z_scale is not None and mp_z_scale > 0) else _FALLBACK_WRIST_Z_M
+            z_guess = 1.0
             proj_res = backend.project_color_to_depth(u, v, z_guess)
             
             if proj_res is None:
@@ -158,28 +122,11 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
             # Calculate distances using absolute coordinates derived from relative grid + offsets
             mask = (vv_rel + v_start - rv)**2 + (uu_rel + u_start - ru)**2 <= r**2
             
-            valid_vals = diff_roi[mask & ~np.isnan(diff_roi)]
+            # Sample absolute depth from current_roi where diff_roi is positive (object present)
+            # and it's within the circular mask.
+            valid_mask = mask & ~np.isnan(current_roi) & (diff_roi > 0)
+            valid_vals = current_roi[valid_mask]
             
-            # Visualization logic
-            if DEPTH_PROJECTION_DEBUG and i == viz_target_lm:
-                status = "SUCCESS" if valid_vals.size > 0 else "NO_VALID_DEPTH"
-                from viki.skeleton.viz import visualize_depth_subtraction
-                logger.info(
-                    f"LM {i} [{status}] [u={u:.1f}, v={v:.1f}] img_size={depth_m.shape} "
-                    f"ROI({v_start}:{v_end}, {u_start}:{u_end}) "
-                    f"Shape={diff_roi.shape}, ValidPx={valid_vals.size}"
-                )
-                visualize_depth_subtraction(
-                    base_depth=frame.base_depth_m,
-                    current_depth=depth_m,
-                    u=u, v=v, r=r,
-                    v_start=v_start, v_end=v_end,
-                    u_start=u_start, u_end=u_end,
-                    diff_roi=diff_roi,
-                    z_proj=np.median(valid_vals) if valid_vals.size > 0 else np.nan,
-                    landmark_name=f"LM_{i}_{status}"
-                )
-
             if valid_vals.size > 0:
                 # Robust mean: take values within 10% of the median to filter outliers
                 med = np.median(valid_vals)
@@ -189,6 +136,34 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
             else:
                 logger.debug(f"LM {i}: No valid depth in masked ROI at ({ru}, {rv})")
                 Z_proj = np.nan
+
+            # Visualization logic
+            if DEPTH_PROJECTION_DEBUG and i == viz_target_lm:
+                status = "SUCCESS" if valid_vals.size > 0 else "NO_VALID_DEPTH"
+                from viki.skeleton.viz import visualize_depth_subtraction
+                logger.info(
+                    f"LM {i} [{status}] [u={u:.1f}, v={v:.1f}] img_size={depth_m.shape} "
+                    f"ROI({v_start}:{v_end}, {u_start}:{u_end}) "
+                    f"Shape={diff_roi.shape}, ValidPx={valid_vals.size}"
+                )
+                
+                # Final guess projection for the yellow dot
+                final_ud, final_vd = ud, vd
+                if not np.isnan(Z_proj):
+                    res_final = backend.project_color_to_depth(u, v, Z_proj)
+                    if res_final:
+                        final_ud, final_vd = res_final
+
+                visualize_depth_subtraction(
+                    base_depth=frame.base_depth_m,
+                    current_depth=depth_m,
+                    u=u, v=v, ud=final_ud, vd=final_vd, r=r,
+                    v_start=v_start, v_end=v_end,
+                    u_start=u_start, u_end=u_end,
+                    diff_roi=diff_roi,
+                    z_proj=Z_proj,
+                    landmark_name=f"LM_{i}_{status}"
+                )
         else:
             Z_guess = 1.0 
             for _ in range(3):
@@ -215,33 +190,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                     Z_proj = np.nan
                     break
         
-        # --- Source 2: MediaPipe Estimator (Z_est) ---
-        Z_est = np.nan
-        if MEDIAPIPE_ESTIMATION_CHECK and mp_z_scale is not None:
-            val = float(detection.lm_z_rel[i]) * mp_z_scale
-            if val > 0:
-                Z_est = val
-
-        # --- Converge/Diverge Decision Logic ---
-        Z_final = np.nan
-        if not np.isnan(Z_proj) and not np.isnan(Z_est):
-            conf = detection.confidence
-            dist = abs(Z_proj - Z_est)
-            
-            if dist < 0.10:
-                # Close agreement: weighted average (favor sensor)
-                Z_final = (Z_proj * 2.0 + Z_est * conf) / (2.0 + conf)
-            elif dist < 0.25:
-                # Moderate disagreement: blend more equally
-                Z_final = (Z_proj + Z_est * conf) / (1.0 + conf)
-            else:
-                # Large disagreement: likely sensor hit background/noise
-                # Favor MediaPipe's relative structure
-                Z_final = Z_est * (1.0 + 0.2 * conf) # slight nudge
-        elif not np.isnan(Z_proj):
-            Z_final = Z_proj
-        elif not np.isnan(Z_est):
-            Z_final = Z_est
+        Z_final = Z_proj
 
         if not np.isnan(Z_final):
             points[LM(i)] = _pixel_to_3d(u, v, Z_final, fx, fy, cx, cy)

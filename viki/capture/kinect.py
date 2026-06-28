@@ -16,7 +16,6 @@ import numpy as np
 
 from .base import CameraBackend, CameraIntrinsics, Frame
 from .aligner import DepthAligner
-from viki.config import DEPTH_VALIDATION_ENABLED, DEPTH_VALIDATION_THRESHOLD_MM
 
 logger = logging.getLogger(__name__)
 
@@ -298,7 +297,6 @@ class KinectBackend(CameraBackend):
         self._wired_sync_mode = wired_sync_mode
         self._subordinate_delay_us = subordinate_delay_us
         self._synchronized_images_only = synchronized_images_only
-        self._validation_threshold = DEPTH_VALIDATION_THRESHOLD_MM
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._calibration: K4ACalibration = K4ACalibration(None)
@@ -458,56 +456,19 @@ class KinectBackend(CameraBackend):
         self, u: float, v: float, z_est: float, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray]
     ) -> tuple[float, float, float] | None:
         """
-        Validates deterministic projection against SDK estimation.
+        Simplified depth projection.
         
         Returns: (u_depth, v_depth, final_z) or None.
         """
-        if not DEPTH_VALIDATION_ENABLED:
-            # Just do deterministic projection without SDK check
-            res = self.project_color_to_depth(u, v, z_est)
-            if res is None:
-                return None
-            ud, vd = res
-            ui, vi = int(round(ud)), int(round(vd))
-            h, w = raw_depth.shape[:2]
-            if not (0 <= vi < h and 0 <= ui < w):
-                return None
-            return ud, vd, float(raw_depth[vi, ui])
-
-        # 1. Deterministic projection
         res = self.project_color_to_depth(u, v, z_est)
         if res is None:
             return None
-        
         ud, vd = res
         ui, vi = int(round(ud)), int(round(vd))
         h, w = raw_depth.shape[:2]
-        
         if not (0 <= vi < h and 0 <= ui < w):
             return None
-            
-        # Sample raw depth
-        z_raw = raw_depth[vi, ui]
-        
-        # 2. Validation against SDK estimation
-        if aligned_depth is not None:
-            ah, aw = aligned_depth.shape[:2]
-            if 0 <= v < ah and 0 <= u < aw:
-                z_sdk = aligned_depth[int(round(v)), int(round(u))]
-                
-                # If raw depth is 0, it's a hole; try to trust SDK estimation if it's valid
-                if z_raw == 0 and z_sdk > 0:
-                    return ud, vd, float(z_sdk)
-                
-                # Check threshold (mm)
-                if abs(int(z_raw) - int(z_sdk)) > self._validation_threshold:
-                    # Too much divergence. 
-                    # If the SDK estimation is valid, it might be a better estimate for occlusions
-                    if z_sdk > 0:
-                        return ud, vd, float(z_sdk)
-                    return None # Both are unreliable
-        
-        return ud, vd, float(z_raw)
+        return ud, vd, float(raw_depth[vi, ui])
 
     def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
         """Project a color pixel and depth into a depth image pixel."""

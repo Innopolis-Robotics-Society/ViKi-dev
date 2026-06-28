@@ -45,16 +45,6 @@ DEPTH_PROJECTION_DEBUG = True # is the debug plotting of depth projection is ena
 SKELETON_DEPTH_SAMP_RADIUS = 20
 SKELETON_DEPTH_BASE_DIR = "data/depth_bases/"
 SKELETON_ENABLE_DEPTH_VALIDATION = True
-MEDIAPIPE_ESTIMATION_CHECK = False
-
-# -- SDK backend validation
-DEPTH_VALIDATION_ENABLED = False # make the estimation model back up the depth lookup
-DEPTH_VALIDATION_THRESHOLD_MM = 50
-
-Z_CONVERGENCE_THRESHOLD = 0.1 # meters
-# If the projected depth and MediaPipe estimate are within this range, they are averaged; 
-# otherwise, the closer value is chosen.
-
 
 
 # ── Detection
@@ -73,7 +63,7 @@ BONE_LENGTHS = {
     # (22, 21): 0.30, # Shoulder -> Elbow
     # (21, 0): 0.25,  # Elbow -> Wrist
 }
-BONE_TOLERANCE = 0.1  # 5% tolerance range for soft kinematic constraints
+BONE_TOLERANCE = 0.2  # x% tolerance range for soft kinematic constraints [0, 1]
 
 # Chessboard parameters
 CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)
