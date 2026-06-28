@@ -90,6 +90,7 @@ def prepare_frame(
     return PreparedFrame(
         rgb=rgb,
         depth_m=depth_m,
+        aligned_depth=frame.aligned_depth,
         K=K,
         device_id=frame.device_id,
         timestamp_us=frame.timestamp_us,

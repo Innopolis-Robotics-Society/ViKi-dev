@@ -46,7 +46,7 @@ def camera_stream(
     else:
         undistorter = Undistorter(intrinsics.camera_matrix, intrinsics.dist_coeffs)
     colorizer = DepthColorizer()
-    stabilizer = DepthStabilizer()
+    stabilizer = DepthStabilizer(use_bilateral=True)
 
 
     while True:

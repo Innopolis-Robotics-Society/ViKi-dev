@@ -43,7 +43,7 @@ def visualize_color_depth_mapping(
 
     # We need a Z value to project. Sample it from the depth map (roughly)
     z_est = 1.0 
-    res = color_to_depth_pixel(u, v, z_est, K, backend)
+    res = color_to_depth_pixel(u, v, z_est, K, backend, depth_img)
     
     if res is None:
         print("Reprojection failed")
@@ -53,7 +53,7 @@ def visualize_color_depth_mapping(
         plt.close()
         return
         
-    ud, vd = res
+    ud, vd, _ = res
     ui, vi = int(round(ud)), int(round(vd))
     h, w = depth_img.shape[:2]
     
@@ -76,11 +76,11 @@ def visualize_color_depth_mapping(
         window_fixed = np.where(window == 0, np.nan, window)
         valid = window_fixed[~np.isnan(window_fixed)]
         if valid.size > 0:
-            z_est = np.median(valid)
-            res = color_to_depth_pixel(u, v, z_est, K, backend)
-            if res:
-                ud, vd = res
-                ui, vi = int(round(ud)), int(round(vd))
+             z_est = np.median(valid)
+             res = color_to_depth_pixel(u, v, z_est, K, backend, depth_img)
+             if res:
+                 ud, vd, _ = res
+                 ui, vi = int(round(ud)), int(round(vd))
         else:
             break
     

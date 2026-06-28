@@ -16,6 +16,7 @@ import numpy as np
 
 from .base import CameraBackend, CameraIntrinsics, Frame
 from .aligner import DepthAligner
+from viki.config import DEPTH_VALIDATION_ENABLED, DEPTH_VALIDATION_THRESHOLD_MM
 
 logger = logging.getLogger(__name__)
 
@@ -291,11 +292,13 @@ class KinectBackend(CameraBackend):
         self._depth_mode = depth_mode
         self._fps = fps
         self._timeout_ms = timeout_ms
-
+        self._depth_resolution = (640, 576) # Default, updated in start()
         self._align_depth = align_depth_to_color
+
         self._wired_sync_mode = wired_sync_mode
         self._subordinate_delay_us = subordinate_delay_us
         self._synchronized_images_only = synchronized_images_only
+        self._validation_threshold = DEPTH_VALIDATION_THRESHOLD_MM
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._calibration: K4ACalibration = K4ACalibration(None)
@@ -350,6 +353,12 @@ class KinectBackend(CameraBackend):
             cal_buf,
         )
         if res == K4A_RESULT_SUCCEEDED:
+            self._depth_resolution = {
+                "NFOV_UNBINNED": (640, 576),
+                "NFOV_2X2BINNED": (320, 288),
+                "WFOV_UNBINNED": (1024, 1024),
+                "WFOV_2X2BINNED": (512, 512),
+            }.get(self._depth_mode, (640, 576))
             self._calibration = ctypes.cast(cal_buf, K4ACalibration)
             if self._align_depth:
                 # Fixed-Matrix Projection Pipeline
@@ -416,13 +425,18 @@ class KinectBackend(CameraBackend):
             ts = int(_lib.k4a_image_get_timestamp_usec(color_img))
 
             if depth_img and (self._align_depth and self._transform):
-                depth = self._transform_depth(depth_img, color_img)
+                # We want BOTH raw and aligned for validation
+                raw_depth = self._image_to_numpy_depth(depth_img)
+                aligned_depth = self._transform_depth(depth_img, color_img)
             elif depth_img:
-                depth = self._image_to_numpy_depth(depth_img)
+                raw_depth = self._image_to_numpy_depth(depth_img)
+                aligned_depth = None
             else:
                 # depth image missing in this capture — return zeros
-                h, w = self._color_resolution[1], self._color_resolution[0]
-                depth = np.zeros((h, w), dtype=np.uint16)
+                h, w = self._depth_resolution[1], self._depth_resolution[0]
+                raw_depth = np.zeros((h, w), dtype=np.uint16)
+                aligned_depth = None
+
 
             _lib.k4a_image_release(color_img)
             if depth_img:
@@ -432,40 +446,90 @@ class KinectBackend(CameraBackend):
 
         return Frame(
             color=color,
-            depth=depth,
+            depth=raw_depth,
+            aligned_depth=aligned_depth,
             timestamp_us=ts,
             device_id=self._serial_str,
             color_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR),
             depth_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_DEPTH),
         )
 
+    def get_validated_depth(
+        self, u: float, v: float, z_est: float, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray]
+    ) -> tuple[float, float, float] | None:
+        """
+        Validates deterministic projection against SDK estimation.
+        
+        Returns: (u_depth, v_depth, final_z) or None.
+        """
+        if not DEPTH_VALIDATION_ENABLED:
+            # Just do deterministic projection without SDK check
+            res = self.project_color_to_depth(u, v, z_est)
+            if res is None:
+                return None
+            ud, vd = res
+            ui, vi = int(round(ud)), int(round(vd))
+            h, w = raw_depth.shape[:2]
+            if not (0 <= vi < h and 0 <= ui < w):
+                return None
+            return ud, vd, float(raw_depth[vi, ui])
+
+        # 1. Deterministic projection
+        res = self.project_color_to_depth(u, v, z_est)
+        if res is None:
+            return None
+        
+        ud, vd = res
+        ui, vi = int(round(ud)), int(round(vd))
+        h, w = raw_depth.shape[:2]
+        
+        if not (0 <= vi < h and 0 <= ui < w):
+            return None
+            
+        # Sample raw depth
+        z_raw = raw_depth[vi, ui]
+        
+        # 2. Validation against SDK estimation
+        if aligned_depth is not None:
+            ah, aw = aligned_depth.shape[:2]
+            if 0 <= v < ah and 0 <= u < aw:
+                z_sdk = aligned_depth[int(round(v)), int(round(u))]
+                
+                # If raw depth is 0, it's a hole; try to trust SDK estimation if it's valid
+                if z_raw == 0 and z_sdk > 0:
+                    return ud, vd, float(z_sdk)
+                
+                # Check threshold (mm)
+                if abs(int(z_raw) - int(z_sdk)) > self._validation_threshold:
+                    # Too much divergence. 
+                    # If the SDK estimation is valid, it might be a better estimate for occlusions
+                    if z_sdk > 0:
+                        return ud, vd, float(z_sdk)
+                    return None # Both are unreliable
+        
+        return ud, vd, float(z_raw)
+
     def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
         """Project a color pixel and depth into a depth image pixel."""
         if self._aligner:
             return self._aligner.project_color_to_depth(u, v, z)
         
-        # SDK Fallback
-        from viki.capture.kinect import K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH
-        p_color = K4AFloat3(u * 1.0, v * 1.0, z * 1000.0) # This is actually wrong, need to use intrinsics
-        # ... actually the fallback should just use the existing methods
-        
-        # 1. Color Pixel -> 3D Point (via SDK)
-        # We don't have a direct SDK function for pixel -> 3D without intrinsics
-        # But we can use our existing helper to get intrinsic matrix
+        # Fallback using intrinsics and transform
         ci = self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR)
         x = (u - ci.cx) * z / ci.fx
         y = (v - ci.cy) * z / ci.fy
         
-        # 2. 3D Color -> 3D Depth
         p_depth = self.transform_3d_to_3d(x, y, z, K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH)
         if p_depth is None:
             return None
             
-        # 3. 3D Depth -> 2D Depth
         return self.project_3d_to_2d(*p_depth, K4A_CALIBRATION_TYPE_DEPTH)
 
     def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
         """Project a 3D point in camera space to a 2D pixel. Coordinates in metres."""
+        if self._aligner:
+            return self._aligner.project_3d_to_2d(x, y, z, cam_type)
+
         if not self._calibration:
             logger.error(f"[{self._serial_str}] project_3d_to_2d failed: no calibration handle")
             return None
@@ -487,6 +551,9 @@ class KinectBackend(CameraBackend):
 
     def transform_3d_to_3d(self, x: float, y: float, z: float, src_type: int, dst_type: int) -> tuple[float, float, float] | None:
         """Transform a 3D point from one camera coordinate system to another. Coordinates in metres."""
+        if self._aligner:
+            return self._aligner.transform_3d_to_3d(x, y, z, src_type, dst_type)
+
         if not self._calibration:
             logger.error(f"[{self._serial_str}] transform_3d_to_3d failed: no calibration handle")
             return None
@@ -506,7 +573,21 @@ class KinectBackend(CameraBackend):
         return None
 
     def _get_intrinsics(self, cam_type: int) -> CameraIntrinsics:
-        """Infer intrinsic parameters using SDK projection."""
+        """Infer intrinsic parameters using SDK projection or return from Aligner."""
+        if self._aligner:
+            if cam_type == K4A_CALIBRATION_TYPE_COLOR:
+                return CameraIntrinsics(self._aligner.fx_c, self._aligner.fy_c, self._aligner.cx_c, self._aligner.cy_c, self._color_resolution[0], self._color_resolution[1])
+            else:
+                depth_res_map = {
+                    "NFOV_UNBINNED": (640, 576),
+                    "NFOV_2X2BINNED": (320, 288),
+                    "WFOV_UNBINNED": (1024, 1024),
+                    "WFOV_2X2BINNED": (512, 512),
+                }
+                w, h = depth_res_map.get(self._depth_mode, (640, 576))
+                return CameraIntrinsics(self._aligner.fx_d, self._aligner.fy_d, self._aligner.cx_d, self._aligner.cy_d, w, h)
+
+        # SDK Projection Fallback
         # Project (0,0,1) to get cx, cy
         p0 = (0.0, 0.0, 1.0)
         pix0 = self.project_3d_to_2d(*p0, cam_type)
@@ -555,20 +636,14 @@ class KinectBackend(CameraBackend):
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _transform_depth(self, depth_img: K4AImage, color_img: K4AImage) -> np.ndarray:
-        """Transform depth image into color camera space."""
+        """Transform depth image into color camera space using the SDK (for validation backup)."""
         w = _lib.k4a_image_get_width_pixels(color_img)
         h = _lib.k4a_image_get_height_pixels(color_img)
         dw = _lib.k4a_image_get_width_pixels(depth_img)
         dh = _lib.k4a_image_get_height_pixels(depth_img)
         
-        logger.debug(f"[{self._serial_str}] Transforming depth ({dw}x{dh}) to color ({w}x{h})")
+        logger.debug(f"[{self._serial_str}] Transforming depth ({dw}x{dh}) to color ({w}x{h}) via SDK")
         
-        # Use custom aligner if available
-        if self._aligner:
-            depth_np = self._image_to_numpy_depth(depth_img)
-            return self._aligner.align(depth_np)
-
-        # SDK Fallback
         transformed = K4AImage(None)
         res = _lib.k4a_transformation_depth_image_to_color_camera(
             self._transform, depth_img, ctypes.byref(transformed)

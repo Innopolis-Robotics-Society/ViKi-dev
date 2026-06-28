@@ -100,6 +100,9 @@ class DepthStabilizer:
 
     def stabilize(self, depth: np.ndarray) -> np.ndarray:
         """Apply temporal median and optional bilateral filtering."""
+        if self.buffer and depth.shape != self.buffer[0].shape:
+            self.buffer.clear()
+
         self.buffer.append(depth)
         if len(self.buffer) > self.window_size:
             self.buffer.pop(0)

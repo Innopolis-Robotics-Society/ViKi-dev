@@ -35,6 +35,7 @@ from viki.skeleton.models import (
     PipelineResult,
     HandDetection,
     PreparedFrame,
+    LM,
 )
 import viki.config
 
@@ -70,6 +71,15 @@ class SkeletonPipeline:
         self._detectors: dict[str, CompositeLandmarkDetector] = {}
         self._hand_type = hand
         self._executor = ThreadPoolExecutor(max_workers=4)
+
+        # Bone length EMA tracking for outlier rejection
+        self._bone_emas: dict[tuple[LM, LM], float] = {}
+        self._ema_alpha = 0.1
+        self._tracked_bones = [
+            (LM.SHOULDER, LM.ELBOW),
+            (LM.ELBOW, LM.WRIST),
+        ]
+
 
         self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
@@ -136,7 +146,27 @@ class SkeletonPipeline:
             else:
                 extrinsics[dev_id] = extr
 
-        fused = fuse(dev_ids, lms_3d, extrinsics, group.sync_timestamp_us)
+        fused = fuse(dev_ids, lms_3d, extrinsics, group.sync_timestamp_us, bone_emas=self._bone_emas)
+
+        if fused:
+            # Update bone EMAs from the fused result
+            for parent, child in self._tracked_bones:
+                if parent in fused.points and child in fused.points:
+                    dist = np.linalg.norm(fused.points[parent] - fused.points[child])
+                    
+                    # Outlier rejection: only update EMA if distance is plausible
+                    # (e.g., within 30% of current EMA or first measurement)
+                    if (parent, child) not in self._bone_emas:
+                        self._bone_emas[(parent, child)] = float(dist)
+                    else:
+                        current_ema = self._bone_emas[(parent, child)]
+                        if 0.7 * current_ema < dist < 1.3 * current_ema:
+                            self._bone_emas[(parent, child)] = (
+                                self._ema_alpha * dist + (1.0 - self._ema_alpha) * current_ema
+                            )
+                        else:
+                            # logger.debug(f"Rejected bone length outlier: {dist:.3f}m (EMA: {current_ema:.3f}m)")
+                            pass
 
         return PipelineResult(fused_frame=fused, detections=detections)
 
@@ -151,6 +181,8 @@ class SkeletonPipeline:
                 detectors=[MediaPipeArm(hand=self._hand, mode="live")], # pyright: ignore
                 mode=FusionMode.ANY,
             )
+
+
         
         det = self._detectors[dev_id].detect(prepared)
         return dev_id, det, prepared

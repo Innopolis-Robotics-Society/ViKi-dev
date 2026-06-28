@@ -126,4 +126,41 @@ class DepthAligner:
             return None
             
         return float(u_d), float(v_d)
+    
+    def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
+        """
+        Project 3D point (metres) to 2D pixel.
+        cam_type: 0 for Depth, 1 for Color.
+        """
+        if cam_type == 1: # Color
+            fx, fy, cx, cy = self.fx_c, self.fy_c, self.cx_c, self.cy_c
+        elif cam_type == 0: # Depth
+            fx, fy, cx, cy = self.fx_d, self.fy_d, self.cx_d, self.cy_d
+        else:
+            return None
+
+        if z <= 0:
+            return None
+
+        u = (x * fx / z) + cx
+        v = (y * fy / z) + cy
+        return float(u), float(v)
+
+    def transform_3d_to_3d(self, x: float, y: float, z: float, src_type: int, dst_type: int) -> tuple[float, float, float] | None:
+        """
+        Transform 3D point (metres) between camera spaces.
+        src_type/dst_type: 0 for Depth, 1 for Color.
+        """
+        if src_type == dst_type:
+            return float(x), float(y), float(z)
+
+        p = np.array([x, y, z], dtype=np.float32)
+        if src_type == 0 and dst_type == 1: # Depth -> Color
+            p_out = self.R @ p + self.T
+        elif src_type == 1 and dst_type == 0: # Color -> Depth
+            p_out = self.R.T @ (p - self.T)
+        else:
+            return None
+
+        return float(p_out[0]), float(p_out[1]), float(p_out[2])
 

@@ -16,6 +16,7 @@ import numpy as np
 import logging
 import os
 
+from viki.config import Z_CONVERGENCE_THRESHOLD
 logger = logging.getLogger(__name__)
 
 from viki.capture.kinect import KinectBackend
@@ -37,20 +38,15 @@ def _pixel_to_3d(
     return np.array([X, Y, Z], dtype=np.float32)
 
 
-def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: KinectBackend) -> tuple[float, float] | None:
+def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: KinectBackend, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray] = None) -> tuple[float, float, float] | None:
     """
-    Maps a pixel from the color camera to the depth camera coordinate space.
-    
-    Args:
-        u, v: Color pixel coordinates (undistorted)
-        Z: Depth in metres
-        K: Color intrinsic matrix (3, 3)
-        backend: Kinect backend providing calibration
+    Maps a pixel from the color camera to the depth camera coordinate space,
+    validated against the SDK's estimation if available.
     
     Returns:
-        (u_depth, v_depth) or None if projection fails.
+        (u_depth, v_depth, final_z) or None if projection fails.
     """
-    return backend.project_color_to_depth(u, v, Z)
+    return backend.get_validated_depth(u, v, Z, raw_depth, aligned_depth)
 
 # So this is only needed if we don't get anything from depth cameras
 # in real case not needed
@@ -83,23 +79,7 @@ def _wrist_scale(
 
 def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBackend) -> Landmarks3D:
     """
-    Deproject all 23 pixel landmarks into 3-D camera space.
-    
-    For each landmark, it's checked whether depth_m has a valid value.
-    
-    Parameters
-    ----------
-    detection : HandDetection
-        23 pixel-space landmarks from CompositeLandmarkDetector.
-    frame : PreparedFrame
-        Provides depth_m and intrinsic matrix K.
-    backend : KinectBackend
-        Backend used for SDK-based reprojection.
-    
-    Returns
-    -------
-    Landmarks3D
-        23 points in metres in the coordinate frame of detection.device_id.
+    Deproject all 23 pixel landmarks into 3-D camera space using converge/diverge priority.
     """
     K = frame.K
     fx, fy = K[0, 0], K[1, 1]
@@ -107,70 +87,72 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
 
+    # 1. Calculate MediaPipe Z scale (Z_est)
     mp_z_scale = _wrist_scale(detection.points[LM.WRIST], float(detection.lm_z_rel[LM.WRIST]), depth_m)
     if mp_z_scale is None:
         z_rel_wrist = float(detection.lm_z_rel[LM.WRIST])
         if z_rel_wrist != 0.0:
             mp_z_scale = _FALLBACK_WRIST_Z_M / z_rel_wrist
-        # logger.debug("did not find the wrist, using fallback")
- 
-    points = {LM(idx): np.full(2, np.nan, dtype=np.float32) for idx in range(LM.N)}
+
+    points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in range(LM.N)}
+    
     for i in range(LM.N):
         u, v = detection.points[LM(i)][0], detection.points[LM(i)][1]
         if np.isnan(u) or np.isnan(v):
             continue
-        
-        # Iterative depth sampling to find the correct depth pixel
-        # Initial guess for depth
+
+        # --- Source 1: Deterministic Projection (Z_proj) ---
+        Z_proj = np.nan
         Z_guess = 1.0 
-        ui, vi = None, None
-        
         for _ in range(3):
-            res = color_to_depth_pixel(u, v, Z_guess, K, backend)
+            res = color_to_depth_pixel(u, v, Z_guess, K, backend, depth_m, frame.aligned_depth)
             if res is None:
                 break
             
-            u_depth, v_depth = res
-            ui, vi = int(round(u_depth)), int(round(v_depth))
+            ud, vd, z_val = res
+            ui, vi = int(round(ud)), int(round(vd))
             
             if not (0 <= vi < h and 0 <= ui < w):
                 break
                 
-            # Sample depth in a 3x3 window
+            # Sample depth in a 3x3 window for refinement
             v_start, v_end = max(0, vi - 1), min(h, vi + 2)
             u_start, u_end = max(0, ui - 1), min(w, ui + 2)
             window = depth_m[v_start:v_end, u_start:u_end]
             valid_window = window[~np.isnan(window)]
             
             if valid_window.size > 0:
-                Z_guess = np.median(valid_window)
+                Z_proj = np.median(valid_window)
+                Z_guess = float(Z_proj)
             else:
+                Z_proj = np.nan
                 break
         
-        if ui is None or vi is None:
-            continue
+        # --- Source 2: MediaPipe Estimator (Z_est) ---
+        Z_est = np.nan
+        if mp_z_scale is not None:
+            val = float(detection.lm_z_rel[i]) * mp_z_scale
+            if val > 0:
+                Z_est = val
 
-        # Final robust sampling at the found location
-        v_start, v_end = max(0, vi - 1), min(h, vi + 2)
-        u_start, u_end = max(0, ui - 1), min(w, ui + 2)
-        window = depth_m[v_start:v_end, u_start:u_end]
-        valid_window = window[~np.isnan(window)]
-        
-        if valid_window.size > 0:
-            Z = np.median(valid_window)
-        else:
-            Z = np.nan
-        
-        if not np.isnan(Z):
-            # Valid depth
-            points[LM(i)] = _pixel_to_3d(u, v, Z, fx, fy, cx, cy)
-        elif mp_z_scale is not None:
-            # No depth, we estimate Z
-            Z_approx = float(detection.lm_z_rel[i]) * mp_z_scale
-            if Z_approx > 0:
-                points[LM(i)] = _pixel_to_3d(u, v, Z_approx, fx, fy, cx, cy)
+        # --- Converge/Diverge Decision Logic ---
+        Z_final = np.nan
+        if not np.isnan(Z_proj) and not np.isnan(Z_est):
+            conf = detection.confidence
+            # Use the closer value as the sensor contribution to maintain background rejection,
+            # then blend with the MediaPipe estimation based on confidence to smooth transitions.
+            Z_final = (min(Z_proj, Z_est) + conf * Z_est) / (1.0 + conf)
+        elif not np.isnan(Z_proj):
+            Z_final = Z_proj
+        elif not np.isnan(Z_est):
+            Z_final = Z_est
+
+        if not np.isnan(Z_final):
+            points[LM(i)] = _pixel_to_3d(u, v, Z_final, fx, fy, cx, cy)
+
     return Landmarks3D(
         points=points,
         device_id=detection.device_id,
         timestamp_us=detection.timestamp_us,
     )
+

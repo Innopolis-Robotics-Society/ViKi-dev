@@ -1134,6 +1134,7 @@ Extrinsic calibration requires 1 sample per camera</div>
     let skelPoints = []; // Current 3D points for the selected camera
     let selectedSkelCam = null;
     let smoothedCenter = null;
+    let fixedSkelCenter = null; // Fixed center for camera projection
     let skelViewMode = 'projections'; // 'projections' or 'isometric'
 
     const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
@@ -1194,15 +1195,21 @@ Extrinsic calibration requires 1 sample per camera</div>
         smoothedCenter.y += alpha * (rawCenter.y - smoothedCenter.y);
         smoothedCenter.z += alpha * (rawCenter.z - smoothedCenter.z);
       }
-      const center = smoothedCenter;
+      
+      if (!fixedSkelCenter) {
+        fixedSkelCenter = { ...rawCenter };
+      }
+      
+      const filterCenter = smoothedCenter;
+      const projCenter = fixedSkelCenter;
       
       // Spatial Filter: only keep points within 0.5m of the center to reject background "jumps"
       const isValid = (p) => {
         if (!p || isNaN(p[0]) || p[2] <= 0.1) return false;
         const dist = Math.sqrt(
-          Math.pow(p[0] - center.x, 2) + 
-          Math.pow(p[1] - center.y, 2) + 
-          Math.pow(p[2] - center.z, 2)
+          Math.pow(p[0] - filterCenter.x, 2) + 
+          Math.pow(p[1] - filterCenter.y, 2) + 
+          Math.pow(p[2] - filterCenter.z, 2)
         );
         return dist < 1.0;
       };
@@ -1210,22 +1217,19 @@ Extrinsic calibration requires 1 sample per camera</div>
       const validPoints = landmarks.filter(isValid);
       if (validPoints.length === 0) return;
       
-      // Adaptive scaling: find max spread among valid points to fit in view
-      let maxSpread = 0.1; 
-      validPoints.forEach(p => {
-        maxSpread = Math.max(maxSpread, Math.abs(p[0] - center.x), Math.abs(p[1] - center.y), Math.abs(p[2] - center.z));
-      });
-      const scale = (canvas.width / 8) / maxSpread;
-
-      if (skelViewMode === 'projections') {
+       // Fixed scale to keep both skeleton and origin visible
+       const scale = canvas.width / 5; 
+       
+       if (skelViewMode === 'projections') {
         const viewW = canvas.width / 3;
         const viewH = canvas.height;
         
-        const views = [
-          { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0] - center.x, y: p[2] - center.z }), offset: 0 },
-          { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0] - center.x, y: p[1] - center.y }), offset: viewW },
-          { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - center.z, y: p[1] - center.y }), offset: viewW * 2 },
-        ];
+         const views = [
+            { label: 'TOP (X-Z)', proj: (p) => ({ x: -(p[0] - projCenter.x), y: p[2] - projCenter.z }), offset: 0 },
+            { label: 'FRONT (X-Y)', proj: (p) => ({ x: -(p[0] - projCenter.x), y: p[1] - projCenter.y }), offset: viewW },
+            { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - projCenter.z, y: p[1] - projCenter.y }), offset: viewW * 2 },
+          ];
+
         
         views.forEach(view => {
           const centerX = view.offset + viewW / 2;
@@ -1243,10 +1247,10 @@ Extrinsic calibration requires 1 sample per camera</div>
             if (isValid(landmarks[a]) && isValid(landmarks[b])) {
               const proj1 = view.proj(landmarks[a]);
               const proj2 = view.proj(landmarks[b]);
-              ctx.beginPath();
-              ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
-              ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
-              ctx.stroke();
+             ctx.beginPath();
+             ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
+             ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
+             ctx.stroke();
             }
           });
           
@@ -1263,13 +1267,14 @@ Extrinsic calibration requires 1 sample per camera</div>
         const centerX = canvas.width / 2;
         const centerY = canvas.height / 2;
         
-        const projectIso = (p) => {
-          // Relative to center
-          const dx = p[0] - center.x;
-          const dy = p[1] - center.y;
-          const dz = p[2] - center.z;
-          
-          // Rotation 45 deg around Y
+          const projectIso = (p) => {
+            // Relative to fixed center
+            const dx = -(p[0] - projCenter.x);
+            const dy = p[1] - projCenter.y;
+            const dz = p[2] - projCenter.z;
+ 
+           
+            // Rotation 45 deg around Y
           const x1 = dx * Math.cos(Math.PI/4) + dz * Math.sin(Math.PI/4);
           const z1 = -dx * Math.sin(Math.PI/4) + dz * Math.cos(Math.PI/4);
           
@@ -1295,13 +1300,13 @@ Extrinsic calibration requires 1 sample per camera</div>
           ctx.strokeStyle = axis.color;
           ctx.lineWidth = 1;
           ctx.beginPath();
-          ctx.moveTo(centerX + projOrigin.x * scale, centerY - projOrigin.y * scale);
-          ctx.lineTo(centerX + pEnd.x * scale, centerY - pEnd.y * scale);
-          ctx.stroke();
-          
-          ctx.fillStyle = axis.color;
-          ctx.font = '10px SF Mono';
-          ctx.fillText(axis.label, centerX + pEnd.x * scale + 2, centerY - pEnd.y * scale);
+           ctx.moveTo(centerX + projOrigin.x * scale, centerY - projOrigin.y * scale);
+           ctx.lineTo(centerX + pEnd.x * scale, centerY - pEnd.y * scale);
+           ctx.stroke();
+           
+           ctx.fillStyle = axis.color;
+           ctx.font = '10px SF Mono';
+           ctx.fillText(axis.label, centerX + pEnd.x * scale + 2, centerY - pEnd.y * scale);
         });
 
         // Draw Skeleton
@@ -1322,10 +1327,10 @@ Extrinsic calibration requires 1 sample per camera</div>
 
         landmarks.forEach((p, i) => {
           if (![0, 21, 22].includes(i) || !isValid(p)) return;
-          const proj = projectIso(p);
-          ctx.beginPath();
-          ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
-          ctx.fill();
+           const proj = projectIso(p);
+           ctx.beginPath();
+           ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
+           ctx.fill();
         });
       }
     }
@@ -1336,7 +1341,7 @@ Extrinsic calibration requires 1 sample per camera</div>
       const tableBody = document.getElementById('skel-table-body');
       if (tableBody) {
         tableBody.innerHTML = '';
-        landmarks.forEach((p, i) => {
+        Object.entries(landmarks).forEach(([i, p]) => {
           if (!p || p[0] === null || isNaN(p[0])) return;
           const row = document.createElement('tr');
           row.innerHTML = `<td>${SKEL_NAMES[i] || i}</td><td>${p[0].toFixed(3)}</td><td>${p[1].toFixed(3)}</td><td>${p[2].toFixed(3)}</td>`;
@@ -1344,7 +1349,12 @@ Extrinsic calibration requires 1 sample per camera</div>
         });
       }
       
-      drawSkeleton3D(landmarks);
+      // Convert dict to array for the 3D drawing function
+      const landmarksArray = [];
+      for (let i = 0; i < SKEL_NAMES.length; i++) {
+        landmarksArray[i] = landmarks[i] || null;
+      }
+      drawSkeleton3D(landmarksArray);
     }
 
     function toggleSkeleton() {
@@ -1440,15 +1450,16 @@ Extrinsic calibration requires 1 sample per camera</div>
              continue;
            }
 
-           // 2D Overlay
-           const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
-           if (!pts2d || !Array.isArray(pts2d)) {
-             ctx.clearRect(0, 0, canvas.width, canvas.height);
-             continue;
-           }
+            // 2D Overlay
+            const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
+            if (!pts2d || typeof pts2d !== 'object') {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              continue;
+            }
 
-           const img = document.getElementById(`color-${deviceId}`);
-           if (!img) continue;
+            const img = document.getElementById(`color-${deviceId}`);
+            if (!img) continue;
+
 
            canvas.width = img.clientWidth;
            canvas.height = img.clientHeight;
@@ -1482,10 +1493,10 @@ Extrinsic calibration requires 1 sample per camera</div>
            });
          }
          
-         // Update 3D Viz and Table using Fused Landmarks
-         if (globalLms && globalLms.length > 0) {
-           updateSkeletonUI(selectedSkelCam, globalLms);
-         }
+          // Update 3D Viz and Table using Fused Landmarks
+          if (globalLms && Object.keys(globalLms).length > 0) {
+            updateSkeletonUI(selectedSkelCam, globalLms);
+          }
        };
 
       skeletonWs.onclose = () => {

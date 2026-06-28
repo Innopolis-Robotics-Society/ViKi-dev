@@ -38,17 +38,36 @@ STREAM_IDLE_SLEEP = 0.005
 PLACEHOLDER_SIZE = (1280, 720)
 
 # ── Recording
-RECORD_DEPTH = False  # controls if depth is recorded in a .npy format for each frame alongside the mp4 videos,
+RECORD_DEPTH = False  # is depth recorded in a .npy format for each frame alongside the mp4 videos,
                       # can be disk-space consuming
-DEPTH_PROJECTION_DEBUG = True # controls wether the debug plotting of depth projection is enabled
+DEPTH_PROJECTION_DEBUG = False # is the debug plotting of depth projection is enabled
+
+# -- SDK backend validation
+DEPTH_VALIDATION_ENABLED = False # make the estimation model back up the depth lookup
+DEPTH_VALIDATION_THRESHOLD_MM = 50
+
+Z_CONVERGENCE_THRESHOLD = 0.1 # meters
+# If the projected depth and MediaPipe estimate are within this range, they are averaged; 
+# otherwise, the closer value is chosen.
+
+
 
 # ── Detection
-CAMERAS_MIRRORED = False
+# CAMERAS_MIRRORED = False
 HAND_TO_DETECT = "right"
 
 # ── Calibration defaults
 CALIB_MODE = "manual"  # "auto" (worker captures) or "manual" (via add_sample)
 CALIB_BOARD_TYPE = "aruco"  # "chess" or "aruco"
+
+# Manual bone lengths (meters). If provided, these override EMA tracking.
+# Based on typical human proportions: Wrist-Elbow ~0.25m, Elbow-Shoulder ~0.30m
+BONE_LENGTHS = {
+    # (Parent LM, Child LM): length_m
+    # Note: These are defaults; if you have precise measurements, update them here.
+    # (22, 21): 0.30, # Shoulder -> Elbow
+    # (21, 0): 0.25,  # Elbow -> Wrist
+}
 
 # Chessboard parameters
 CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)

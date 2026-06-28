@@ -152,7 +152,7 @@ class SkeletonWorker:
                             # Debug visualization every 2 seconds
                             if DEPTH_PROJECTION_DEBUG == True:    
                                 now = time.monotonic()
-                                if now - self._last_viz_time > 2.0:
+                                if now - self._last_viz_time > 0.5:
                                     self._last_viz_time = now
                                     self._trigger_debug_viz(group, result)
                     else:
