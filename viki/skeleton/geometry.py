@@ -139,9 +139,10 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
         Z_final = np.nan
         if not np.isnan(Z_proj) and not np.isnan(Z_est):
             conf = detection.confidence
-            # Use the closer value as the sensor contribution to maintain background rejection,
-            # then blend with the MediaPipe estimation based on confidence to smooth transitions.
-            Z_final = (min(Z_proj, Z_est) + conf * Z_est) / (1.0 + conf)
+            # Trust the depth sensor (Z_proj) more than the MediaPipe relative estimate (Z_est).
+            # We use a weighted average where the sensor has higher priority to prevent the "Z-dip" 
+            # caused by min() biasing, while still using Z_est to smooth the result.
+            Z_final = (Z_proj * 2.0 + Z_est * conf) / (2.0 + conf)
         elif not np.isnan(Z_proj):
             Z_final = Z_proj
         elif not np.isnan(Z_est):

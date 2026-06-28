@@ -68,6 +68,7 @@ BONE_LENGTHS = {
     # (22, 21): 0.30, # Shoulder -> Elbow
     # (21, 0): 0.25,  # Elbow -> Wrist
 }
+BONE_TOLERANCE = 0.1  # 5% tolerance range for soft kinematic constraints
 
 # Chessboard parameters
 CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)

@@ -62,6 +62,7 @@ def fuse(
     # 2. Apply Kinematic Constraints (Arm Chain)
     # Shoulder (22) -> Elbow (21) -> Wrist (0)
     chain = [(LM.SHOULDER, LM.ELBOW), (LM.ELBOW, LM.WRIST)]
+    tolerance = viki.config.BONE_TOLERANCE
     for parent, child in chain:
         if parent in out_points and child in out_points:
             # Priority: Manual Config > EMA
@@ -72,11 +73,16 @@ def fuse(
             if target_len is None:
                 continue
             
-            # Project child along the observed direction but at the target distance
+            # Project child along the observed direction
             dir_vec = out_points[child] - out_points[parent]
             dist = np.linalg.norm(dir_vec)
             if dist > 1e-4:
-                out_points[child] = out_points[parent] + (dir_vec / dist) * target_len
+                # Apply soft constraint: only clip if outside [target * (1-TOL), target * (1+TOL)]
+                lower = target_len * (1.0 - tolerance)
+                upper = target_len * (1.0 + tolerance)
+                
+                clipped_dist = np.clip(dist, lower, upper)
+                out_points[child] = out_points[parent] + (dir_vec / dist) * clipped_dist
 
     return SkeletonFrame(
         out_points,
