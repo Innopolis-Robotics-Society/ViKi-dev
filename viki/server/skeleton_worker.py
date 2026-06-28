@@ -148,13 +148,6 @@ class SkeletonWorker:
                                 self._latest_result = result
                             if self._recording and result.fused_frame:
                                 self._recorder.record(result.fused_frame)
-
-                            # Debug visualization every 2 seconds
-                            if DEPTH_PROJECTION_DEBUG == True:    
-                                now = time.monotonic()
-                                if now - self._last_viz_time > 0.5:
-                                    self._last_viz_time = now
-                                    self._trigger_debug_viz(group, result)
                     else:
                         # No synced frames - if recording, we could write a duplicate here
                         # but for now we just let it be (MultiCameraSync returns None)
@@ -172,48 +165,6 @@ class SkeletonWorker:
     @property
     def is_enabled(self) -> bool:
         return self._enabled
-
-    def _trigger_debug_viz(
-        self, group: SyncedFrameGroup, result: PipelineResult
-    ) -> None:
-        """Saves a debug image of the color-depth mapping for a random landmark."""
-        import random
-        from viki.skeleton.models import LM
-
-        os.makedirs("data/debug", exist_ok=True)
-
-        dev_ids = list(group.frames.keys())
-        if not dev_ids:
-            return
-        dev_id = random.choice(dev_ids)
-
-        det = result.detections.get(dev_id)
-        if det is None:
-            return
-
-        lm_idx = random.randint(0, LM.N - 1)
-        u, v = det.points[LM(lm_idx)]
-
-        if np.isnan(u) or np.isnan(v):
-            return
-
-        frame = group.frames.get(dev_id)
-        if frame is None:
-            return
-
-        # We need K and backend for the updated viz tool
-        prepared = self._pipeline._prepare_camera(dev_id, group)
-        if prepared is None:
-            return
-
-        backend = self._manager.get_backend(dev_id)
-
-        if backend is None or not isinstance(backend, KinectBackend):
-            return
-
-        visualize_color_depth_mapping(
-            frame.color, frame.depth, u, v, K=prepared.K, backend=backend
-        )
 
     @property
     def is_recording(self) -> bool:

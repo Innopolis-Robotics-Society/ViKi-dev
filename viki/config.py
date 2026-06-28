@@ -40,7 +40,12 @@ PLACEHOLDER_SIZE = (1280, 720)
 # ── Recording
 RECORD_DEPTH = False  # is depth recorded in a .npy format for each frame alongside the mp4 videos,
                       # can be disk-space consuming
-DEPTH_PROJECTION_DEBUG = False # is the debug plotting of depth projection is enabled
+DEPTH_PROJECTION_DEBUG = True # is the debug plotting of depth projection is enabled
+
+SKELETON_DEPTH_SAMP_RADIUS = 20
+SKELETON_DEPTH_BASE_DIR = "data/depth_bases/"
+SKELETON_ENABLE_DEPTH_VALIDATION = True
+MEDIAPIPE_ESTIMATION_CHECK = False
 
 # -- SDK backend validation
 DEPTH_VALIDATION_ENABLED = False # make the estimation model back up the depth lookup

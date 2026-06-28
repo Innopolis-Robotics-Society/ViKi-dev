@@ -78,14 +78,17 @@ def prepare_frame(
     # Undistort
     map1, map2 = cache.get(frame.device_id, K, dist, (w, h))
     color_undist = cv2.remap(frame.color, map1, map2, cv2.INTER_LINEAR)
+    depth_undist = cv2.remap(frame.depth.astype(np.float32), map1, map2, cv2.INTER_NEAREST)
+
 
     # BGR - RGB
     rgb = cv2.cvtColor(color_undist, cv2.COLOR_BGR2RGB)
 
     # Depth clean. Setting 0 as nan
-    depth = frame.depth.astype(np.float32)
+    depth = depth_undist
     depth[depth == 0] = np.nan
     depth_m = depth / 1000.0
+
 
     return PreparedFrame(
         rgb=rgb,

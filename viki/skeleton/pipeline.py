@@ -18,8 +18,9 @@ from viki.capture.kinect import KinectBackend
 logger = logging.getLogger(__name__)
 
 import numpy as np
-
+import os
 from viki.capture.base import SyncedFrameGroup
+
 from viki.capture.manager import CameraManager
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import UndistortCache, prepare_frame
@@ -110,10 +111,20 @@ class SkeletonPipeline:
             detections[dev_id] = det
             # 2. Lift to 3D (sequential, but fast)
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
- 
+        
+        # Extract confidences for weighted fusion
+        confidences: dict[str, dict[LM, float]] = {}
+        for dev_id, det in detections.items():
+            if det:
+                # MediaPipe confidence is overall, but if we have per-landmark we'd use it.
+                # Currently HandDetection only has overall confidence. 
+                # We'll map this overall confidence to all landmarks for now.
+                confidences[dev_id] = {LM(i): det.confidence for i in range(LM.N)}
+        
         # Fusion logic:
- 
+        
         # Master camera is the first device in the group.
+
         # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())
 
@@ -146,7 +157,14 @@ class SkeletonPipeline:
             else:
                 extrinsics[dev_id] = extr
 
-        fused = fuse(dev_ids, lms_3d, extrinsics, group.sync_timestamp_us, bone_emas=self._bone_emas)
+        fused = fuse(
+            dev_ids, 
+            lms_3d, 
+            extrinsics, 
+            group.sync_timestamp_us, 
+            confidences=confidences, 
+            bone_emas=self._bone_emas
+        )
 
         if fused:
             # Update bone EMAs from the fused result
@@ -207,7 +225,7 @@ class SkeletonPipeline:
         if frame is None:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
-
+        
         intrinsics = self._calibrator.get_intrinsics(device_id)
         if intrinsics is None:
             # Fallback to identity-like intrinsics so we can still get 2D detections
@@ -217,8 +235,21 @@ class SkeletonPipeline:
         else:
             K = intrinsics.camera_matrix
             dist = intrinsics.dist_coeffs
+        
+        prepared = prepare_frame(frame, K, dist, self._cache)
+        if prepared is None:
+            return None
+            
+        # Load base depth map for this camera
+        base_path = os.path.join(viki.config.SKELETON_DEPTH_BASE_DIR, f"{device_id}.npy")
+        if os.path.exists(base_path):
+            try:
+                prepared.base_depth_m = np.load(base_path)
+            except Exception as e:
+                logger.error(f"Failed to load base depth for {device_id}: {e}")
+                
+        return prepared
 
-        return prepare_frame(frame, K, dist, self._cache)
 
     def _lift_camera(
         self, device_id: str, group: SyncedFrameGroup, detection: Optional[HandDetection], prepared: Optional[PreparedFrame] = None

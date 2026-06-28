@@ -16,6 +16,7 @@ def fuse(
     lms: dict[str, Landmarks3D | None],
     extrinsics: dict[str, CalibrationExtrinsics],
     timestamp_us: int,
+    confidences: dict[str, dict[LM, float]] | None = None,
     bone_emas: dict[tuple[LM, LM], float] | None = None,
 ) -> SkeletonFrame | None:
 
@@ -53,11 +54,27 @@ def fuse(
     # 1. Compute initial means
     out_points: dict[LM, np.ndarray] = {}
     for index, points in observations.items():
-        n = len(points)
-        mean_vec = np.zeros(3)
+        weighted_sum = np.zeros(3)
+        total_weight = 0.0
+        
         for dev_id, vec in points.items():
-            mean_vec += vec
-        out_points[index] = mean_vec / n
+            # Get confidence for this joint from this camera
+            weight = 1.0
+            if confidences and dev_id in confidences:
+                weight = confidences[dev_id].get(index, 1.0)
+                
+            weighted_sum += vec * weight
+            total_weight += weight
+            
+        if total_weight > 1e-6:
+            out_points[index] = weighted_sum / total_weight
+        else:
+            # Fallback to simple mean if all weights are zero
+            n = len(points)
+            out_points[index] = np.zeros(3)
+            for dev_id, vec in points.items():
+                out_points[index] += vec
+            out_points[index] /= n
 
     # 2. Apply Kinematic Constraints (Arm Chain)
     # Shoulder (22) -> Elbow (21) -> Wrist (0)

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from typing import Optional
 
 import numpy as np
 
@@ -35,6 +36,7 @@ class PreparedFrame:
     device_id: str
     timestamp_us: int
     aligned_depth: Optional[np.ndarray] = None  # (H, W) uint16, SDK estimated
+    base_depth_m: Optional[np.ndarray] = None  # (H, W)    float32, background depth
 
 
 #

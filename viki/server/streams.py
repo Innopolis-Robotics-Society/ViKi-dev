@@ -46,7 +46,7 @@ def camera_stream(
     else:
         undistorter = Undistorter(intrinsics.camera_matrix, intrinsics.dist_coeffs)
     colorizer = DepthColorizer()
-    stabilizer = DepthStabilizer(use_bilateral=True)
+    # stabilizer = DepthStabilizer(use_bilateral=True)
 
 
     while True:
@@ -67,7 +67,7 @@ def camera_stream(
                 if undistort and undistorter is not None:
                     img = undistorter.apply(img)
             else:
-                depth = stabilizer.stabilize(frame.depth)
+                depth = frame.depth
                 img = colorizer.colorize(depth)
                 if img is None:
                     time.sleep(STREAM_IDLE_SLEEP)

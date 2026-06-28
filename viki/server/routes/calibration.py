@@ -8,6 +8,8 @@ calibration solve, status, and clearing collected samples.
 from __future__ import annotations
 
 import cv2
+import os
+import numpy as np
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -23,7 +25,8 @@ from viki.server.routes.models import (
     IntrinsicsResponse,
     ExtrinsicsResponse,
 )
-from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME
+from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME, SKELETON_DEPTH_BASE_DIR
+from viki.skeleton.camera_prep import prepare_frame, UndistortCache
 
 router = APIRouter(prefix="/api/calibration", tags=["calibration"])
 
@@ -35,6 +38,47 @@ _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 async def reset(cal: CalibrationManager = Depends(get_calibrator)):
     cal.stop_all()
     return {"status": "success"}
+
+
+@router.post("/capture-base-depth")
+async def capture_base_depth(
+    mgr: CameraManager = Depends(get_manager),
+    cal: CalibrationManager = Depends(get_calibrator),
+):
+    os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
+    
+    active_devices = mgr.active_device_ids()
+    if not active_devices:
+        raise HTTPException(400, "No active cameras to capture base depth")
+    
+    cache = UndistortCache()
+    captured = []
+    
+    for dev_id in active_devices:
+        # 1. Get latest frame
+        frame = mgr.latest_frame(dev_id)
+        if frame is None:
+            logger.warning(f"No frame available for {dev_id}")
+            continue
+            
+        # 2. Get intrinsics
+        intrinsics = cal.get_intrinsics(dev_id)
+        if intrinsics is None:
+            logger.warning(f"No intrinsics for {dev_id}, skipping base depth capture")
+            continue
+            
+        # 3. Undistort
+        prepared = prepare_frame(frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache)
+        if prepared is None:
+            logger.warning(f"Failed to prepare frame for {dev_id}")
+            continue
+            
+        # 4. Save base depth map (undistorted depth in meters)
+        path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
+        np.save(path, prepared.depth_m)
+        captured.append(dev_id)
+        
+    return {"status": "success", "captured": captured}
 
 
 @router.post("/sync")
@@ -184,11 +228,27 @@ async def extrinsics_post_all(
     cal: CalibrationManager = Depends(get_calibrator),
     mgr: CameraManager = Depends(get_manager),
 ):
-    results = []
+    # 1. Capture base depth for all active devices before calibration
+    os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
     active_devices = mgr.active_device_ids()
     if not active_devices:
         raise HTTPException(400, "No active cameras to calibrate")
 
+    cache = UndistortCache()
+    for dev_id in active_devices:
+        frame = mgr.latest_frame(dev_id)
+        intrinsics = cal.get_intrinsics(dev_id)
+        if frame and intrinsics:
+            prepared = prepare_frame(frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache)
+            if prepared:
+                path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
+                np.save(path, prepared.depth_m)
+                logger.info(f"Recorded base depth for {dev_id}")
+        else:
+            logger.warning(f"Could not capture base depth for {dev_id}: missing frame or intrinsics")
+
+    # 2. Run extrinsics calibration
+    results = []
     for device_id in active_devices:
         try:
             extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
