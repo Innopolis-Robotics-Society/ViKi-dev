@@ -71,3 +71,60 @@ def camera_stream(
                     continue
 
         yield mjpeg_chunk(img, JPEG_QUALITY)
+
+
+def marked_camera_stream(
+    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
+) -> Iterator[bytes]:
+    pw, ph = PLACEHOLDER_SIZE
+    last_ts = -1
+    intrinsics = cal.get_intrinsics(device_id, path=INTRINSICS_FILENAME)
+    colorizer = DepthColorizer()
+    while True:
+        if device_id not in cal._workers:
+            ret = camera_stream(mgr, cal, device_id, mode)
+            for i in ret:
+                yield i
+                if device_id in cal._workers:
+                    break
+        try:
+            worker = cal._workers[device_id]
+            dictionary = worker.dictionary
+            board = worker.board
+            params = cv2.aruco.DetectorParameters()
+            params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
+            detector = cv2.aruco.ArucoDetector(dictionary, params)
+            charuco_detector = worker.detector
+            while True:
+                frame = mgr.latest_frame(device_id)
+                if frame is None:
+                    if device_id not in mgr.active_device_ids():
+                        break
+                    img = placeholder(pw, ph, f"{device_id}: not statrted")
+                    last_ts = -1
+                elif fram.host_timestamp_us == last_ts:
+                    time.sleep(STREAM_IDLE_SLEEP)
+                    continue
+                else:
+                    last_ts = frame.host_timestamp_us
+                    frm = frame.color
+                    gray = cv2.cvtColor(frm, cv2.COLOR_BGR2GRAY)
+                    corners, id, rejected = detector.detectMarkers(gray)
+                    if ids is None:
+                        continue
+                    charuco_retval, charuco_corners, charuco_ids =
+                        cv2.aruco.interpolateCornersCharuco(
+                            corners, ids, gray, board, None, None
+                        )
+                    a, b, c, d = charuco_detector.detectBoard(gray)
+                    debug_frame = frm.copy()
+                    cv2.aruco.drawDetectedMarkers(
+                        debug_frame, corners, ids, borderColor=(0,255,0)
+                    )
+                    if charuco_retval:
+                        cv2.aruco.drawDetectedCornersCharuco(
+                            debug_frame, charuco_corners, charuco_ids, (0, 0, 255)
+                        )
+                    yield mjpeg_chunk(debug_frame, JPEG_QUALITY)
+        except:
+            pass
