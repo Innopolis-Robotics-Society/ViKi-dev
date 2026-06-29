@@ -52,10 +52,10 @@ class SkeletonRecorder:
             return
 
         # Filter and convert numpy arrays to lists for JSON serialization
-        if self._filter_indices:
-            landmark_data = [frame.points[index].tolist() for index in self._filter_indices]
-        else:
-            landmark_data = {index.value: vec.tolist() for index, vec in frame.points.items()}
+        # if self._filter_indices:
+        #     landmark_data = [frame.points[index].tolist() for index in self._filter_indices]
+        # else:
+        landmark_data = {index.value: vec.tolist() for index, vec in frame.points.items()}
 
         self._frames.append(
             {
