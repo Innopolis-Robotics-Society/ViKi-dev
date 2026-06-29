@@ -169,8 +169,10 @@ class CalibrationManager:
     ) -> CalibrationIntrinsics | None:
         if path != "":
             self.load_intrinsics(device_id, path)
-        intrinsics = self._intrinsics.get(device_id)
-        return intrinsics
+        elif device_id not in self._intrinsics:
+            self.load_intrinsics(device_id, INTRINSICS_FILENAME)
+            
+        return self._intrinsics.get(device_id)
 
     def extrinsics_calibration(
         self,
@@ -231,6 +233,9 @@ class CalibrationManager:
     ) -> CalibrationExtrinsics | None:
         if path != "":
             self.load_extrinsics(device_id, path)
+        elif device_id not in self._extrinsics:
+            self.load_extrinsics(device_id, EXTRINSICS_FILENAME)
+            
         extrinsics = self._extrinsics.get(device_id)
         if not extrinsics:
             self._logger.debug(

@@ -81,6 +81,72 @@
       margin: 0 4px;
     }
 
+    .config-panel {
+      display: none;
+      margin: 0 24px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .config-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+    .config-header .title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent);
+    }
+    .config-body {
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    #config-editor {
+      width: 100%;
+      height: 700px;
+      background: #000;
+      color: var(--text);
+      font-family: 'SF Mono', monospace;
+      font-size: 16px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      resize: vertical;
+    }
+    .config-footer {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+      align-items: center;
+    }
+    .config-footer .hint {
+      font-size: 12px;
+      color: var(--text);
+      margin-right: 12px;
+    }
+    .config-help {
+      display: none;
+      background: #0a0a0d;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 10px;
+      font-size: 16px;
+      color: var(--text);
+      max-height: 600px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .config-help b {
+      color: var(--accent);
+      font-family: 'SF Mono', monospace;
+    }
+
     button {
       padding: 6px 14px;
       border: 1px solid var(--border);
@@ -473,18 +539,75 @@
     <span class="subtitle">capture server</span>
   </header>
 
-  <div class="toolbar">
-    <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
-    <button onclick="startAll()">▶ Start all</button>
-    <button class="danger" onclick="stopAll()">■ Stop all</button>
-    <div class="sep"></div>
-    <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
-    <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
-    <div class="sep"></div>
-    <button id="btn-record-rgbd" class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
-  </div>
+    <div class="toolbar">
+      <button class="primary" onclick="scanDevices()">⟳ Scan devices</button>
+      <button onclick="startAll()">▶ Start all</button>
+      <button class="danger" onclick="stopAll()">■ Stop all</button>
+      <div class="sep"></div>
+      <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
+      <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
+      <div class="sep"></div>
+       <button id="btn-record-rgbd" class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
+       <button style="margin-left: auto" onclick="toggleConfig()">⚙ Config</button>
+     </div>
 
-  <div class="calib-panel" id="calib-panel">
+    <div class="config-panel" id="config-panel">
+      <div class="config-header">
+        <span class="title">Server Configuration</span>
+        <button class="danger" onclick="toggleConfig()">✕ Close</button>
+      </div>
+      <div class="config-body">
+        <textarea id="config-editor" spellcheck="false"></textarea>
+        <div class="config-help" id="config-help">
+          <div><b>INTRINSICS_FILENAME</b>: Path to intrinsics calibration</div>
+          <div><b>EXTRINSICS_FILENAME</b>: Path to extrinsics calibration</div>
+          <div><b>DEFAULT_FPS</b>: Default frames per second for camera start</div>
+          <div><b>DEFAULT_COLOR_WIDTH</b>: Default color image width</div>
+          <div><b>DEFAULT_COLOR_HEIGHT</b>: Default color image height</div>
+          <div><b>DEFAULT_DEPTH_MODE</b>: Default depth mode (NFOV_UNBINNED recommended)</div>
+          <div><b>JPEG_QUALITY</b>: Quality of JPEG encoding (0-100)</div>
+          <div><b>STREAM_IDLE_SLEEP</b>: Sleep duration for MJPEG stream generators (default value works well)</div>
+          <div><b>PLACEHOLDER_SIZE</b>: Dimensions of the placeholder image when camera not started</div>
+          <div><b>DEFAULT_SYNCHRONIZED_IMAGES_ONLY</b>: Only use synchronized frames (not tested with true)</div>
+          <div><b>FRAME_BUFFER_SIZE</b>: Number of frames kept in ring buffer per camera</div>
+          <div><b>RECORD_DEPTH</b>: Save depth frames as .npy files alongside the rgb-d videos (heavy on the disk)</div>
+          <div><b>DEPTH_PROJECTION_DEBUG</b>: Enable debug plotting for depth projection (slows down live skeleton estimation)</div>
+          <div><b>SKELETON_DEPTH_SAMP_RADIUS</b>: Radius for depth sampling during fusion (default worked well in testing)</div>
+          <div><b>SKELETON_DEPTH_BASE_DIR</b>: Directory for background depth frames</div>
+          <div><b>SKELETON_ENABLE_DEPTH_VALIDATION</b>: Toggle depth-based outlier rejection (disabling WILL lead to great instability)</div>
+          <div><b>SKELETON_DEPTH_SUBTRACT_THRESHOLD</b>: Min depth diff for object detection (untested outside default value)</div>
+          <div><b>HAND_TO_DETECT</b>: Hand side to estimate ('left' or 'right')</div>
+          <div><b>CALIB_MODE</b>: Calibration mode ('manual' or 'auto') (auto is deprecated)</div>
+          <div><b>CALIB_BOARD_TYPE</b>: Board type ('chess' or 'aruco')</div>
+          <div><b>BONE_LENGTHS</b>: Manual bone length overrides {(Parent, Child): length_m} (default uses a moving mean, use this if you're sure you know what you're doing)</div>
+          <div><b>BONE_TOLERANCE</b>: Tolerance for kinematic constraints (0.0-1.0) (default works well with mean for lenghts)</div>
+          <div><b>CALIB_CHESS_BOARD_SIZE</b>: Default chessboard dimensions [cols, rows]</div>
+          <div><b>CALIB_CHESS_SQUARE_SIZE</b>: Default chessboard square size in meters</div>
+          <div><b>CALIB_ARUCO_BOARD_SIZE</b>: Default aruco board dimensions [cols, rows]</div>
+          <div><b>CALIB_ARUCO_SQUARE_SIZE</b>: Default aruco square size in meters</div>
+          <div><b>CALIB_ARUCO_MARKER_SIZE</b>: Default aruco marker size in meters</div>
+          <div><b>CALIB_ARUCO_DICT</b>: OpenCV Aruco dictionary ID (our main board has 40 markers total, each 5x5, so DICT_5X5_50 is good)<br>=============================================<br></div>
+          <div>Load: pulls the user configuration from backend</div>
+          <div>Reset to Defaults: loads the default parameters for the system</div>
+          <div>Save: save the current configuratiuon to the server</div>
+          <div>Restart Server: restarts docker to apply all the configuration changes</div>
+
+        </div>
+        <div class="config-footer">
+          <span class="hint">Restart is required for changes to take effect</span>
+          <button onclick="toggleConfigHelp()">❔ Help</button>
+          <button onclick="loadConfig()">Load</button>
+          <button onclick="resetConfig()">Reset to Defaults</button>
+          <button class="primary" onclick="saveConfig()">Save</button>
+          <button class="danger" onclick="restartServer()">Restart Server</button>
+        </div>
+      </div>
+
+      </div>
+    </div>
+
+    <div class="calib-panel" id="calib-panel">
+
     <div class="calib-header">
       <span class="title">Camera Calibration</span>
       <button class="danger" onclick="toggleCalibration()">✕ Close</button>
@@ -530,15 +653,12 @@
              </div>
            </div>
         </div>
-         <button onclick="startCalibrationSession()">deprecated: Sync Params</button>
          <button id="btn-capture-sample" class="primary" onclick="captureSample()">Capture Sample</button>
          <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
-        <button onclick="intrinsicsCalibration()">Calibrate Intrinsics</button>
         <button class="primary" onclick="extrinsicsCalibration()">Calibrate Extrinsics</button>
         <div style="height: 1px; background: var(--border); margin: 4px 0;"></div>
         <button class="danger" onclick="clearCalibration()">Clear Samples</button>
-        <div style="font-size: 11px; color: var(--muted); margin-top: 12px; white-space: pre-line; text-align: center; line-height: 1.4;">Intrinsic calibration requires 20 samples per camera
-Extrinsic calibration requires 1 sample per camera</div>
+        <div style="font-size: 11px; color: var(--muted); margin-top: 12px; white-space: pre-line; text-align: center; line-height: 1.4;">Extrinsic calibration requires 1 sample per camera</div>
 
       </div>
     </div>
@@ -592,56 +712,59 @@ Extrinsic calibration requires 1 sample per camera</div>
   <div id="log"></div>
 
     <script>
-      const FRONTEND_CONFIG = {
-        cameras: {
+      let FRONTEND_CONFIG = {};
+      let CAMERA_CONFIG = {};
+
+      async function initializeFrontendConfig(config) {
+        FRONTEND_CONFIG = {
+          cameras: {
+            realsense: {
+              defaultRes: `${config.DEFAULT_COLOR_WIDTH}x${config.DEFAULT_COLOR_HEIGHT}`,
+              defaultFps: config.DEFAULT_FPS,
+            },
+            kinect: {
+              defaultRes: `${config.DEFAULT_COLOR_WIDTH}x${config.DEFAULT_COLOR_HEIGHT}`,
+              defaultFps: config.DEFAULT_FPS,
+              defaultDepth: config.DEFAULT_DEPTH_MODE,
+            }
+          },
+          calibration: {
+            chess: {
+              boardSize: config.CALIB_CHESS_BOARD_SIZE,
+              squareSize: config.CALIB_CHESS_SQUARE_SIZE,
+            },
+            aruco: {
+              boardSize: config.CALIB_ARUCO_BOARD_SIZE,
+              squareSize: config.CALIB_ARUCO_SQUARE_SIZE,
+              markerSize: config.CALIB_ARUCO_MARKER_SIZE,
+              defaultDict: 'DICT_5X5_50', // This is hardcoded as a string for UI, mapping to ID 4
+            }
+          },
+          recording: {
+            duration: config.RECORDING_DURATION,
+            fps: config.RECORDING_FPS,
+          }
+        };
+
+        CAMERA_CONFIG = {
           realsense: {
-            defaultRes: '1280x720',
-            defaultFps: 15,
+            resolutions: config.REALSENSE_RESOLUTIONS,
+            defaultRes: FRONTEND_CONFIG.cameras.realsense.defaultRes,
+            fps: config.REALSENSE_FPS,
+            defaultFps: FRONTEND_CONFIG.cameras.realsense.defaultFps,
+            depthModes: null,
           },
           kinect: {
-            defaultRes: '1280x720',
-            defaultFps: 15,
-            defaultDepth: 'NFOV_UNBINNED',
-          }
-        },
-        calibration: {
-          chess: {
-            boardSize: [8, 6],
-            squareSize: 0.025,
+            resolutions: config.KINECT_RESOLUTIONS,
+            defaultRes: FRONTEND_CONFIG.cameras.kinect.defaultRes,
+            fps: config.KINECT_FPS,
+            defaultFps: FRONTEND_CONFIG.cameras.kinect.defaultFps,
+            depthModes: config.KINECT_DEPTH_MODES,
+            defaultDepth: FRONTEND_CONFIG.cameras.kinect.defaultDepth,
+            depthModeMaxFps: config.KINECT_DEPTH_MODE_MAX_FPS,
           },
-          aruco: {
-            boardSize: [8, 10],
-            squareSize: 0.05,
-            markerSize: 0.035,
-            defaultDict: 'DICT_5X5_50',
-          }
-        },
-        recording: {
-          duration: 10.0,
-          fps: 15,
-        }
-      };
-
-      // Per-camera config definitions
-      const CAMERA_CONFIG = {
-        realsense: {
-          resolutions: ['640x480', '1280x720', '1920x1080'],
-          defaultRes: FRONTEND_CONFIG.cameras.realsense.defaultRes,
-          fps: [15, 30],
-          defaultFps: FRONTEND_CONFIG.cameras.realsense.defaultFps,
-          depthModes: null,
-        },
-        kinect: {
-          resolutions: ['1280x720', '1920x1080', '2048x1536'],
-          defaultRes: FRONTEND_CONFIG.cameras.kinect.defaultRes,
-          fps: [5, 15, 30],
-          defaultFps: FRONTEND_CONFIG.cameras.kinect.defaultFps,
-          depthModes: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
-          defaultDepth: FRONTEND_CONFIG.cameras.kinect.defaultDepth,
-          // WFOV_UNBINNED hardware limitation: max 15 fps
-          depthModeMaxFps: {'WFOV_UNBINNED': 15},
-        },
-      };
+        };
+      }
 
 
     const ARUCO_DICTS = [
@@ -727,6 +850,59 @@ Extrinsic calibration requires 1 sample per camera</div>
         throw new Error(data.detail || 'API request failed');
       }
       return data;
+    }
+
+    function toggleConfig() {
+      const panel = document.getElementById('config-panel');
+      const isVisible = panel.style.display === 'block';
+      panel.style.display = isVisible ? 'none' : 'block';
+      if (!isVisible) loadConfig();
+    }
+
+    async function loadConfig() {
+      try {
+        const config = await api('GET', '/api/config');
+        document.getElementById('config-editor').value = JSON.stringify(config, null, 2);
+      } catch (e) {
+        log('Failed to load config: ' + e, 'error');
+      }
+    }
+
+    function toggleConfigHelp() {
+      const help = document.getElementById('config-help');
+      help.style.display = help.style.display === 'block' ? 'none' : 'block';
+    }
+
+    async function saveConfig() {
+      try {
+        const content = document.getElementById('config-editor').value;
+        const config = JSON.parse(content);
+        await api('POST', '/api/config', config);
+        log('Configuration saved successfully', 'ok');
+      } catch (e) {
+        log('Failed to save config: ' + e, 'error');
+      }
+    }
+
+    async function resetConfig() {
+      if (!confirm('Reset all settings to defaults? This will overwrite your current configuration.')) return;
+      try {
+        await api('POST', '/api/config/reset');
+        await loadConfig();
+        log('Configuration reset to defaults', 'ok');
+      } catch (e) {
+        log('Failed to reset config: ' + e, 'error');
+      }
+    }
+
+    async function restartServer() {
+      if (!confirm('Restart the server? You will be disconnected for a few seconds.')) return;
+      try {
+        await api('POST', '/api/restart');
+        log('Restarting server... please wait.', 'ok');
+      } catch (e) {
+        log('Restart request failed: ' + e, 'error');
+      }
     }
 
     async function checkServer() {
@@ -1134,7 +1310,9 @@ Extrinsic calibration requires 1 sample per camera</div>
     let skelPoints = []; // Current 3D points for the selected camera
     let selectedSkelCam = null;
     let smoothedCenter = null;
-    let skelViewMode = 'projections'; // 'projections' or 'isometric'
+    let fixedSkelCenter = null; // Fixed center for camera projection
+    let skelViewMode = 'projections'; // 'projections', 'isometric', or 'camera'
+    let cameraExtrinsics = {}; // deviceId -> { rvec, tvec }
 
     const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
     const SKEL_CONNS = [
@@ -1161,6 +1339,20 @@ Extrinsic calibration requires 1 sample per camera</div>
       smoothedCenter = null;
       drawSkeleton3D([]);
       document.getElementById('skel-table-body').innerHTML = '';
+    }
+
+    function rodrigues(rvec) {
+      const theta = Math.sqrt(rvec[0]*rvec[0] + rvec[1]*rvec[1] + rvec[2]*rvec[2]);
+      if (theta < 1e-6) return [ [1,0,0], [0,1,0], [0,0,1] ];
+      
+      const ux = rvec[0]/theta, uy = rvec[1]/theta, uz = rvec[2]/theta;
+      const cosT = Math.cos(theta), sinT = Math.sin(theta), oneMinusCosT = 1 - cosT;
+      
+      return [
+        [cosT + ux*ux*oneMinusCosT, ux*uy*oneMinusCosT - uz*sinT, ux*uz*oneMinusCosT + uy*sinT],
+        [uy*ux*oneMinusCosT + uz*sinT, cosT + uy*uy*oneMinusCosT, uy*uz*oneMinusCosT - ux*sinT],
+        [uz*ux*oneMinusCosT - uy*sinT, uz*uy*oneMinusCosT + ux*sinT, cosT + uz*uz*oneMinusCosT]
+      ];
     }
 
     function drawSkeleton3D(landmarks) {
@@ -1194,15 +1386,27 @@ Extrinsic calibration requires 1 sample per camera</div>
         smoothedCenter.y += alpha * (rawCenter.y - smoothedCenter.y);
         smoothedCenter.z += alpha * (rawCenter.z - smoothedCenter.z);
       }
-      const center = smoothedCenter;
       
-      // Spatial Filter: only keep points within 0.5m of the center to reject background "jumps"
+      // Use Shoulder (index 22) as the moving origin for the view
+      let projCenter = { x: 0, y: 0, z: 0 };
+      const shoulder = landmarks[22];
+      if (shoulder && !isNaN(shoulder[0])) {
+        projCenter = { x: shoulder[0], y: shoulder[1], z: shoulder[2] };
+      } else if (smoothedCenter) {
+        projCenter = { ...smoothedCenter };
+      } else if (fixedSkelCenter) {
+        projCenter = { ...fixedSkelCenter };
+      }
+      
+      const filterCenter = smoothedCenter;
+      
+      // Spatial Filter: only keep points within 1.0m of the center to reject background "jumps"
       const isValid = (p) => {
         if (!p || isNaN(p[0]) || p[2] <= 0.1) return false;
         const dist = Math.sqrt(
-          Math.pow(p[0] - center.x, 2) + 
-          Math.pow(p[1] - center.y, 2) + 
-          Math.pow(p[2] - center.z, 2)
+          Math.pow(p[0] - filterCenter.x, 2) + 
+          Math.pow(p[1] - filterCenter.y, 2) + 
+          Math.pow(p[2] - filterCenter.z, 2)
         );
         return dist < 1.0;
       };
@@ -1210,124 +1414,177 @@ Extrinsic calibration requires 1 sample per camera</div>
       const validPoints = landmarks.filter(isValid);
       if (validPoints.length === 0) return;
       
-      // Adaptive scaling: find max spread among valid points to fit in view
-      let maxSpread = 0.1; 
-      validPoints.forEach(p => {
-        maxSpread = Math.max(maxSpread, Math.abs(p[0] - center.x), Math.abs(p[1] - center.y), Math.abs(p[2] - center.z));
-      });
-      const scale = (canvas.width / 8) / maxSpread;
-
-      if (skelViewMode === 'projections') {
-        const viewW = canvas.width / 3;
-        const viewH = canvas.height;
-        
-        const views = [
-          { label: 'TOP (X-Z)', proj: (p) => ({ x: p[0] - center.x, y: p[2] - center.z }), offset: 0 },
-          { label: 'FRONT (X-Y)', proj: (p) => ({ x: p[0] - center.x, y: p[1] - center.y }), offset: viewW },
-          { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - center.z, y: p[1] - center.y }), offset: viewW * 2 },
-        ];
-        
-        views.forEach(view => {
-          const centerX = view.offset + viewW / 2;
-          const centerY = viewH / 2;
+       // Fixed scale to keep skeleton visible
+       const scale = canvas.width / 5; 
+       
+        if (skelViewMode === 'projections') {
+          const viewW = canvas.width / 3;
+          const viewH = canvas.height;
           
-          ctx.fillStyle = '#6b6b80';
-          ctx.font = '10px SF Mono';
-          ctx.fillText(view.label, view.offset + 10, 20);
-          
-          ctx.strokeStyle = '#5b7fff';
-          ctx.lineWidth = 2;
-          ctx.fillStyle = '#fff';
-          
-          SKEL_CONNS.forEach(([a, b]) => {
-            if (isValid(landmarks[a]) && isValid(landmarks[b])) {
-              const proj1 = view.proj(landmarks[a]);
-              const proj2 = view.proj(landmarks[b]);
+           const views = [
+              { label: 'TOP (X-Z)', proj: (p) => ({ x: -(p[0] - projCenter.x), y: p[2] - projCenter.z }), offset: 0 },
+              { label: 'FRONT (X-Y)', proj: (p) => ({ x: -(p[0] - projCenter.x), y: p[1] - projCenter.y }), offset: viewW },
+              { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - projCenter.z, y: p[1] - projCenter.y }), offset: viewW * 2 },
+            ];
+ 
+ 
+         
+         views.forEach(view => {
+           const centerX = view.offset + viewW / 2;
+           const centerY = viewH / 2;
+           
+           ctx.fillStyle = '#6b6b80';
+           ctx.font = '10px SF Mono';
+           ctx.fillText(view.label, view.offset + 10, 20);
+           
+           ctx.strokeStyle = '#5b7fff';
+           ctx.lineWidth = 2;
+           ctx.fillStyle = '#fff';
+           
+           SKEL_CONNS.forEach(([a, b]) => {
+             if (isValid(landmarks[a]) && isValid(landmarks[b])) {
+               const proj1 = view.proj(landmarks[a]);
+               const proj2 = view.proj(landmarks[b]);
               ctx.beginPath();
               ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
               ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
               ctx.stroke();
-            }
-          });
-          
-          landmarks.forEach((p, i) => {
-            if (![0, 21, 22].includes(i) || !isValid(p)) return;
-            const proj = view.proj(p);
+             }
+           });
+           
+           landmarks.forEach((p, i) => {
+             if (![0, 21, 22].includes(i) || !isValid(p)) return;
+             const proj = view.proj(p);
+             ctx.beginPath();
+             ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
+             ctx.fill();
+           });
+         });
+       } else if (skelViewMode === 'isometric') {
+         // Isometric View
+         const centerX = canvas.width / 2;
+         const centerY = canvas.height / 2;
+         
+           const projectIso = (p) => {
+             // Relative to fixed center
+             const dx = -(p[0] - projCenter.x);
+             const dy = p[1] - projCenter.y;
+             const dz = p[2] - projCenter.z;
+  
+            
+             // Rotation 45 deg around Y
+           const x1 = dx * Math.cos(Math.PI/4) + dz * Math.sin(Math.PI/4);
+           const z1 = -dx * Math.sin(Math.PI/4) + dz * Math.cos(Math.PI/4);
+           
+           // Rotation 30 deg around X
+           const y2 = dy * Math.cos(Math.PI/6) - z1 * Math.sin(Math.PI/6);
+           
+           return { x: x1, y: y2 };
+         };
+ 
+         // Draw World Axes (X: red, Y: green, Z: blue)
+         const axisLen = 0.2;
+         const origin = [0, 0, 0];
+         const projOrigin = projectIso(origin);
+         
+         const axes = [
+           { p: [axisLen, 0, 0], color: '#ff5b5b', label: 'X' },
+           { p: [0, axisLen, 0], color: '#5bff5b', label: 'Y' },
+           { p: [0, 0, axisLen], color: '#5b7fff', label: 'Z' },
+         ];
+         
+         axes.forEach(axis => {
+           const pEnd = projectIso(axis.p);
+           ctx.strokeStyle = axis.color;
+           ctx.lineWidth = 1;
+           ctx.beginPath();
+            ctx.moveTo(centerX + projOrigin.x * scale, centerY - projOrigin.y * scale);
+            ctx.lineTo(centerX + pEnd.x * scale, centerY - pEnd.y * scale);
+            ctx.stroke();
+            
+            ctx.fillStyle = axis.color;
+            ctx.font = '10px SF Mono';
+            ctx.fillText(axis.label, centerX + pEnd.x * scale + 2, centerY - pEnd.y * scale);
+         });
+ 
+         // Draw Skeleton
+         ctx.strokeStyle = '#5b7fff';
+         ctx.lineWidth = 2;
+         ctx.fillStyle = '#fff';
+ 
+         SKEL_CONNS.forEach(([a, b]) => {
+           if (isValid(landmarks[a]) && isValid(landmarks[b])) {
+             const proj1 = projectIso(landmarks[a]);
+             const proj2 = projectIso(landmarks[b]);
+             ctx.beginPath();
+             ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
+             ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
+             ctx.stroke();
+           }
+         });
+ 
+         landmarks.forEach((p, i) => {
+           if (![0, 21, 22].includes(i) || !isValid(p)) return;
+            const proj = projectIso(p);
             ctx.beginPath();
             ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
             ctx.fill();
-          });
-        });
-      } else {
-        // Isometric View
-        const centerX = canvas.width / 2;
-        const centerY = canvas.height / 2;
-        
-        const projectIso = (p) => {
-          // Relative to center
-          const dx = p[0] - center.x;
-          const dy = p[1] - center.y;
-          const dz = p[2] - center.z;
-          
-          // Rotation 45 deg around Y
-          const x1 = dx * Math.cos(Math.PI/4) + dz * Math.sin(Math.PI/4);
-          const z1 = -dx * Math.sin(Math.PI/4) + dz * Math.cos(Math.PI/4);
-          
-          // Rotation 30 deg around X
-          const y2 = dy * Math.cos(Math.PI/6) - z1 * Math.sin(Math.PI/6);
-          
-          return { x: x1, y: y2 };
-        };
+         });
+       } else if (skelViewMode === 'camera') {
+         const extrins = cameraExtrinsics[selectedSkelCam];
+         if (!extrins) {
+           ctx.fillStyle = '#fff';
+           ctx.textAlign = 'center';
+           ctx.fillText('No extrinsics calibrated for this camera', canvas.width/2, canvas.height/2);
+           ctx.textAlign = 'left';
+           return;
+         }
 
-        // Draw World Axes (X: red, Y: green, Z: blue)
-        const axisLen = 0.2;
-        const origin = [0, 0, 0];
-        const projOrigin = projectIso(origin);
-        
-        const axes = [
-          { p: [axisLen, 0, 0], color: '#ff5b5b', label: 'X' },
-          { p: [0, axisLen, 0], color: '#5bff5b', label: 'Y' },
-          { p: [0, 0, axisLen], color: '#5b7fff', label: 'Z' },
-        ];
-        
-        axes.forEach(axis => {
-          const pEnd = projectIso(axis.p);
-          ctx.strokeStyle = axis.color;
-          ctx.lineWidth = 1;
-          ctx.beginPath();
-          ctx.moveTo(centerX + projOrigin.x * scale, centerY - projOrigin.y * scale);
-          ctx.lineTo(centerX + pEnd.x * scale, centerY - pEnd.y * scale);
-          ctx.stroke();
-          
-          ctx.fillStyle = axis.color;
-          ctx.font = '10px SF Mono';
-          ctx.fillText(axis.label, centerX + pEnd.x * scale + 2, centerY - pEnd.y * scale);
-        });
+         const R = rodrigues(extrins.rvec);
+         const t = extrins.tvec;
+         const centerX = canvas.width / 2;
+         const centerY = canvas.height / 2;
 
-        // Draw Skeleton
-        ctx.strokeStyle = '#5b7fff';
-        ctx.lineWidth = 2;
-        ctx.fillStyle = '#fff';
+         const projectCam = (p) => {
+           // P_cam = R * P_world + t
+           const xc = R[0][0]*p[0] + R[0][1]*p[1] + R[0][2]*p[2] + t[0];
+           const yc = R[1][0]*p[0] + R[1][1]*p[1] + R[1][2]*p[2] + t[1];
+           const zc = R[2][0]*p[0] + R[2][1]*p[1] + R[2][2]*p[2] + t[2];
+           
+           if (zc <= 0.1) return null; // Behind camera
+           
+           // Simple perspective projection
+           return { x: xc / zc, y: yc / zc };
+         };
 
-        SKEL_CONNS.forEach(([a, b]) => {
-          if (isValid(landmarks[a]) && isValid(landmarks[b])) {
-            const proj1 = projectIso(landmarks[a]);
-            const proj2 = projectIso(landmarks[b]);
-            ctx.beginPath();
-            ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
-            ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
-            ctx.stroke();
-          }
-        });
+         ctx.strokeStyle = '#5b7fff';
+         ctx.lineWidth = 2;
+         ctx.fillStyle = '#fff';
 
-        landmarks.forEach((p, i) => {
-          if (![0, 21, 22].includes(i) || !isValid(p)) return;
-          const proj = projectIso(p);
-          ctx.beginPath();
-          ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
-          ctx.fill();
-        });
-      }
+         SKEL_CONNS.forEach(([a, b]) => {
+           if (isValid(landmarks[a]) && isValid(landmarks[b])) {
+             const proj1 = projectCam(landmarks[a]);
+             const proj2 = projectCam(landmarks[b]);
+             if (proj1 && proj2) {
+               ctx.beginPath();
+               ctx.moveTo(centerX + proj1.x * scale, centerY - proj1.y * scale);
+               ctx.lineTo(centerX + proj2.x * scale, centerY - proj2.y * scale);
+               ctx.stroke();
+             }
+           }
+         });
+
+         landmarks.forEach((p, i) => {
+           if (![0, 21, 22].includes(i) || !isValid(p)) return;
+           const proj = projectCam(p);
+           if (proj) {
+             ctx.beginPath();
+             ctx.arc(centerX + proj.x * scale, centerY - proj.y * scale, 3, 0, Math.PI * 2);
+             ctx.fill();
+           }
+         });
+       }
+
     }
 
     function updateSkeletonUI(deviceId, landmarks) {
@@ -1336,7 +1593,7 @@ Extrinsic calibration requires 1 sample per camera</div>
       const tableBody = document.getElementById('skel-table-body');
       if (tableBody) {
         tableBody.innerHTML = '';
-        landmarks.forEach((p, i) => {
+        Object.entries(landmarks).forEach(([i, p]) => {
           if (!p || p[0] === null || isNaN(p[0])) return;
           const row = document.createElement('tr');
           row.innerHTML = `<td>${SKEL_NAMES[i] || i}</td><td>${p[0].toFixed(3)}</td><td>${p[1].toFixed(3)}</td><td>${p[2].toFixed(3)}</td>`;
@@ -1344,7 +1601,12 @@ Extrinsic calibration requires 1 sample per camera</div>
         });
       }
       
-      drawSkeleton3D(landmarks);
+      // Convert dict to array for the 3D drawing function
+      const landmarksArray = [];
+      for (let i = 0; i < SKEL_NAMES.length; i++) {
+        landmarksArray[i] = landmarks[i] || null;
+      }
+      drawSkeleton3D(landmarksArray);
     }
 
     function toggleSkeleton() {
@@ -1358,8 +1620,16 @@ Extrinsic calibration requires 1 sample per camera</div>
     }
 
     function toggleSkelView() {
-      skelViewMode = skelViewMode === 'projections' ? 'isometric' : 'projections';
-      document.getElementById('btn-skel-view').textContent = `View: ${skelViewMode === 'projections' ? 'Projections' : 'Isometric'}`;
+      const modes = ['projections', 'isometric', 'camera'];
+      const currIdx = modes.indexOf(skelViewMode);
+      skelViewMode = modes[(currIdx + 1) % modes.length];
+      
+      const labels = {
+        'projections': 'Projections',
+        'isometric': 'Isometric',
+        'camera': 'Camera'
+      };
+      document.getElementById('btn-skel-view').textContent = `View: ${labels[skelViewMode]}`;
     }
 
     async function updateSkelStatus() {
@@ -1440,15 +1710,16 @@ Extrinsic calibration requires 1 sample per camera</div>
              continue;
            }
 
-           // 2D Overlay
-           const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
-           if (!pts2d || !Array.isArray(pts2d)) {
-             ctx.clearRect(0, 0, canvas.width, canvas.height);
-             continue;
-           }
+            // 2D Overlay
+            const pts2d = (typeof det === 'object' && 'px' in det) ? det.px : det;
+            if (!pts2d || typeof pts2d !== 'object') {
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              continue;
+            }
 
-           const img = document.getElementById(`color-${deviceId}`);
-           if (!img) continue;
+            const img = document.getElementById(`color-${deviceId}`);
+            if (!img) continue;
+
 
            canvas.width = img.clientWidth;
            canvas.height = img.clientHeight;
@@ -1482,10 +1753,10 @@ Extrinsic calibration requires 1 sample per camera</div>
            });
          }
          
-         // Update 3D Viz and Table using Fused Landmarks
-         if (globalLms && globalLms.length > 0) {
-           updateSkeletonUI(selectedSkelCam, globalLms);
-         }
+          // Update 3D Viz and Table using Fused Landmarks
+          if (globalLms && Object.keys(globalLms).length > 0) {
+            updateSkeletonUI(selectedSkelCam, globalLms);
+          }
        };
 
       skeletonWs.onclose = () => {
@@ -1514,9 +1785,13 @@ Extrinsic calibration requires 1 sample per camera</div>
     }
 
     async function extrinsicsCalibration() {
-      log('Extrinsics calibration started...');
+      log(`Extrinsics calibration started...`);
       try {
-        await api('POST', '/api/calibration/extrinsics');
+        const res = await api('POST', '/api/calibration/extrinsics');
+        cameraExtrinsics = {}; // Clear old
+        res.forEach(extr => {
+          cameraExtrinsics[extr.device_id] = { rvec: extr.rvec, tvec: extr.tvec };
+        });
         log('Extrinsics calibration successful', 'ok');
       } catch (e) {
         log(`Extrinsics calibration failed: ${e}`, 'error');
@@ -1532,12 +1807,53 @@ Extrinsic calibration requires 1 sample per camera</div>
       updateCalibStatus();
     }
 
-    checkServer();
-    setInterval(checkServer, 5000);
-    scanDevices();
-    // setInterval(scanDevices, 5000);
-    populateArucoDicts();
-    toggleBoardFields();
+    async function init() {
+      try {
+        const config = await api('GET', '/api/config');
+        await initializeFrontendConfig(config);
+        log('Configuration loaded from server', 'ok');
+      } catch (e) {
+        log('Failed to load initial config: ' + e, 'error');
+        // Fallback to some minimal defaults if API fails
+        initializeFrontendConfig({
+          DEFAULT_FPS: 15,
+          DEFAULT_COLOR_WIDTH: 1280,
+          DEFAULT_COLOR_HEIGHT: 720,
+          DEFAULT_DEPTH_MODE: 'NFOV_UNBINNED',
+          SKELETON_DEPTH_SAMP_RADIUS: 15,
+          SKELETON_DEPTH_BASE_DIR: 'data/depth_bases/',
+          SKELETON_ENABLE_DEPTH_VALIDATION: true,
+          SKELETON_DEPTH_SUBTRACT_THRESHOLD: 0.01,
+          HAND_TO_DETECT: 'right',
+          CALIB_MODE: 'manual',
+          CALIB_BOARD_TYPE: 'aruco',
+          BONE_LENGTHS: {},
+          BONE_TOLERANCE: 0.2,
+          CALIB_CHESS_BOARD_SIZE: [8, 6],
+          CALIB_CHESS_SQUARE_SIZE: 0.025,
+          CALIB_ARUCO_BOARD_SIZE: [10, 8],
+          CALIB_ARUCO_SQUARE_SIZE: 0.05,
+          CALIB_ARUCO_MARKER_SIZE: 0.035,
+          CALIB_ARUCO_DICT: 4,
+          RECORDING_DURATION: 10.0,
+          RECORDING_FPS: 15,
+          REALSENSE_RESOLUTIONS: ['640x480', '1280x720', '1920x1080'],
+          REALSENSE_FPS: [15, 30],
+          KINECT_RESOLUTIONS: ['1280x720', '1920x1080', '2048x1536'],
+          KINECT_FPS: [5, 15, 30],
+          KINECT_DEPTH_MODES: ['NFOV_UNBINNED', 'NFOV_2X2BINNED', 'WFOV_UNBINNED', 'WFOV_2X2BINNED'],
+          KINECT_DEPTH_MODE_MAX_FPS: {'WFOV_UNBINNED': 15}
+        });
+      }
+      
+      checkServer();
+      setInterval(checkServer, 5000);
+      scanDevices();
+      populateArucoDicts();
+      toggleBoardFields();
+    }
+
+    init();
   </script>
 </body>
 

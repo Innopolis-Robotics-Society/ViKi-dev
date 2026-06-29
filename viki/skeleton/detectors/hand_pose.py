@@ -35,10 +35,10 @@ _LABEL_LEFT = "Left"
 
 
 class MediaPipeHand(PartialLandmarkDetector):
-    """Partial detector for one hand (21 landmarks)."""
+    """Partial detector for one hand (wrist only)."""
 
     name = "hand"
-    indices = tuple(range(21))  # WRIST..PINKY_TIP, 1:1 with MediaPipe Hand
+    indices = (0,)  # Only WRIST
     priority = 10
 
     def __init__(
@@ -112,16 +112,6 @@ class MediaPipeHand(PartialLandmarkDetector):
     def _extract(self, raw, frame: PreparedFrame) -> Optional[PartialDetection2D]:
         """
         Build PartialDetection2D from a raw HandLandmarkerResult.
-
-        parameters
-        ----------
-        raw   : MediaPipe HandLandmarkerResult (already non-None).
-        frame : the source PreparedFrame (for shape and metadata).
-
-        returns
-        -------
-        PartialDetection2D with shape (21, 2) px, (21,) lm_z_rel,
-        (21,) per_index_confidence
         """
         # Iterate handedness to find the hand whose label matches our target.
         match_idx: Optional[int] = None
@@ -138,11 +128,13 @@ class MediaPipeHand(PartialLandmarkDetector):
         h, w = frame.rgb.shape[:2]
         lms = raw.hand_landmarks[match_idx]  # 21 NormalizedLandmark
 
-        px = np.zeros((21, 2), dtype=np.float32)
-        z = np.zeros(21, dtype=np.float32)
-
-        conf = np.full(21, match_score, dtype=np.float32)
-        for k, lm in enumerate(lms):
+        n = len(self.indices)
+        px = np.zeros((n, 2), dtype=np.float32)
+        z = np.zeros(n, dtype=np.float32)
+        conf = np.full(n, match_score, dtype=np.float32)
+        
+        for k, idx in enumerate(self.indices):
+            lm = lms[idx]
             px[k] = (lm.x * w, lm.y * h)
             z[k] = lm.z
 

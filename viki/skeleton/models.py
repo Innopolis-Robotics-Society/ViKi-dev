@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, IntEnum
+from typing import Optional
 
 import numpy as np
 
@@ -20,11 +21,11 @@ import numpy as np
 class PreparedFrame:
     """
     A single camera frame ready for model inference.
-
+    
     Produced by camera_prep from a raw Frame:
       - color is undistorted and converted BGR → RGB
       - depth is float32 metres with 0 replaced by nan
-
+    
     Carries K so that downstream geometry code doesn't need to reach
     back into CameraManager.
     """
@@ -34,6 +35,8 @@ class PreparedFrame:
     K: np.ndarray  # (3, 3)    intrinsic matrix for this frame
     device_id: str
     timestamp_us: int
+    aligned_depth: Optional[np.ndarray] = None  # (H, W) uint16, SDK estimated
+    base_depth_m: Optional[np.ndarray] = None  # (H, W)    float32, background depth
 
 
 #

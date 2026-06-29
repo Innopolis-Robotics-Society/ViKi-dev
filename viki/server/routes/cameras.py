@@ -33,10 +33,8 @@ class StartRequest(BaseModel):
     depth_mode: str = config.DEFAULT_DEPTH_MODE
     # Kinect-only: hardware sync wiring (ignored for RealSense)
     # 0 = standalone, 1 = master, 2 = subordinate
-    wired_sync_mode: int = config.DEFAULT_WIRED_SYNC_MODE
-    # Subordinate capture delay relative to master trigger, microseconds.
-    # A small positive value (e.g. 160) staggers the depth IR projectors.
-    subordinate_delay_us: int = config.DEFAULT_SUBORDINATE_DELAY_US
+    wired_sync_mode: int = 0
+    subordinate_delay_us: int = 0
     # Require color and depth to arrive in the same capture (recommended for sync recording).
     synchronized_images_only: bool = config.DEFAULT_SYNCHRONIZED_IMAGES_ONLY
 

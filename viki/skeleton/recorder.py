@@ -21,7 +21,7 @@ class SkeletonRecorder:
     """
 
     def __init__(
-        self, base_dir: str | Path = "data", filter_indices: list[LM] | None = None
+        self, base_dir: str | Path = "data/skeleton_recs", filter_indices: list[LM] | None = None
     ) -> None:
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
@@ -51,17 +51,16 @@ class SkeletonRecorder:
         if np.isnan([vec for _, vec in frame.points.items()]).all():
             return
 
-        # Filter landmarks if filter_indices is provided (e.g. arm only)
-        landmarks = frame.points
-
+        # Filter and convert numpy arrays to lists for JSON serialization
         if self._filter_indices:
-            landmarks = [landmarks[index] for index in self._filter_indices]
+            landmark_data = [frame.points[index].tolist() for index in self._filter_indices]
+        else:
+            landmark_data = {index.value: vec.tolist() for index, vec in frame.points.items()}
 
-        # Convert numpy arrays to lists for JSON serialization
         self._frames.append(
             {
                 "ts": frame.timestamp_us,
-                "landmarks": landmarks,
+                "landmarks": landmark_data,
             }
         )
 

@@ -32,16 +32,17 @@ class CameraIntrinsics:
 class Frame:
     """
     A single synchronised frame from one camera.
-
+    
     Fields
     ------
     color             : np.ndarray  HxWx3, uint8, BGR (OpenCV convention)
     depth             : np.ndarray  HxW,   uint16, millimetres
     timestamp_us      : int         capture time, microseconds (device monotonic clock)
     device_id         : str         unique device identifier (serial number or alias)
+    aligned_depth     : np.ndarray | None  HxW, uint16, SDK-aligned depth
     host_timestamp_us : int         host-clock time (time.time_ns()//1000) when the frame
-                                    arrived in the worker thread; set by CameraManager,
-                                    not by the backend. Used for cross-camera sync.
+                                     arrived in the worker thread; set by CameraManager,
+                                     not by the backend. Used for cross-camera sync.
     color_intrinsics : CameraIntrinsics | None
     depth_intrinsics : CameraIntrinsics | None
     """
@@ -50,6 +51,7 @@ class Frame:
     depth: np.ndarray
     timestamp_us: int
     device_id: str
+    aligned_depth: Optional[np.ndarray] = None
     host_timestamp_us: int = 0
     color_intrinsics: Optional[CameraIntrinsics] = None
     depth_intrinsics: Optional[CameraIntrinsics] = None

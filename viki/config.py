@@ -2,71 +2,33 @@
 viki.config
 -----------
 Centralised tunables for the ViKi capture server.
-
-Values were previously scattered as literals across the server module.
-Keeping them here makes the streaming/visualisation behaviour easy to
-tweak without hunting through request handlers.
+Loaded from data/user_configuration.json.
 """
 
-INTRINSICS_FILENAME = "data/intrinsics_calibration.json"
-EXTRINSICS_FILENAME = "data/extrinsics_calibration.json"
+import json
+import os
+import shutil
 
-# ── Camera-start defaults
-DEFAULT_FPS = 15
-DEFAULT_COLOR_WIDTH = 1280
-DEFAULT_COLOR_HEIGHT = 720
-DEFAULT_DEPTH_MODE = "NFOV_UNBINNED"
-DEFAULT_TIMEOUT_MS = 5000
+DEFAULT_CONFIG_PATH = "data/default_configuration.json"
+USER_CONFIG_PATH = "data/user_configuration.json"
 
-# ── Kinect Sync defaults
-DEFAULT_WIRED_SYNC_MODE = (
-    0  # dont change, this is just a fallback. 0: Standalone, 1: Master, 2: Subordinate
-)
-DEFAULT_SUBORDINATE_DELAY_US = 0  # Delay in microseconds, probably dont change
-DEFAULT_SYNCHRONIZED_IMAGES_ONLY = False
+def _load_config():
+    if not os.path.exists(USER_CONFIG_PATH):
+        if os.path.exists(DEFAULT_CONFIG_PATH):
+            shutil.copy(DEFAULT_CONFIG_PATH, USER_CONFIG_PATH)
+        else:
+            # Fallback if even default is missing (shouldn't happen with our setup)
+            return {}
 
-# ── Buffer settings
-FRAME_BUFFER_SIZE = 12  # Number of frames kept per camera for sync queries
+    with open(USER_CONFIG_PATH, "r") as f:
+        return json.load(f)
 
-# ── Depth visualisation, probably dont change
-DEPTH_EMA_ALPHA = 0.05
-DEPTH_MIN_VALID_FRACTION = 0.05
+_config = _load_config()
 
-# ── Streaming / encoding
-JPEG_QUALITY = 80
-STREAM_IDLE_SLEEP = 0.005
-PLACEHOLDER_SIZE = (1280, 720)
+# We assign these to globals so that 'from viki.config import CONSTANT' still works
+globals().update(_config)
 
-# ── Recording
-RECORD_DEPTH = False  # controls if depth is recorded in a .npy format for each frame alongside the mp4 videos,
-# can be disk-space consuming
+# Keep a reference to the paths for the API
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH
+USER_CONFIG_PATH = USER_CONFIG_PATH
 
-# ── Detection
-CAMERAS_MIRRORED = False
-HAND_TO_DETECT = "right"
-
-# ── Calibration defaults
-CALIB_MODE = "manual"  # "auto" (worker captures) or "manual" (via add_sample)
-CALIB_BOARD_TYPE = "aruco"  # "chess" or "aruco"
-
-# Chessboard parameters
-CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)
-CALIB_CHESS_SQUARE_SIZE = 0.025  # metres
-
-# Aruco parameters
-CALIB_ARUCO_BOARD_SIZE = (
-    10,
-    8,
-)  # (cols, rows) dont use 8, 10 for the board we've been using,
-#              it is specifically 10, 8
-CALIB_ARUCO_SQUARE_SIZE = 0.05  # metres, the size of the black square
-CALIB_ARUCO_MARKER_SIZE = (
-    0.035  # metres, the size of the markers inside the white squares
-)
-# The Aruco dictionary ID is an integer used by OpenCV to identify which
-# marker set to use. Common IDs:
-# 0: DICT_4X4_50, 1: DICT_4X4_100, 2: DICT_4X4_250, 3: DICT_4X4_1000
-# 4: DICT_5X5_50, 5: DICT_5X5_100, 6: DICT_5X5_250, 7: DICT_5X5_1000
-# 8: DICT_6X6_50, 9: DICT_6X6_100, 10: DICT_6X6_250, 11: DICT_6X6_1000
-# 12: DICT_7X7_50, 13: DICT_7X7_100, 14: DICT_7X7_250, 15: DICT_7X7_1000
-CALIB_ARUCO_DICT = 4  # cv2.aruco.DICT_5X5_50, we have 40 markers each 5x5 squares
