@@ -182,14 +182,23 @@ def visualize_depth_subtraction(
                                  linewidth=2, edgecolor='r', facecolor='none')
         ax2.add_patch(rect)
         ax2.plot(u, v, 'ro', markersize=2) # Original color projection
-        ax2.plot(ud, vd, 'yo', markersize=2, markeredgecolor='k', label='Depth Guess') # Depth guess
         ax2.set_title(f"Current Depth (ROI)\nZ_proj={z_proj:.3f}m")
         ax2.legend()
+
 
         # 3. Subtracted ROI (Zoomed)
         ax3 = axes[row, 2]
         ax3.imshow(np.nan_to_num(diff_roi, nan=0.0), cmap='magma')
+        
+        median_pixel = data.get("median_pixel")
+        if median_pixel:
+            # median_pixel is (v_rel, u_rel)
+            v_rel, u_rel = median_pixel
+            ax3.plot(u_rel, v_rel, 'ro', markersize=5, markeredgecolor='w', label='Median Pixel')
+            ax3.legend()
+
         ax3.set_title(f"Diff ROI (Subtracted)\nShape: {diff_roi.shape}")
+
 
     plt.tight_layout()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")

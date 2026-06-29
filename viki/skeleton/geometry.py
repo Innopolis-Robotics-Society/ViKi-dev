@@ -32,6 +32,20 @@ _last_known_z = {LM(i): 1.0 for i in range(LM.N)}
 _viz_executor = ThreadPoolExecutor(max_workers=1)
 
 
+def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
+    """Compute the weighted median of a 1D array."""
+    if values.size == 0:
+        return np.nan
+    idx = np.argsort(values)
+    sorted_vals = values[idx]
+    sorted_weights = weights[idx]
+    cum_weights = np.cumsum(sorted_weights)
+    total_weight = cum_weights[-1]
+    if total_weight <= 0:
+        return np.median(values)
+    return sorted_vals[np.searchsorted(cum_weights, total_weight / 2)]
+
+
 def _pixel_to_3d(
     u: float,
     v: float,
@@ -132,15 +146,56 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
             valid_vals = current_roi[valid_mask]
             
             if valid_vals.size > 0:
-                # Robust mean: take values within 10% of the median to filter outliers
-                med = np.median(valid_vals)
-                mask_robust = (valid_vals >= 0.9 * med) & (valid_vals <= 1.1 * med)
-                robust_vals = valid_vals[mask_robust]
-                Z_proj = np.median(robust_vals) if robust_vals.size > 0 else med
+                # Use a hard threshold based on the difference intensity to isolate the object.
+                # We take the max and min of the differences in the ROI and discard points below the average.
+                valid_diffs = diff_roi[valid_mask]
+                avg_diff = (np.max(valid_diffs) + np.min(valid_diffs)) / 2
+                
+                # Only keep points that are 'bright' enough (significantly closer than background)
+                object_mask_flat = valid_diffs >= avg_diff
+                filtered_depths = valid_vals[object_mask_flat]
+                
+                if filtered_depths.size > 0:
+                    Z_proj = np.median(filtered_depths)
+                    # Create a full-ROI mask for the filtered pixels
+                    final_mask = np.zeros_like(valid_mask, dtype=bool)
+                    # valid_mask is a 1D array of coordinates? No, it's the boolean mask.
+                    # We need to map object_mask_flat back to the ROI shape.
+                    # valid_mask is the mask used to get valid_vals.
+                    # So we can just use it to index.
+                    # But we need a boolean mask of the same shape as current_roi.
+                    
+                    # Reconstruct the mask for current_roi
+                    full_object_mask = np.zeros_like(current_roi, dtype=bool)
+                    # valid_mask.nonzero() gives indices of True values.
+                    # object_mask_flat indices correspond to valid_mask's True values.
+                    valid_indices = np.where(valid_mask)
+                    object_indices = np.where(object_mask_flat)[0]
+                    
+                    # Map object_indices back to original ROI indices
+                    target_v = valid_indices[0][object_indices]
+                    target_u = valid_indices[1][object_indices]
+                    full_object_mask[target_v, target_u] = True
+                    search_mask = full_object_mask
+                else:
+                    # Fallback to original median if filtering removes everything
+                    Z_proj = np.median(valid_vals)
+                    search_mask = valid_mask
+                
                 _last_known_z[LM(i)] = Z_proj
+
+                # Find the pixel that provided the median for visualization
+                median_pixel = None
+                if not np.isnan(Z_proj):
+                    diff_to_med = np.abs(current_roi - Z_proj)
+                    diff_to_med[~search_mask] = np.inf
+                    idx = np.argmin(diff_to_med)
+                    median_pixel = np.unravel_index(idx, current_roi.shape)
             else:
                 logger.debug(f"LM {i}: No valid depth in masked ROI at ({ru}, {rv})")
                 Z_proj = np.nan
+                median_pixel = None
+
 
             # Visualization logic
             if DEPTH_PROJECTION_DEBUG and should_viz_this_frame and LM(i) in arm_chain:
@@ -160,6 +215,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                     "u_start": u_start, "u_end": u_end,
                     "diff_roi": diff_roi,
                     "z_proj": Z_proj,
+                    "median_pixel": median_pixel,
                 })
 
         else:
