@@ -109,11 +109,11 @@
     }
     #config-editor {
       width: 100%;
-      height: 400px;
+      height: 700px;
       background: #000;
       color: var(--text);
       font-family: 'SF Mono', monospace;
-      font-size: 14px;
+      font-size: 16px;
       padding: 10px;
       border: 1px solid var(--border);
       border-radius: 4px;
@@ -136,9 +136,9 @@
       border: 1px solid var(--border);
       border-radius: 4px;
       padding: 10px;
-      font-size: 13px;
+      font-size: 16px;
       color: var(--text);
-      max-height: 200px;
+      max-height: 600px;
       overflow-y: auto;
       line-height: 1.6;
     }
@@ -559,34 +559,39 @@
       <div class="config-body">
         <textarea id="config-editor" spellcheck="false"></textarea>
         <div class="config-help" id="config-help">
-          <div><b>INTRINSICS_FILENAME</b>: Path to intrinsics calibration JSON.</div>
-          <div><b>EXTRINSICS_FILENAME</b>: Path to extrinsics calibration JSON.</div>
-          <div><b>DEFAULT_FPS</b>: Default frames per second for camera start.</div>
-          <div><b>DEFAULT_COLOR_WIDTH</b>: Default color image width.</div>
-          <div><b>DEFAULT_COLOR_HEIGHT</b>: Default color image height.</div>
-          <div><b>DEFAULT_DEPTH_MODE</b>: Default depth mode (e.g. NFOV_UNBINNED).</div>
-          <div><b>JPEG_QUALITY</b>: Quality of JPEG encoding (0-100).</div>
-          <div><b>STREAM_IDLE_SLEEP</b>: Sleep duration for MJPEG stream generators.</div>
-          <div><b>PLACEHOLDER_SIZE</b>: Dimensions of the placeholder image.</div>
-          <div><b>DEFAULT_SYNCHRONIZED_IMAGES_ONLY</b>: Only use synchronized frames.</div>
-          <div><b>FRAME_BUFFER_SIZE</b>: Number of frames kept in ring buffer per camera.</div>
-          <div><b>RECORD_DEPTH</b>: Save depth frames as .npy files alongside videos.</div>
-          <div><b>DEPTH_PROJECTION_DEBUG</b>: Enable debug plotting for depth projection.</div>
-          <div><b>SKELETON_DEPTH_SAMP_RADIUS</b>: Radius for depth sampling during fusion.</div>
-          <div><b>SKELETON_DEPTH_BASE_DIR</b>: Directory for background depth frames.</div>
-          <div><b>SKELETON_ENABLE_DEPTH_VALIDATION</b>: Toggle depth-based outlier rejection.</div>
-          <div><b>SKELETON_DEPTH_SUBTRACT_THRESHOLD</b>: Min depth diff for object detection.</div>
-          <div><b>HAND_TO_DETECT</b>: Hand side to estimate ('left' or 'right').</div>
-          <div><b>CALIB_MODE</b>: Calibration mode ('manual' or 'auto').</div>
-          <div><b>CALIB_BOARD_TYPE</b>: Board type ('chess' or 'aruco').</div>
-          <div><b>BONE_LENGTHS</b>: Manual bone length overrides {(Parent, Child): length_m}.</div>
-          <div><b>BONE_TOLERANCE</b>: Tolerance for kinematic constraints (0.0-1.0).</div>
-          <div><b>CALIB_CHESS_BOARD_SIZE</b>: Chessboard dimensions [cols, rows].</div>
-          <div><b>CALIB_CHESS_SQUARE_SIZE</b>: Chessboard square size in meters.</div>
-          <div><b>CALIB_ARUCO_BOARD_SIZE</b>: Aruco board dimensions [cols, rows].</div>
-          <div><b>CALIB_ARUCO_SQUARE_SIZE</b>: Aruco square size in meters.</div>
-          <div><b>CALIB_ARUCO_MARKER_SIZE</b>: Aruco marker size in meters.</div>
-          <div><b>CALIB_ARUCO_DICT</b>: OpenCV Aruco dictionary ID.</div>
+          <div><b>INTRINSICS_FILENAME</b>: Path to intrinsics calibration</div>
+          <div><b>EXTRINSICS_FILENAME</b>: Path to extrinsics calibration</div>
+          <div><b>DEFAULT_FPS</b>: Default frames per second for camera start</div>
+          <div><b>DEFAULT_COLOR_WIDTH</b>: Default color image width</div>
+          <div><b>DEFAULT_COLOR_HEIGHT</b>: Default color image height</div>
+          <div><b>DEFAULT_DEPTH_MODE</b>: Default depth mode (NFOV_UNBINNED recommended)</div>
+          <div><b>JPEG_QUALITY</b>: Quality of JPEG encoding (0-100)</div>
+          <div><b>STREAM_IDLE_SLEEP</b>: Sleep duration for MJPEG stream generators (default value works well)</div>
+          <div><b>PLACEHOLDER_SIZE</b>: Dimensions of the placeholder image when camera not started</div>
+          <div><b>DEFAULT_SYNCHRONIZED_IMAGES_ONLY</b>: Only use synchronized frames (not tested with true)</div>
+          <div><b>FRAME_BUFFER_SIZE</b>: Number of frames kept in ring buffer per camera</div>
+          <div><b>RECORD_DEPTH</b>: Save depth frames as .npy files alongside the rgb-d videos (heavy on the disk)</div>
+          <div><b>DEPTH_PROJECTION_DEBUG</b>: Enable debug plotting for depth projection (slows down live skeleton estimation)</div>
+          <div><b>SKELETON_DEPTH_SAMP_RADIUS</b>: Radius for depth sampling during fusion (default worked well in testing)</div>
+          <div><b>SKELETON_DEPTH_BASE_DIR</b>: Directory for background depth frames</div>
+          <div><b>SKELETON_ENABLE_DEPTH_VALIDATION</b>: Toggle depth-based outlier rejection (disabling WILL lead to great instability)</div>
+          <div><b>SKELETON_DEPTH_SUBTRACT_THRESHOLD</b>: Min depth diff for object detection (untested outside default value)</div>
+          <div><b>HAND_TO_DETECT</b>: Hand side to estimate ('left' or 'right')</div>
+          <div><b>CALIB_MODE</b>: Calibration mode ('manual' or 'auto') (auto is deprecated)</div>
+          <div><b>CALIB_BOARD_TYPE</b>: Board type ('chess' or 'aruco')</div>
+          <div><b>BONE_LENGTHS</b>: Manual bone length overrides {(Parent, Child): length_m} (default uses a moving mean, use this if you're sure you know what you're doing)</div>
+          <div><b>BONE_TOLERANCE</b>: Tolerance for kinematic constraints (0.0-1.0) (default works well with mean for lenghts)</div>
+          <div><b>CALIB_CHESS_BOARD_SIZE</b>: Default chessboard dimensions [cols, rows]</div>
+          <div><b>CALIB_CHESS_SQUARE_SIZE</b>: Default chessboard square size in meters</div>
+          <div><b>CALIB_ARUCO_BOARD_SIZE</b>: Default aruco board dimensions [cols, rows]</div>
+          <div><b>CALIB_ARUCO_SQUARE_SIZE</b>: Default aruco square size in meters</div>
+          <div><b>CALIB_ARUCO_MARKER_SIZE</b>: Default aruco marker size in meters</div>
+          <div><b>CALIB_ARUCO_DICT</b>: OpenCV Aruco dictionary ID (our main board has 40 markers total, each 5x5, so DICT_5X5_50 is good)<br>=============================================<br></div>
+          <div>Load: pulls the user configuration from backend</div>
+          <div>Reset to Defaults: loads the default parameters for the system</div>
+          <div>Save: save the current configuratiuon to the server</div>
+          <div>Restart Server: restarts docker to apply all the configuration changes</div>
+
         </div>
         <div class="config-footer">
           <span class="hint">Restart is required for changes to take effect</span>
