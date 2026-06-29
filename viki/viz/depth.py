@@ -24,8 +24,8 @@ class DepthColorizer:
 
     def __init__(
         self,
-        alpha: float = DEPTH_EMA_ALPHA,
-        min_valid_fraction: float = DEPTH_MIN_VALID_FRACTION,
+        alpha: float = 0.05,
+        min_valid_fraction: float = 0.05,
     ) -> None:
         self.alpha = alpha
         self.min_valid_fraction = min_valid_fraction
