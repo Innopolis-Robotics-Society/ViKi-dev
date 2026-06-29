@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
+from viki.server.streams import marked_camera_stream
 from viki.server.routes.models import (
     ArucoBoardParametersData,
     BoardParametersData,
@@ -222,4 +223,19 @@ async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
     return ExtrinsicsResponse(
         rvec=extrinsics.rvec.tolist(),
         tvec=extrinsics.tvec.tolist(),
+    )
+
+
+@router.get("/{device_id}/stream")
+def marked_stream(
+    device_id: str,
+    undistort: bool = True,
+    mgr: CameraManager = Depends(get_manager),
+    cal: CalibrationManager = Depends(get_calibrator),
+):
+    logging.info("marked_stream started" + "!" * 10)
+    return StreamingResponse(
+        marked_camera_stream(mgr, cal, device_id, "color"),
+        media_type=_MJPEG_MEDIA,
+        headers=_STREAM_HEADERS,
     )

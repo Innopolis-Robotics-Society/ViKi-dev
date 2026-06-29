@@ -87,14 +87,17 @@ def marked_camera_stream(
     colorizer = DepthColorizer()
     while True:
         if device_id not in cal._workers:
+            logging.info("marked_camera_stream: " + "A" * 10)
             ret = camera_stream(mgr, cal, device_id, mode)
             for i in ret:
                 yield i
                 if device_id in cal._workers:
                     break
         try:
+            logging.info("marked_camera_stream: " + "B" * 10)
             worker = cal._workers[device_id]
             if not isinstance(worker, ArucoWorker):
+                yield next(camera_stream(mgr, cal, device_id, mode))
                 continue
             dictionary = worker.dictionary
             board = worker.board
@@ -102,23 +105,28 @@ def marked_camera_stream(
             params.cornerRefinementMethod = cv2.aruco.CORNER_REFINE_CONTOUR
             detector = cv2.aruco.ArucoDetector(dictionary, params)
             charuco_detector = worker.detector
-            while True:
+            while True:            
+                logging.info("marked_camera_stream: " + "B" * 10)
                 frame = mgr.latest_frame(device_id)
                 if frame is None:
                     if device_id not in mgr.active_device_ids():
-                        break
+                        return
                     img = placeholder(pw, ph, f"{device_id}: not statrted")
                     last_ts = -1
                 elif frame.host_timestamp_us == last_ts:
                     time.sleep(STREAM_IDLE_SLEEP)
                     continue
                 else:
+                    logging.info("marked_camera_stream: " + "C" * 10)
                     last_ts = frame.host_timestamp_us
                     frm = frame.color
                     gray = cv2.cvtColor(frm, cv2.COLOR_BGR2GRAY)
                     corners, ids, rejected = detector.detectMarkers(gray)
                     if ids is None:
-                        continue
+                        # the board isn't found
+                        logging.info("marked_camera_stream: " + "D" * 10)
+                        yield next(camera_stream(mgr, cal, device_id, mode))
+                        break
                     charuco_retval, charuco_corners, charuco_ids = (
                         cv2.aruco.interpolateCornersCharuco(
                             corners, ids, gray, board, None, None
@@ -133,6 +141,7 @@ def marked_camera_stream(
                         cv2.aruco.drawDetectedCornersCharuco(
                             debug_frame, charuco_corners, charuco_ids, (0, 0, 255)
                         )
+                    logging.info("marked_camera_stream: " + "E" * 10)
                     yield mjpeg_chunk(debug_frame, JPEG_QUALITY)
-        except:
-            pass
+        except Exception as error:
+            logging.warning("marked_camera_stream: error: " + str(error.args))
