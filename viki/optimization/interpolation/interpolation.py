@@ -12,7 +12,7 @@ class Interpolator:
     def __init__(self):
         pass
 
-    def process(self, data: list[dict]):
+    def process(self, data: list[dict]) -> list[dict]:
         adapter = TypeAdapter(list[RecordedSkeletonFrame])
         frames = adapter.validate_python(data)
         prev_known_vecs: dict[int, list[float]] = {}
@@ -65,7 +65,9 @@ class Interpolator:
                             interp_vec[i] = prev_vec[i] + weight * (
                                 vec[i] - prev_vec[i]
                             )
+                    interp_frame.landmarks[idx] = interp_vec
                 pending[idx] = []
 
                 prev_known_vecs[idx] = vec
                 prev_known_ts[idx] = frame.ts
+        return adapter.dump_python(frames)
