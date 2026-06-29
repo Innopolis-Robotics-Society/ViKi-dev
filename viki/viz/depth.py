@@ -16,7 +16,6 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from viki.config import DEPTH_EMA_ALPHA, DEPTH_MIN_VALID_FRACTION
 
 
 class DepthColorizer:

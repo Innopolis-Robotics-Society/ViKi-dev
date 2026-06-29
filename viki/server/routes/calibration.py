@@ -253,6 +253,7 @@ async def extrinsics_post_all(
         try:
             extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
             results.append(ExtrinsicsResponse(
+                device_id=device_id,
                 rvec=extr.rvec.flatten().tolist(),
                 tvec=extr.tvec.flatten().tolist(),
             ))

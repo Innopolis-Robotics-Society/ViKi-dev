@@ -38,6 +38,7 @@ class IntrinsicsResponse(BaseModel):
 
 
 class ExtrinsicsResponse(BaseModel):
+    device_id: str
     rvec: List[float]
     tvec: List[float]
 

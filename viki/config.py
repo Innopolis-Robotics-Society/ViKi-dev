@@ -2,93 +2,33 @@
 viki.config
 -----------
 Centralised tunables for the ViKi capture server.
-
-Values were previously scattered as literals across the server module.
-Keeping them here makes the streaming/visualisation behaviour easy to
-tweak without hunting through request handlers.
+Loaded from data/user_configuration.json.
 """
 
-# =============================================================================================================
+import json
+import os
+import shutil
 
-INTRINSICS_FILENAME = "data/intrinsics_calibration.json"
-EXTRINSICS_FILENAME = "data/extrinsics_calibration.json"
+DEFAULT_CONFIG_PATH = "data/default_configuration.json"
+USER_CONFIG_PATH = "data/user_configuration.json"
 
-# =============================================================================================================
+def _load_config():
+    if not os.path.exists(USER_CONFIG_PATH):
+        if os.path.exists(DEFAULT_CONFIG_PATH):
+            shutil.copy(DEFAULT_CONFIG_PATH, USER_CONFIG_PATH)
+        else:
+            # Fallback if even default is missing (shouldn't happen with our setup)
+            return {}
 
-# ── Camera-start defaults
-DEFAULT_FPS = 15
-DEFAULT_COLOR_WIDTH = 1280
-DEFAULT_COLOR_HEIGHT = 720
-DEFAULT_DEPTH_MODE = "NFOV_UNBINNED"
+    with open(USER_CONFIG_PATH, "r") as f:
+        return json.load(f)
 
-# ── Streaming / encoding
-JPEG_QUALITY = 80
-STREAM_IDLE_SLEEP = 0.005
-PLACEHOLDER_SIZE = (1280, 720)
+_config = _load_config()
 
-# =============================================================================================================
+# We assign these to globals so that 'from viki.config import CONSTANT' still works
+globals().update(_config)
 
-# ── Kinect Sync defaults
-DEFAULT_SYNCHRONIZED_IMAGES_ONLY = False # did not test with true
+# Keep a reference to the paths for the API
+DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH
+USER_CONFIG_PATH = USER_CONFIG_PATH
 
-# ── Buffer settings
-FRAME_BUFFER_SIZE = 12  # Number of frames kept per camera for sync queries
-
-
-# =============================================================================================================
-
-# ── Recording
-RECORD_DEPTH = False  # is depth recorded in a .npy format for each frame alongside the mp4 videos,
-                      # can be disk-space consuming
-
-DEPTH_PROJECTION_DEBUG = False  # is the debug plotting of depth projection is enabled
-
-SKELETON_DEPTH_SAMP_RADIUS = 15               # worked best from my testing
-SKELETON_DEPTH_BASE_DIR = "data/depth_bases/" # will contain the depth frames that contain the background for huge estimation improvement
-SKELETON_ENABLE_DEPTH_VALIDATION = True       # enables this validation, disabling will lead to unstable results
-SKELETON_DEPTH_SUBTRACT_THRESHOLD = 0.01      # Minimum depth difference to consider object present (meters)
-
-# =============================================================================================================
-
-# ── Detection
-HAND_TO_DETECT = "right"
-
-# =============================================================================================================
-
-# ── Calibration defaults
-CALIB_MODE = "manual"       # "auto" (worker captures) or "manual" (via add_sample); we dont really need auto
-CALIB_BOARD_TYPE = "aruco"  # "chess" or "aruco"
-
-# =============================================================================================================
-
-# Manual bone lengths (meters). If provided, these override EMA tracking. Only add these if you know exactly what you're doing
-# Based on typical human proportions: Wrist-Elbow ~0.25m, Elbow-Shoulder ~0.30m
-BONE_LENGTHS = {
-    # (Parent LM, Child LM): length_m
-    # Note: These are defaults; if you have precise measurements, update them here.
-    # (22, 21): 0.30, # Shoulder -> Elbow
-    # (21, 0): 0.25,  # Elbow -> Wrist
-}
-BONE_TOLERANCE = 0.2  # x% tolerance range for soft kinematic constraints [0, 1]; 
-                      # found this value pretty good, lowering might help with smoothing but introduce instability
-
-# =============================================================================================================
-
-# Chessboard parameters
-CALIB_CHESS_BOARD_SIZE = (8, 6)  # (cols, rows)
-CALIB_CHESS_SQUARE_SIZE = 0.025  # metres
-
-# Aruco parameters
-CALIB_ARUCO_BOARD_SIZE = (10, 8)  # (cols, rows) dont use 8, 10 for the board we've been using,
-                                  # it is specifically 10, 8 here
-CALIB_ARUCO_SQUARE_SIZE = 0.05    # metres, the size of the black square
-CALIB_ARUCO_MARKER_SIZE = (0.035) # metres, the size of the markers inside the white squares
-
-CALIB_ARUCO_DICT = 4  # cv2.aruco.DICT_5X5_50, we have 40 markers each 5x5 squares, so good for our usage
-
-# The Aruco dictionary ID is an integer used by OpenCV to identify which
-# marker set to use. Common IDs:
-# 0: DICT_4X4_50, 1: DICT_4X4_100, 2: DICT_4X4_250, 3: DICT_4X4_1000
-# 4: DICT_5X5_50, 5: DICT_5X5_100, 6: DICT_5X5_250, 7: DICT_5X5_1000
-# 8: DICT_6X6_50, 9: DICT_6X6_100, 10: DICT_6X6_250, 11: DICT_6X6_1000
-# 12: DICT_7X7_50, 13: DICT_7X7_100, 14: DICT_7X7_250, 15: DICT_7X7_1000
