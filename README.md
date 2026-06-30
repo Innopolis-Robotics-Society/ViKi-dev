@@ -57,3 +57,20 @@ docker compose up --build
 | 4 — Retargeting | ⬜ planned | URDF IK via PINK/Pinocchio, object-relative cost, gripper inference |
 | 5 — Dataset | ⬜ planned | LeRobot HDF5 writer, RGB + depth + joints + actions packaging |
 | 6 — Evaluation | ⬜ planned | ACT and Diffusion Policy on UR3, naive vs ViKi success rate comparison |
+
+---
+
+## Development
+
+### Running Tests
+Unit tests are executed in a dedicated test container to ensure all system dependencies (RealSense/Kinect SDKs) are present:
+```bash
+docker compose -f docker-compose.test.yml run --rm tests
+```
+
+### Project Architecture
+- `viki/capture`: Camera backend abstractions and multi-camera management.
+- `viki/viz`: Pure pixel processing (depth colorization, MJPEG encoding).
+- `viki/server`: FastAPI handlers and streaming logic.
+- `viki/skeleton`: Pose estimation (MediaPipe) and multi-view fusion.
+- `viki/optimization`: Trajectory smoothing and interpolation.
