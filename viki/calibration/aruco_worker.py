@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 from typing import List, Sequence
 
 from cv2.typing import MatLike
@@ -39,6 +40,9 @@ class ArucoWorker(_CalibrationWorker):
 
     def set_board_params(self, board_params: ArucoBoardParameters) -> None:
         super().set_board_params(board_params)
+        # TODO: remove this "if" and refactor the code
+        #if type(board_params) is not ArucoBoardParameters:
+        #    return
         with self._lock:
             self.board = cv2.aruco.CharucoBoard(
                 board_params.board_size,
@@ -208,3 +212,20 @@ class ArucoWorker(_CalibrationWorker):
 
         self._logger.debug(f"{self.device_id} extrinsics: success")
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
+
+    def mark_board(self, frame: Frame) -> np.ndarray:
+        gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
+        markers_raw, ids_raw, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
+        if ids_raw is None:
+            return frame.color
+        corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
+        if m_ids is None or len(m_ids) == 0 or c_ids is None or len(c_ids) == 0:
+            return frame.color
+        debug_img = frame.color.copy()
+        cv2.aruco.drawDetectedMarkers(
+            debug_img, markers, m_ids, borderColor=(0, 255, 0)
+        )
+        cv2.aruco.drawDetectedCornersCharuco(
+            debug_img, corners, c_ids, (0, 0, 255)
+        )
+        return debug_img

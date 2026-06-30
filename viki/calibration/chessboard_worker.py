@@ -127,3 +127,16 @@ class ChessboardWorker(_CalibrationWorker):
         self._logger.debug(f"{self.device_id} extrinsics calibration: success")
 
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
+
+    def mark_board(self, frame: Frame) -> np.ndarray:
+      pattern_size = self._board_params.board_size
+      frm = frame.color
+      gray = cv2.cvtColor(frm, cv2.COLOR_BGR2GRAY)
+      ret, corners = cv2.findChessboardCorners(gray, pattern_size, None)
+      if ret:
+          criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
+          corners_sub = cv2.cornerSubPix(gray, corners, (11, 11), (-1, -1), criteria)
+          debug_frm = frm.copy()
+          cv2.drawChessboardCorners(debug_frm, pattern_size , corners_sub, ret)
+          frm = debug_frm
+      return frm
