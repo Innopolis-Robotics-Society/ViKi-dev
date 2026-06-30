@@ -23,6 +23,27 @@ docker compose run --rm terminal
 
 The web UI is at `http://localhost:8000`.
 
+## Frontend
+
+The web UI is a React + Vite + TypeScript SPA in `viki/frontend/`, built into
+`viki/server/static/` (a gitignored build artifact) which FastAPI serves unchanged
+(`GET /` → `static/index.html`, `/static` mount for assets; Vite `base` is `/static/`).
+
+```bash
+./scripts/build_frontend.sh          # build into viki/server/static/ (run before docker compose up)
+cd viki/frontend && npm run dev      # dev server :5173, proxies /api + skeleton WS to :8000
+cd viki/frontend && npm run build    # production build
+cd viki/frontend && npm test         # vitest
+```
+
+Structure is **feature-based**: `src/features/{cameras,config,calibration,skeleton,topbar}/`
+each own their components, Zustand slice (`*.slice.ts`), API calls (`*.api.ts`), types and
+CSS Modules; cross-cutting code lives in `src/shared/` (`api/client.ts`, `store/store.ts`,
+`ui/`, `hooks/`). State is a single Zustand store (UI = f(state)); components never call
+`fetch` directly — only through a feature `*.api.ts`. MJPEG streams stay as `<img src>`;
+the skeleton uses a WebSocket + canvas. This is deliberately NOT the backend's horizontal
+layering — feature-slicing is the idiomatic React structure.
+
 ## One-time host setup
 
 ```bash
