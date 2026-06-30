@@ -1,5 +1,5 @@
 # docker/Dockerfile
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -63,10 +63,17 @@ RUN pip install --no-deps --no-cache-dir -e .
 
 # Copy real source (will be overwritten by bind mount at runtime anyway)
 COPY ./viki/ ./viki/
-COPY ./skeleton_tests/ ./skeleton_tests/
+# COPY ./skeleton_tests/ ./skeleton_tests/
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 
+# Production target
+FROM base AS prod
+CMD ["/bin/bash"]
+
+# Test target
+FROM base AS test
+RUN pip install ".[dev]"
 CMD ["/bin/bash"]
