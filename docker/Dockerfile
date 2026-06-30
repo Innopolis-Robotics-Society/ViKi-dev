@@ -1,5 +1,5 @@
 # docker/Dockerfile
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -69,4 +69,11 @@ COPY ./viki/ ./viki/
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 
+# Production target
+FROM base AS prod
+CMD ["/bin/bash"]
+
+# Test target
+FROM base AS test
+RUN pip install ".[dev]"
 CMD ["/bin/bash"]
