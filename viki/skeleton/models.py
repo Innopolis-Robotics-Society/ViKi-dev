@@ -21,11 +21,11 @@ import numpy as np
 class PreparedFrame:
     """
     A single camera frame ready for model inference.
-    
+
     Produced by camera_prep from a raw Frame:
       - color is undistorted and converted BGR → RGB
       - depth is float32 metres with 0 replaced by nan
-    
+
     Carries K so that downstream geometry code doesn't need to reach
     back into CameraManager.
     """
@@ -95,7 +95,7 @@ class SkeletonFrame:
 
 @dataclass
 class PipelineResult:
-    fused_frame: SkeletonFrame | None  # The world-space 3D skeleton
+    fused_frame: SkeletonFrame  # The world-space 3D skeleton
     detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
 
 

@@ -24,7 +24,6 @@ from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
 from viki.server.routes import calibration, cameras, skeleton, recording, system
 
-
 STATIC_DIR = Path(__file__).parent / "static"
 
 
@@ -40,10 +39,14 @@ async def lifespan(app: FastAPI):
     # app.state.calibrator.load_intrinsics(app.state.manager.active_device_ids)
     # app.state.calibrator.load_extrinsics()
     app.state.sync = MultiCameraSync(app.state.manager)
-    app.state.skeleton_pipeline = SkeletonPipeline(app.state.calibrator, app.state.manager)
+    app.state.skeleton_pipeline = SkeletonPipeline(
+        app.state.calibrator, app.state.manager
+    )
     from viki.skeleton.models import LM
 
-    app.state.skeleton_recorder = SkeletonRecorder()
+    app.state.skeleton_recorder = SkeletonRecorder(
+        filter_indices=[LM.WRIST, LM.ELBOW, LM.SHOULDER]
+    )
 
     app.state.skeleton_worker = SkeletonWorker(
         app.state.manager,

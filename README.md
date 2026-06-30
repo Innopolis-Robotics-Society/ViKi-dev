@@ -51,9 +51,9 @@ docker compose up --build
 
 | Phase | Status | Description |
 |---|---|---|
-| 1 — Capture | 🔧 in progress | Multi-view RGB-D capture server, per-camera controls, depth streaming |
-| 2 — Skeleton | ⬜ planned | MediaPipe pose estimation, depth-fused 3D keypoints, multi-view fusion |
-| 3 — Smoothing | ⬜ planned | One Euro Filter, outlier rejection, smoothness metrics |
+| 1 — Capture | ✅ Done | Multi-view RGB-D capture server, per-camera controls, depth streaming |
+| 2 — Skeleton | ✅ Done | MediaPipe pose estimation, depth-fused 3D keypoints, multi-view fusion |
+| 3 — Smoothing | 🔧 in progress | One Euro Filter, outlier rejection, smoothness metrics |
 | 4 — Retargeting | ⬜ planned | URDF IK via PINK/Pinocchio, object-relative cost, gripper inference |
 | 5 — Dataset | ⬜ planned | LeRobot HDF5 writer, RGB + depth + joints + actions packaging |
 | 6 — Evaluation | ⬜ planned | ACT and Diffusion Policy on UR3, naive vs ViKi success rate comparison |

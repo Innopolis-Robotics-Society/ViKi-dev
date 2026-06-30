@@ -63,7 +63,7 @@ RUN pip install --no-deps --no-cache-dir -e .
 
 # Copy real source (will be overwritten by bind mount at runtime anyway)
 COPY ./viki/ ./viki/
-COPY ./skeleton_tests/ ./skeleton_tests/
+# COPY ./skeleton_tests/ ./skeleton_tests/
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh

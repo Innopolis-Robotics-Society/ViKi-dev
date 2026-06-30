@@ -1,11 +1,7 @@
-from typing import TypeGuard
+import math
 from pydantic import TypeAdapter
 
 from viki.optimization.interpolation.models import RecordedSkeletonFrame
-
-
-def is_float_list(vec: list[float | None]) -> TypeGuard[list[float]]:
-    return not None in vec
 
 
 class Interpolator:
@@ -21,7 +17,7 @@ class Interpolator:
         for frame in frames:
             for idx, vec in frame.landmarks.items():
                 # vec contains None. can't interpolate if no known vec before
-                if not is_float_list(vec):
+                if any(math.isnan(v) for v in vec):
                     if idx in prev_known_vecs:
                         pending.setdefault(idx, []).append(frame)
                     continue
@@ -61,7 +57,7 @@ class Interpolator:
                         weight = (interp_frame.ts - prev_ts) / delta_ts
 
                     for i, val in enumerate(interp_vec):  # interpolate
-                        if val is None:
+                        if math.isnan(val):
                             interp_vec[i] = prev_vec[i] + weight * (
                                 vec[i] - prev_vec[i]
                             )
