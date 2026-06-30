@@ -1,9 +1,17 @@
+"""
+Tests for MJPEG streaming helpers.
+Verifies JPEG encoding, MJPEG chunk formatting, and placeholder generation.
+"""
+
 import pytest
+
+# ...
 import numpy as np
 from viki.viz.mjpeg import encode_jpeg, mjpeg_chunk, placeholder
 
 
 def test_encode_jpeg():
+    """Verify that an image is correctly encoded into JPEG bytes."""
     img = np.zeros((480, 640, 3), dtype=np.uint8)
     data = encode_jpeg(img)
     assert isinstance(data, bytes)
@@ -11,6 +19,7 @@ def test_encode_jpeg():
 
 
 def test_mjpeg_chunk():
+    """Verify that an image is wrapped in a proper MJPEG HTTP chunk."""
     img = np.zeros((480, 640, 3), dtype=np.uint8)
     chunk = mjpeg_chunk(img)
     assert isinstance(chunk, bytes)
@@ -20,6 +29,7 @@ def test_mjpeg_chunk():
 
 
 def test_placeholder():
+    """Verify that a black placeholder image with text is correctly generated."""
     w, h = 640, 480
     text = "Test Placeholder"
     img = placeholder(w, h, text)
