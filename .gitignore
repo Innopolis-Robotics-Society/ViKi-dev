@@ -237,3 +237,9 @@ models/
 
 
 AGENTS.md
+
+# Frontend (Vite/React)
+viki/frontend/node_modules/
+viki/frontend/dist/
+# Build artifact: Vite emits the SPA here; old index.html removed via git rm
+viki/server/static/
