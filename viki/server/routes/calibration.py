@@ -12,6 +12,9 @@ import cv2
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
+
+from viki.calibration.models import ArucoBoardParameters
+
 logger = logging.getLogger(__name__)
 
 from viki.calibration.manager import CalibrationManager
@@ -40,25 +43,25 @@ async def reset(cal: CalibrationManager = Depends(get_calibrator)):
 
 @router.post("/sync")
 async def sync(
-    params: ArucoBoardParametersData | BoardParametersData, 
+    params: ArucoBoardParametersData | BoardParametersData,
     board_type: str,
-    cal: CalibrationManager = Depends(get_calibrator)
+    cal: CalibrationManager = Depends(get_calibrator),
 ):
     # Extract common params
     board_size = params.board_size
     square_size = params.square_size
-    
+
     # Extract aruco specific
     marker_size = 0.025
     aruco_dict = cv2.aruco.DICT_6X6_250
-    
-    if board_type == "aruco" and hasattr(params, "marker_size"):
+
+    if board_type == "aruco" and isinstance(params, ArucoBoardParameters):
         marker_size = params.marker_size
         try:
-            aruco_dict = getattr(cv2.aruco, params.aruco_dict)
+            aruco_dict = getattr(cv2.aruco, str(params.aruco_dict))
         except:
             raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
-            
+
     cal.sync_params(board_type, board_size, square_size, marker_size, aruco_dict)
     return {"status": "success"}
 
@@ -77,8 +80,8 @@ async def capture_all(
 ):
     if not cal._workers:
         raise HTTPException(
-            400, 
-            "Calibration session not started. Please click 'Sync Parameters' first."
+            400,
+            "Calibration session not started. Please click 'Sync Parameters' first.",
         )
     cal.capture_all()
 
@@ -193,24 +196,25 @@ async def extrinsics_post_all(
     for device_id in active_devices:
         try:
             extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
-            results.append(ExtrinsicsResponse(
-                rvec=extr.rvec.flatten().tolist(),
-                tvec=extr.tvec.flatten().tolist(),
-            ))
+            results.append(
+                ExtrinsicsResponse(
+                    rvec=extr.rvec.flatten().tolist(),
+                    tvec=extr.tvec.flatten().tolist(),
+                )
+            )
         except Exception as e:
             logger.error(f"Extrinsics calibration failed for {device_id}: {e}")
             continue
-    
+
     if not results:
         # If we got here, it means all active devices failed to calibrate
         # (e.g. due to lack of samples)
         raise HTTPException(
-            422, 
-            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples."
+            422,
+            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples.",
         )
-        
-    return results
 
+    return results
 
 
 @router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)

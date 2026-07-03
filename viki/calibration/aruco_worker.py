@@ -7,6 +7,7 @@ from viki.capture.base import Frame
 from viki.capture.manager import CameraManager
 from viki.calibration.models import (
     ArucoBoardParameters,
+    BoardParameters,
     ArucoCalibrationSample,
     CalibrationSample,
     CalibrationIntrinsics,
@@ -38,11 +39,10 @@ class ArucoWorker(_CalibrationWorker):
 
         self.detector = cv2.aruco.CharucoDetector(self.board)
 
-    def set_board_params(self, board_params: ArucoBoardParameters) -> None:
-        super().set_board_params(board_params)
-        # TODO: remove this "if" and refactor the code
-        #if type(board_params) is not ArucoBoardParameters:
-        #    return
+    def set_board_params(self, board_params: BoardParameters) -> None:
+        # super().set_board_params(board_params)
+        if not isinstance(board_params, ArucoBoardParameters):
+            return
         with self._lock:
             self.board = cv2.aruco.CharucoBoard(
                 board_params.board_size,
@@ -54,7 +54,7 @@ class ArucoWorker(_CalibrationWorker):
 
     def add_sample(self, frame: Frame) -> None:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-        
+
         # Debug: detect markers separately to see what's actually visible
         markers_raw, ids_raw, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
         if ids_raw is not None:
@@ -64,7 +64,7 @@ class ArucoWorker(_CalibrationWorker):
 
         # 1. Detect ArUco markers
         corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
-        
+
         if m_ids is None or len(m_ids) == 0:
             self._logger.debug(
                 f"{self.device_id} add_sample: detectBoard failed to find markers. Board size: {self.board_params.board_size}. "
@@ -76,11 +76,13 @@ class ArucoWorker(_CalibrationWorker):
                 f"{self.device_id} add_sample: detectBoard found markers but no corners. Board size: {self.board_params.board_size}"
             )
             return
-        
-        self._logger.debug(f"{self.device_id} add_sample: success. Corners: {len(corners)}, Markers: {len(m_ids)}")
-        
+
+        self._logger.debug(
+            f"{self.device_id} add_sample: success. Corners: {len(corners)}, Markers: {len(m_ids)}"
+        )
+
         h, w = frame.color.shape[:2]
-        
+
         # Store the detected corners and IDs inside the sample
         sample = ArucoCalibrationSample(
             frame=frame,
@@ -91,13 +93,12 @@ class ArucoWorker(_CalibrationWorker):
             c_ids=c_ids,
             m_ids=m_ids,
         )
-        
+
         with self._lock:
             self._samples.append(sample)
 
-
         self._logger.debug(
-            f"{self.device_id} add_sample: success)" # (ids: {corners, c_ids})"
+            f"{self.device_id} add_sample: success)"  # (ids: {corners, c_ids})"
         )
 
     def intrinsics_calibration(
@@ -181,20 +182,20 @@ class ArucoWorker(_CalibrationWorker):
                 self._logger.debug(msg)
                 raise RuntimeError(msg)
             sample = self._samples[-1]
- 
+
         if not type(sample) is ArucoCalibrationSample:
             msg = f"ArucoWorker extrinsics_calibration: sample is not CharUco sample"
             self._logger.debug(msg)
             raise RuntimeError(msg)
- 
+
         camera_matrix = intrinsics.camera_matrix
         dist_coeffs = intrinsics.dist_coeffs
- 
+
         if sample.corners is None:
             msg = f"ArucoWorker extrinsics_calibration: corners are None"
             self._logger.debug(msg)
             raise RuntimeError(msg)
- 
+
         ret, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
             sample.corners,
             sample.c_ids,
@@ -225,7 +226,5 @@ class ArucoWorker(_CalibrationWorker):
         cv2.aruco.drawDetectedMarkers(
             debug_img, markers, m_ids, borderColor=(0, 255, 0)
         )
-        cv2.aruco.drawDetectedCornersCharuco(
-            debug_img, corners, c_ids, (0, 0, 255)
-        )
+        cv2.aruco.drawDetectedCornersCharuco(debug_img, corners, c_ids, (0, 0, 255))
         return debug_img

@@ -92,6 +92,8 @@ def marked_camera_stream(
                 worker = cal._workers.get(device_id)
                 if worker is not None:
                     break
+        if worker is None:
+            continue
         frame = mgr.latest_frame(device_id)
         if frame is None: # I think it's impossible
             if device_id not in mgr.active_device_ids():
