@@ -127,19 +127,18 @@ def _sample_counts() -> None:
 
 
 def _on_board_type_change() -> None:
-    """Repopulate board dimension fields from config on type switch (ports the
-    React initBoardFields called by setBoardType)."""
-    calib = st.session_state.frontend_config["calibration"]
+    """Repopulate board dimension fields from config on type switch."""
+    sc = st.session_state.get("server_config", {})
     if st.session_state.board_type == "chess":
-        st.session_state.board_width = calib["chess"]["boardSize"][0]
-        st.session_state.board_height = calib["chess"]["boardSize"][1]
-        st.session_state.square_size = calib["chess"]["squareSize"]
+        st.session_state.board_width = sc.get("CALIB_CHESS_BOARD_SIZE", [8, 6])[0]
+        st.session_state.board_height = sc.get("CALIB_CHESS_BOARD_SIZE", [8, 6])[1]
+        st.session_state.square_size = sc.get("CALIB_CHESS_SQUARE_SIZE", 0.025)
     else:
-        st.session_state.board_width = calib["aruco"]["boardSize"][0]
-        st.session_state.board_height = calib["aruco"]["boardSize"][1]
-        st.session_state.square_size = calib["aruco"]["squareSize"]
-        st.session_state.marker_size = calib["aruco"]["markerSize"]
-    st.session_state.aruco_dict = calib["aruco"]["defaultDict"]
+        st.session_state.board_width = sc.get("CALIB_ARUCO_BOARD_SIZE", [8, 10])[0]
+        st.session_state.board_height = sc.get("CALIB_ARUCO_BOARD_SIZE", [8, 10])[1]
+        st.session_state.square_size = sc.get("CALIB_ARUCO_SQUARE_SIZE", 0.05)
+        st.session_state.marker_size = sc.get("CALIB_ARUCO_MARKER_SIZE", 0.035)
+    st.session_state.aruco_dict = sc.get("CALIB_ARUCO_DICT", "DICT_5X5_50")
 
 
 def _board_params() -> None:
