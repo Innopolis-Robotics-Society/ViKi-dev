@@ -1,4 +1,0 @@
-FROM node:20-slim
-WORKDIR /app
-
-CMD ["/bin/bash", "-c", "cd viki/frontend && npm install --prefer-offline --no-audit && npm run build"]

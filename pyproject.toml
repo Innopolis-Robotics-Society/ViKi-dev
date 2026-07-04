@@ -11,6 +11,11 @@ dependencies = [
     "uvicorn[standard]>=0.29",
     "mediapipe>=0.10.35",
     "matplotlib>=3.8",
+    "streamlit>=1.37",
+    "requests>=2.31",
+    # streamlit pulls pandas; pin below 2.3 which requires Python >=3.11
+    # (the base image is Python 3.10). pandas 2.2.x supports 3.10.
+    "pandas<2.3",
 ]
 
 [project.optional-dependencies]

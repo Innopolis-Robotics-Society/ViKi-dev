@@ -41,15 +41,13 @@ Quick start:
 
 ```bash
 sudo ./scripts/host_setup.sh   # run once
-./scripts/build_frontend.sh    # build the web UI into viki/server/static/
 docker compose up --build
-# open http://localhost:8000
+# open http://localhost:8501
 ```
 
-The web UI lives in `viki/frontend/` (React + Vite + TypeScript) and is built into
-`viki/server/static/`, which FastAPI serves. Rerun `./scripts/build_frontend.sh` after
-frontend changes. For frontend development with hot reload, use
-`cd viki/frontend && npm run dev` (serves on :5173, proxies the API/WebSocket to :8000).
+The web UI is a **Streamlit** app in `viki/streamlit_app/`, started as its own service by
+`docker compose` on port `8501`. It talks to the FastAPI capture server (port `8000`) over
+HTTP; `http://localhost:8000/` redirects to the Streamlit UI.
 
 ---
 

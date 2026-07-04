@@ -1,20 +1,19 @@
 """
 viki.server.app
 ---------------
-Application assembly only: lifespan resources, static files, router wiring.
+Application assembly only: lifespan resources, router wiring, UI redirect.
 All request logic lives in ``viki.server.routes`` and ``viki.server.streams``.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import RedirectResponse
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
@@ -24,7 +23,8 @@ from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
 from viki.server.routes import calibration, cameras, skeleton, recording, system
 
-STATIC_DIR = Path(__file__).parent / "static"
+# The web UI is now a separate Streamlit process; `/` redirects to it.
+STREAMLIT_URL = os.environ.get("VIKI_STREAMLIT_URL", "http://localhost:8501")
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -62,7 +62,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="ViKi Capture Server", lifespan=lifespan)
-app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 app.include_router(cameras.router)
 app.include_router(calibration.router)
 app.include_router(skeleton.router)
@@ -71,6 +70,7 @@ app.include_router(system.router)
 app.include_router(recording.router)
 
 
-@app.get("/", response_class=HTMLResponse)
+@app.get("/")
 async def index():
-    return (STATIC_DIR / "index.html").read_text()
+    """Redirect to the Streamlit web UI."""
+    return RedirectResponse(STREAMLIT_URL)
