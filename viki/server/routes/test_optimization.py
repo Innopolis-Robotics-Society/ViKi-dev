@@ -136,13 +136,13 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(data["stdout_tail"], "ok")
 
     def test_output_listing_and_download_are_sanitized(self) -> None:
-        output = self.output / "result.json"
-        output.write_text("{}", encoding="utf-8")
+        output = self.output / "result.h5"
+        output.write_bytes(b"fake hdf5")
         listed = self.client.get("/api/optimization/outputs")
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json()["outputs"][0]["filename"], "result.json")
+        self.assertEqual(listed.json()["outputs"][0]["filename"], "result.h5")
 
-        downloaded = self.client.get("/api/optimization/outputs/result.json")
+        downloaded = self.client.get("/api/optimization/outputs/result.h5")
         self.assertEqual(downloaded.status_code, 200)
 
         escaped = self.client.get("/api/optimization/outputs/..%2Fsecret.json")

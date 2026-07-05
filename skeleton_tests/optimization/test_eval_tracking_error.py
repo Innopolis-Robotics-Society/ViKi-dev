@@ -22,6 +22,7 @@ from eval_tracking_error import (  # noqa: E402
     select_target_source,
 )
 from smoothing import adjusted_savgol_window, smooth_none  # noqa: E402
+from archive_io import write_hdf5_archive  # noqa: E402
 
 
 class EvalTrackingErrorTests(unittest.TestCase):
@@ -112,18 +113,20 @@ class EvalTrackingErrorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             human = root / "human.npz"
-            robot_traj = root / "robot_traj.npz"
+            robot_traj = root / "robot_traj.h5"
             out = root / "eval"
 
             body = np.zeros((5, 33, 3), dtype=np.float64)
             body[:, 16, 0] = np.linspace(0.0, 0.04, len(body))
             np.savez(human, body=body, fps=10.0, working_hand="right")
-            np.savez(
+            write_hdf5_archive(
                 robot_traj,
-                q_scene_smooth=np.zeros((5, 6), dtype=np.float64),
-                robot="ur10_description",
-                ee_frame="tool0",
-                working_hand="right",
+                {
+                    "q_scene_smooth": np.zeros((5, 6), dtype=np.float64),
+                    "robot": "ur10_description",
+                    "ee_frame": "tool0",
+                    "working_hand": "right",
+                },
             )
 
             def fake_fk(_robot_description, q_traj, _ee_frame):
@@ -163,7 +166,7 @@ class EvalTrackingErrorTests(unittest.TestCase):
             self.assertEqual(metrics["num_frames"], 5)
             self.assertAlmostEqual(metrics["mean_error_mm"], 0.0)
             self.assertTrue(out.with_name(out.name + "_metrics.json").exists())
-            self.assertTrue(out.with_name(out.name + "_aligned.npz").exists())
+            self.assertTrue(out.with_name(out.name + "_aligned.h5").exists())
 
 
 if __name__ == "__main__":

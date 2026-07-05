@@ -16,6 +16,7 @@ from skeleton_tests.optimization.retarget_rgb_only import (
     effective_orientation_cost,
     load_landmarks,
     normalize_robot,
+    output_traj_path,
     should_apply_legacy_transform,
     transform_points,
 )
@@ -57,6 +58,14 @@ class RetargetLogicTests(unittest.TestCase):
     def test_coordinate_frame_controls_legacy_transform(self) -> None:
         self.assertFalse(should_apply_legacy_transform("robot_base"))
         self.assertTrue(should_apply_legacy_transform("viki_world_or_camera"))
+
+    def test_output_trajectory_path_uses_hdf5(self) -> None:
+        robot = normalize_robot("ur10")
+        sample = Path("sample.npz")
+
+        self.assertEqual(output_traj_path(Path("out"), sample, robot).name, "out_traj.h5")
+        self.assertEqual(output_traj_path(Path("out.npz"), sample, robot).name, "out.h5")
+        self.assertEqual(output_traj_path(Path("out.hdf5"), sample, robot).name, "out.hdf5")
 
     def test_robot_base_sample_skips_legacy_transform(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

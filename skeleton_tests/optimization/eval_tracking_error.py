@@ -18,6 +18,14 @@ from typing import Any
 import numpy as np
 
 try:
+    from archive_io import load_archive, write_hdf5_archive
+except ImportError:  # pragma: no cover - allows package-style imports later.
+    try:
+        from .archive_io import load_archive, write_hdf5_archive
+    except ImportError:
+        from experiments.archive_io import load_archive, write_hdf5_archive
+
+try:
     from smoothing import smooth_trajectory
 except ImportError:  # pragma: no cover - allows package-style imports later.
     try:
@@ -71,6 +79,8 @@ def npz_scalar(value: Any, default: Any = None) -> Any:
 def json_safe_npz_value(value: Any) -> Any:
     """Convert npz metadata values to JSON-safe Python values."""
     value = npz_scalar(value)
+    if isinstance(value, bytes):
+        return value.decode("utf-8")
     if isinstance(value, np.ndarray):
         return value.tolist()
     if isinstance(value, np.generic):
@@ -549,7 +559,7 @@ def output_paths(prefix: Path) -> dict[str, Path]:
         "orientation_error_plot": prefix.with_name(prefix.name + "_orientation_error.png"),
         "trajectory_plot": prefix.with_name(prefix.name + "_trajectory_3d.png"),
         "metrics": prefix.with_name(prefix.name + "_metrics.json"),
-        "aligned": prefix.with_name(prefix.name + "_aligned.npz"),
+        "aligned": prefix.with_name(prefix.name + "_aligned.h5"),
     }
 
 
@@ -560,7 +570,7 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     out_prefix = Path(args.out)
     out_prefix.parent.mkdir(parents=True, exist_ok=True)
 
-    with np.load(human_path, allow_pickle=True) as human_npz, np.load(robot_path, allow_pickle=True) as robot_npz:
+    with load_archive(human_path) as human_npz, load_archive(robot_path) as robot_npz:
         q_key = select_q_key(robot_npz, args.q_key)
         target_source = select_target_source(robot_npz, args.target_source)
 
@@ -694,32 +704,34 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         json.dump(metrics, f, indent=2, sort_keys=True)
         f.write("\n")
 
-    np.savez(
+    write_hdf5_archive(
         paths["aligned"],
-        robot_ee_pos=robot_positions,
-        robot_ee_rot=robot_rotations,
-        target_pos_raw=target_raw,
-        target_pos_resampled=target_resampled,
-        target_pos_aligned=target_aligned,
-        target_rot_raw=target_rot_raw if target_rot_raw is not None else np.empty((0, 3, 3)),
-        target_rot_resampled=target_rot_resampled if target_rot_resampled is not None else np.empty((0, 3, 3)),
-        target_rot_aligned=target_rot_aligned if target_rot_aligned is not None else np.empty((0, 3, 3)),
-        error_mm=error_mm,
-        orientation_error_deg=orientation_error_deg if orientation_error_deg is not None else np.empty((0,)),
-        time_s=time_axis,
-        alignment_rotation=alignment_r,
-        alignment_translation_m=alignment_t,
-        human_path=str(human_path),
-        robot_traj_path=str(robot_path),
-        robot=robot_defaults.description,
-        ee_frame=ee_frame,
-        q_key=q_key,
-        selected_q_key=q_key,
-        requested_q_key=args.q_key,
-        target_source=target_source,
-        requested_target_source=args.target_source,
-        smoothing=args.smoothing,
-        align=args.align,
+        {
+            "robot_ee_pos": robot_positions,
+            "robot_ee_rot": robot_rotations,
+            "target_pos_raw": target_raw,
+            "target_pos_resampled": target_resampled,
+            "target_pos_aligned": target_aligned,
+            "target_rot_raw": target_rot_raw if target_rot_raw is not None else np.empty((0, 3, 3)),
+            "target_rot_resampled": target_rot_resampled if target_rot_resampled is not None else np.empty((0, 3, 3)),
+            "target_rot_aligned": target_rot_aligned if target_rot_aligned is not None else np.empty((0, 3, 3)),
+            "error_mm": error_mm,
+            "orientation_error_deg": orientation_error_deg if orientation_error_deg is not None else np.empty((0,)),
+            "time_s": time_axis,
+            "alignment_rotation": alignment_r,
+            "alignment_translation_m": alignment_t,
+            "human_path": str(human_path),
+            "robot_traj_path": str(robot_path),
+            "robot": robot_defaults.description,
+            "ee_frame": ee_frame,
+            "q_key": q_key,
+            "selected_q_key": q_key,
+            "requested_q_key": args.q_key,
+            "target_source": target_source,
+            "requested_target_source": args.target_source,
+            "smoothing": args.smoothing,
+            "align": args.align,
+        },
     )
 
     print(f"Saved error plot:      {paths['error_plot']}")
@@ -750,13 +762,13 @@ def build_parser() -> argparse.ArgumentParser:
         description="Evaluate robot FK tracking error against RGB-derived human targets.",
     )
     parser.add_argument("--human", required=True, help="Path to human landmark .npz.")
-    parser.add_argument("--robot-traj", required=True, help="Path to robot trajectory .npz.")
+    parser.add_argument("--robot-traj", required=True, help="Path to robot trajectory .h5, or legacy .npz.")
     parser.add_argument("--robot", default=None, help="Robot alias/name, e.g. iiwa14 or ur10.")
     parser.add_argument("--ee-frame", default=None, help="Override end-effector frame name.")
     parser.add_argument(
         "--q-key",
         default="auto",
-        help="Joint trajectory key in robot .npz, or 'auto' for q_scene_smooth/q_scene_raw/q_approach.",
+        help="Joint trajectory key in robot archive, or 'auto' for q_scene_smooth/q_scene_raw/q_approach.",
     )
     parser.add_argument(
         "--target-source",

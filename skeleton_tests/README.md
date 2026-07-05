@@ -15,7 +15,7 @@ skeleton_tests/
     smoothing.py               # Savitzky-Golay helpers used by retarget/eval
     test_*.py                  # Lightweight tests
   samples/                     # Generated optimiser input .npz files
-  output/                      # Retargeted trajectories, metrics, and plots
+  output/                      # Retargeted HDF5 trajectories, metrics, and plots
 ```
 
 `skeleton_tests/` is ignored by the repo, so files in this directory must be added with `git add -f` when they are ready to commit.
@@ -111,7 +111,7 @@ Run retargeting directly through the expected FK conda environment:
 & 'C:\Users\minim\miniforge3\Scripts\conda.exe' run -n viki-fk python skeleton_tests\optimization\retarget_rgb_only.py `
   --sample skeleton_tests\samples\rec_1782584807_smoothed_wrist_only.npz `
   --robot ur10 `
-  --out skeleton_tests\output\real_wrist_ur10 `
+  --out skeleton_tests\output\real_wrist_ur10.h5 `
   --target-mode wrist_position `
   --ik-position-cost 5 `
   --ik-orientation-cost 0 `
@@ -212,6 +212,8 @@ Request:
 
 The endpoint returns a `job_id` immediately. Retargeting runs in a background worker as a subprocess. Only one worker thread is started, and jobs are processed through an in-memory queue.
 
+If `output_name` has no suffix, the retargeting script writes `<output_name>_traj.h5`. If it ends in `.h5` or `.hdf5`, that exact HDF5 path is used. A legacy `.npz` suffix is converted to `.h5`.
+
 The default subprocess command uses:
 
 ```text
@@ -263,7 +265,8 @@ skeleton_tests/output/
 Download is restricted to simple filenames and supported output extensions:
 
 ```text
-.npz
+.h5
+.hdf5
 .json
 .png
 ```

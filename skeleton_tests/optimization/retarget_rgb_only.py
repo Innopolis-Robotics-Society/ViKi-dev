@@ -20,6 +20,14 @@ from typing import Any
 import numpy as np
 
 try:
+    from archive_io import write_hdf5_archive
+except ImportError:  # pragma: no cover - allows package-style imports later.
+    try:
+        from .archive_io import write_hdf5_archive
+    except ImportError:
+        from experiments.archive_io import write_hdf5_archive
+
+try:
     from smoothing import adjusted_savgol_window, smooth_savgol
 except ImportError:  # pragma: no cover - allows package-style imports later.
     try:
@@ -183,15 +191,17 @@ def normalize_robot(robot: str) -> RobotConfig:
 
 def output_traj_path(out: Path, sample_path: Path, robot: RobotConfig) -> Path:
     """Resolve --out into a trajectory archive path."""
-    if out.suffix == ".npz":
+    if out.suffix.lower() in {".h5", ".hdf5"}:
         return out
+    if out.suffix.lower() == ".npz":
+        return out.with_suffix(".h5")
     robot_alias = robot.description.replace("_description", "")
     name = out.name
     if not name.endswith("_traj"):
         name = f"{name}_traj"
     if out.name in {"", "."}:
         name = f"{sample_path.stem}_{robot_alias}_traj"
-    return out.with_name(name + ".npz")
+    return out.with_name(name + ".h5")
 
 
 def safe_float_label(value: float) -> str:
@@ -204,7 +214,7 @@ def sweep_candidate_path(out_dir: Path, sample_path: Path, robot: RobotConfig, c
     name = (
         f"{sample_path.stem}_{robot_alias}_ori{safe_float_label(cfg.ik_orientation_cost)}"
         f"_pos{safe_float_label(cfg.ik_position_cost)}"
-        f"_sub{cfg.ik_substeps}_jtw{cfg.joint_sg_window}_traj.npz"
+        f"_sub{cfg.ik_substeps}_jtw{cfg.joint_sg_window}_traj.h5"
     )
     return out_dir / name
 
@@ -521,7 +531,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     }
     if target_rot is not None:
         archive["ee_target_rot"] = target_rot
-    np.savez(out_path, **archive)
+    write_hdf5_archive(out_path, archive)
 
     summary = {
         "traj_path": str(out_path),
@@ -735,7 +745,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample", required=True, help="Path to experiments/samples/*.npz.")
     parser.add_argument("--robot", default="ur10", help="Robot alias/name: ur10 or iiwa14.")
     parser.add_argument("--working-hand", default="right", choices=["right", "left"], help="Hand to retarget.")
-    parser.add_argument("--out", required=True, help="Output .npz path for a single run, or output directory for --sweep.")
+    parser.add_argument("--out", required=True, help="Output .h5 path for a single run, or output directory for --sweep.")
     parser.add_argument("--sg-window", type=int, default=35, help="Landmark Savitzky-Golay window.")
     parser.add_argument("--sg-polyorder", type=int, default=3, help="Landmark Savitzky-Golay polynomial order.")
     parser.add_argument("--ik-position-cost", type=float, default=1.0, help="PINK frame position cost.")
