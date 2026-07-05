@@ -99,10 +99,6 @@ class PipelineResult:
     detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
 
 
-# Public api
-#
-
-
 # MediaPipe Hands landmark indices
 class LM(IntEnum):
     WRIST = 0

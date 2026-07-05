@@ -265,3 +265,23 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
         timestamp_us=detection.timestamp_us,
     )
 
+
+def calculate_pitch(wrist_point, middle_finger_points):
+    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+def calculate_yaw(wrist_point, middle_finger_points):
+    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+def calculate_roll(wrist_point, thumbs_points):
+    '''Here we use wrist_point (x, y, z) and thumb_points (list(x,y,z) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+'''flexion/extension — сгибание/разгибание
+radial/ulnar deviation — отведение в стороны
+pronation/supination — ключевой поворот кисти'''
+
