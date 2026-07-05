@@ -38,7 +38,7 @@ class MediaPipeHand(PartialLandmarkDetector):
     """Partial detector for one hand (wrist only)."""
 
     name = "hand"
-    indices = (0,)  # Only WRIST
+    indices = tuple(range(21))
     priority = 10
 
     def __init__(

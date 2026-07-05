@@ -8,6 +8,7 @@ import numpy as np
 import viki.config
 
 from viki.calibration.models import CalibrationExtrinsics
+from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame
 
 
@@ -51,7 +52,11 @@ def fuse(
     if not observations:
         all_idxs = set(range(LM.N))
         points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in all_idxs}
-        return SkeletonFrame(points=points, timestamp_us=timestamp_us)
+        return SkeletonFrame(
+            points=points,
+            timestamp_us=timestamp_us,
+            end_effector=compute_end_effector_pose(points, timestamp_us),
+        )
 
     # 1. Compute initial means
     out_points: dict[LM, np.ndarray] = {}
@@ -104,6 +109,7 @@ def fuse(
                 out_points[child] = out_points[parent] + (dir_vec / dist) * clipped_dist
 
     return SkeletonFrame(
-        out_points,
-        timestamp_us,
+        points=out_points,
+        timestamp_us=timestamp_us,
+        end_effector=compute_end_effector_pose(out_points, timestamp_us),
     )

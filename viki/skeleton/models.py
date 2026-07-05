@@ -82,14 +82,54 @@ class Landmarks3D:
 
 
 @dataclass
+class EndEffectorPose:
+    """
+    World-frame pose of the end-effector (wrist).
+
+    Fields
+    ------
+    position     : (3,) float32 — WRIST world XYZ in metres.
+    R_world_palm : (3, 3) float32 — rotation from palm frame to world.
+                   Palm frame:
+                       x_palm = normalise(MIDDLE_MCP - WRIST)
+                       z_palm = normalise((MIDDLE_MCP - WRIST) × (THUMB_CMC - WRIST))
+                       y_palm = z_palm × x_palm
+    rpy_deg      : (3,) float32 — roll/pitch/yaw in degrees, extrinsic XYZ
+                   i.e. R = Rz(yaw) · Ry(pitch) · Rx(roll).
+    valid        : True when every required landmark was present and the
+                   palm frame could be resolved.
+    timestamp_us : same as the containing SkeletonFrame.
+    """
+
+    position: np.ndarray
+    R_world_palm: np.ndarray
+    rpy_deg: np.ndarray
+    valid: bool
+    timestamp_us: int
+
+    def as_dict(self) -> dict:
+        return {
+            "position": self.position.tolist(),
+            "R_world_palm": self.R_world_palm.tolist(),
+            "rpy_deg": self.rpy_deg.tolist(),
+            "valid": self.valid,
+            "timestamp_us": self.timestamp_us,
+        }
+
+
+@dataclass
 class SkeletonFrame:
     points: dict[LM, np.ndarray]
     timestamp_us: int
+    end_effector: Optional[EndEffectorPose] = None
 
     def as_dict(self) -> dict:
         return {
             "points": {index: vec.tolist() for index, vec in self.points.items()},
             "timestamp_us": self.timestamp_us,
+            "end_effector": (
+                self.end_effector.as_dict() if self.end_effector is not None else None
+            ),
         }
 
 
