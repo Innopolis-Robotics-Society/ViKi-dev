@@ -1,0 +1,68 @@
+{
+  "align": "rigid",
+  "alignment_rotation": [
+    [
+      0.9986249303849309,
+      0.04987205408172085,
+      -0.016156318744104996
+    ],
+    [
+      -0.04984836521209977,
+      0.998755054532333,
+      0.001865886330329969
+    ],
+    [
+      0.016229260592286916,
+      -0.0010579545294925915,
+      0.9998677371696925
+    ]
+  ],
+  "alignment_translation_m": [
+    -0.010851198779516125,
+    0.05922278275375506,
+    -0.018936897983236667
+  ],
+  "ee_frame": "tool0",
+  "fps": 14.975216017491052,
+  "frames_under_50mm_pct": 100.0,
+  "human_path": "data\\skeleton_smoothed\\cln-19.40-06.07.2026.npz",
+  "ik_orientation_cost": 0.3,
+  "ik_position_cost": 5.0,
+  "ik_posture_cost": 0.001,
+  "ik_solver": "quadprog",
+  "ik_substeps": 20,
+  "joint_sg_polyorder": 3,
+  "joint_sg_window": 0,
+  "max_error_mm": 4.1861315707046485,
+  "max_orientation_error_deg": 63.54122655750997,
+  "mean_error_mm": 0.5674402812749647,
+  "mean_orientation_error_deg": 14.837942914467078,
+  "median_error_mm": 0.2790985764010819,
+  "median_orientation_error_deg": 5.738138327458898,
+  "num_frames": 30,
+  "orientation_available": true,
+  "p95_error_mm": 1.8612463882856929,
+  "p95_orientation_error_deg": 58.27791079380135,
+  "q_key": "q_scene_smooth",
+  "recenter_offset": [
+    2.106143349934757,
+    -0.019645250829696648,
+    -1.6542385991992181
+  ],
+  "recenter_to_neutral": true,
+  "requested_q_key": "auto",
+  "requested_target_source": "auto",
+  "robot": "ur10_description",
+  "robot_traj_path": "data\\robot_out\\smoke_ur10_hand_se3.h5",
+  "sample": "cln-19.40-06.07.2026",
+  "sg_polyorder": 3,
+  "sg_window": 0,
+  "smooth_polyorder": 3,
+  "smooth_window": 15,
+  "smoothing": "none",
+  "target_orientation_key": "ee_target_rot",
+  "target_source": "ee_target_pos",
+  "threshold_mm": 50.0,
+  "trajectory_scale": 0.25,
+  "working_hand": "right"
+}
