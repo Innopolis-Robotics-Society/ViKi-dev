@@ -18,7 +18,7 @@ def fuse(
     timestamp_us: int,
     confidences: dict[str, dict[LM, float]] | None = None,
     bone_emas: dict[tuple[LM, LM], float] | None = None,
-) -> SkeletonFrame | None:
+) -> SkeletonFrame:
 
     observations: dict[LM, dict[str, np.ndarray]] = {}
 
@@ -36,8 +36,8 @@ def fuse(
         world_points: dict[LM, np.ndarray] = {}
         for index, vec in ps.items():
             if len(vec.flatten()) != 3 or np.isnan(vec).any():
-                continue
-            
+                vec = np.full(3, np.nan, dtype=np.float32)
+
             pos_mtx = np.eye(4)
             pos_mtx[:3, 3] = vec
             world_vec = (T @ pos_mtx)[:3, 3].flatten()
@@ -49,23 +49,25 @@ def fuse(
             observations[index][dev_id] = vec
 
     if not observations:
-        return None
+        all_idxs = set(range(LM.N))
+        points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in all_idxs}
+        return SkeletonFrame(points=points, timestamp_us=timestamp_us)
 
     # 1. Compute initial means
     out_points: dict[LM, np.ndarray] = {}
     for index, points in observations.items():
         weighted_sum = np.zeros(3)
         total_weight = 0.0
-        
+
         for dev_id, vec in points.items():
             # Get confidence for this joint from this camera
             weight = 1.0
             if confidences and dev_id in confidences:
                 weight = confidences[dev_id].get(index, 1.0)
-                
+
             weighted_sum += vec * weight
             total_weight += weight
-            
+
         if total_weight > 1e-6:
             out_points[index] = weighted_sum / total_weight
         else:
@@ -86,10 +88,10 @@ def fuse(
             target_len = viki.config.BONE_LENGTHS.get((parent, child))
             if target_len is None and bone_emas is not None:
                 target_len = bone_emas.get((parent, child))
-            
+
             if target_len is None:
                 continue
-            
+
             # Project child along the observed direction
             dir_vec = out_points[child] - out_points[parent]
             dist = np.linalg.norm(dir_vec)
@@ -97,7 +99,7 @@ def fuse(
                 # Apply soft constraint: only clip if outside [target * (1-TOL), target * (1+TOL)]
                 lower = target_len * (1.0 - tolerance)
                 upper = target_len * (1.0 + tolerance)
-                
+
                 clipped_dist = np.clip(dist, lower, upper)
                 out_points[child] = out_points[parent] + (dir_vec / dist) * clipped_dist
 

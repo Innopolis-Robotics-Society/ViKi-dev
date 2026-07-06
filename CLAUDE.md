@@ -23,6 +23,28 @@ docker compose run --rm terminal
 
 The web UI is at `http://localhost:8000`.
 
+## Frontend
+
+The web UI is a **Streamlit** app in `viki/streamlit_app/`, run as its own process
+(`:8501`) that talks to the FastAPI backend over HTTP (`/api/*`). FastAPI serves no HTML
+itself — `GET /` on `:8000` redirects to Streamlit. `docker compose up` starts both the
+`viki` (FastAPI) and `streamlit` services; the browser opens `http://localhost:8501`.
+
+```
+viki/streamlit_app/
+  app.py              # entry: page config, topbar, st.tabs(Cameras/Calibration/Skeleton/Config)
+  settings.py         # env URLs: VIKI_BACKEND_URL (server-side) / VIKI_BROWSER_BACKEND_URL (embeds)
+  api.py              # ViKiApi: requests wrapper over /api/* (only module that knows paths)
+  embeds.py           # HTML for st.components.v1.html: MJPEG <img>, skeleton WS+canvas
+  sections/           # cameras.py, calibration.py, skeleton.py, config_panel.py
+```
+
+State lives in `st.session_state`. Camera MJPEG streams are embedded as `<img src>` (the
+browser pulls them directly from FastAPI, not through Python). The 3D skeleton is an
+embedded HTML/JS `<canvas>` component driven by the FastAPI skeleton WebSocket. Status
+polling uses `@st.fragment(run_every=...)`. Components never call `requests` directly —
+only through `api.py`.
+
 ## One-time host setup
 
 ```bash
