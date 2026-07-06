@@ -183,3 +183,24 @@ class ViKiApi:
         return self._post(
             "/api/record/start", json={"duration": duration, "fps": fps}
         )
+
+    # -- recordings (browse / download) --------------------------------------
+    # NOTE: these three endpoints are NOT YET implemented on the backend. They
+    # are defined by docs/recordings_api_contract.md and will raise
+    # ``ViKiApiError`` (HTTP 404) until the backend team ships them; sections
+    # catch that and degrade gracefully.
+    def list_recordings(self) -> list[dict]:
+        """GET /api/recordings -> list of session summaries.
+
+        Each item: ``{"name": str, "created_at": str (ISO 8601),
+        "size_bytes": int, "cameras": list[str]}``.
+        """
+        return self._get("/api/recordings")
+
+    def get_recording(self, session: str) -> dict:
+        """GET /api/recordings/{session} -> per-session file tree.
+
+        Returns ``{"name": str, "files": [{"path": str, "device_id": str | None,
+        "kind": str, "size_bytes": int}, ...]}``.
+        """
+        return self._get(f"/api/recordings/{session}")

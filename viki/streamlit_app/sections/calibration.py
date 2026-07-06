@@ -2,12 +2,13 @@
 
 Ports the React CalibrationPanel + calibration.slice.ts: board params
 (chess/ChArUco), per-device live preview streams with sample counts, and the
-Sync / Capture / Intrinsics / Extrinsics / Clear actions.
+Capture / Extrinsics / Clear actions.
 
-The React panel auto-starts a session when opened; Streamlit has no open/close
-lifecycle, so the session is started explicitly via **Sync & Start Session**
-(which also satisfies the backend's "Sync Parameters first" precondition on
-``/api/calibration/capture``). Sample counts are polled with
+The calibration session (the backend precondition for ``/api/calibration/capture``)
+is applied **automatically**: it is (re)started on tab render when cameras are
+present, and re-applied whenever any board parameter changes -- there is no manual
+sync button. Applying does reset -> sync -> start-per-device so new params take
+effect on freshly created workers. Sample counts are polled with
 ``@st.fragment(run_every="1s")`` so only the counts refresh -- the preview
 ``<img>`` streams are rendered outside the fragment and keep running untouched.
 """
@@ -40,9 +41,18 @@ def _build_params() -> dict:
     return base
 
 
-def _sync_and_start() -> None:
-    api = get_api()
+def _apply_calibration_session(*, toast: bool = False) -> None:
+    """(Re)apply the calibration session for the current board params.
+
+    Does reset -> sync -> start-per-device so freshly created workers pick up the
+    latest params. Called automatically on tab render and on every board-param
+    change; no-op when no devices are present. Errors are always surfaced; the
+    success toast is quiet by default so param edits don't spam notifications.
+    """
     devices = st.session_state.get("devices", [])
+    if not devices:
+        return
+    api = get_api()
     params = _build_params()
     board_type = st.session_state.board_type
     try:
@@ -54,7 +64,8 @@ def _sync_and_start() -> None:
             else:
                 api.calibration_start_aruco(d["id"], params)
         st.session_state.calib_session_started = True
-        st.toast("Calibration session started", icon="✅")
+        if toast:
+            st.toast("Calibration session started", icon="✅")
     except ViKiApiError as exc:
         st.error(f"Calibration session start failed: {exc}")
 
@@ -66,21 +77,6 @@ def _capture_sample() -> None:
         st.toast("Sample captured", icon="✅")
     except ViKiApiError as exc:
         st.error(f"Capture failed: {exc}")
-
-
-def _calibrate_intrinsics() -> None:
-    api = get_api()
-    ok, fail = [], []
-    for d in st.session_state.get("devices", []):
-        try:
-            api.calibration_intrinsics(d["id"])
-            ok.append(d["id"])
-        except ViKiApiError as exc:
-            fail.append(f"{d['id']}: {exc}")
-    if ok:
-        st.toast(f"Intrinsics calibrated: {', '.join(ok)}", icon="✅")
-    for f in fail:
-        st.error(f"Intrinsics failed for {f}")
 
 
 def _calibrate_extrinsics() -> None:
@@ -128,7 +124,8 @@ def _sample_counts() -> None:
 
 def _on_board_type_change() -> None:
     """Repopulate board dimension fields from config on type switch (ports the
-    React initBoardFields called by setBoardType)."""
+    React initBoardFields called by setBoardType), then re-apply the session so
+    the new board type takes effect immediately."""
     calib = st.session_state.frontend_config["calibration"]
     if st.session_state.board_type == "chess":
         st.session_state.board_width = calib["chess"]["boardSize"][0]
@@ -140,6 +137,14 @@ def _on_board_type_change() -> None:
         st.session_state.square_size = calib["aruco"]["squareSize"]
         st.session_state.marker_size = calib["aruco"]["markerSize"]
     st.session_state.aruco_dict = calib["aruco"]["defaultDict"]
+    # Board type change is a meaningful switch -> toast so the user sees it.
+    _apply_calibration_session(toast=True)
+
+
+def _on_board_param_change() -> None:
+    """Re-apply the calibration session when a board dimension/param changes so
+    updated params reach the backend workers without a manual sync click."""
+    _apply_calibration_session()
 
 
 def _board_params() -> None:
@@ -153,29 +158,53 @@ def _board_params() -> None:
     )
     c1, c2, c3 = st.columns(3)
     with c1:
-        st.number_input("Board width", min_value=1, step=1, key="board_width")
+        st.number_input(
+            "Board width", min_value=1, step=1, key="board_width",
+            on_change=_on_board_param_change,
+        )
     with c2:
-        st.number_input("Board height", min_value=1, step=1, key="board_height")
+        st.number_input(
+            "Board height", min_value=1, step=1, key="board_height",
+            on_change=_on_board_param_change,
+        )
     with c3:
-        st.number_input("Square size (m)", min_value=0.001, step=0.001, format="%.3f", key="square_size")
+        st.number_input(
+            "Square size (m)", min_value=0.001, step=0.001, format="%.3f",
+            key="square_size", on_change=_on_board_param_change,
+        )
 
     if st.session_state.board_type == "aruco":
         a1, a2 = st.columns(2)
         with a1:
             st.number_input(
-                "Marker size (m)", min_value=0.001, step=0.001, format="%.3f", key="marker_size"
+                "Marker size (m)", min_value=0.001, step=0.001, format="%.3f",
+                key="marker_size", on_change=_on_board_param_change,
             )
         with a2:
             # Value comes from session_state (seeded in init_state); passing an
             # index as well would conflict with the pre-set key.
             if st.session_state.aruco_dict not in ARUCO_DICTS:
                 st.session_state.aruco_dict = ARUCO_DICTS[0]
-            st.selectbox("Dictionary", ARUCO_DICTS, key="aruco_dict")
+            st.selectbox(
+                "Dictionary", ARUCO_DICTS, key="aruco_dict",
+                on_change=_on_board_param_change,
+            )
 
 
 def render() -> None:
     st.subheader("Camera Calibration")
     devices = st.session_state.get("devices", [])
+
+    # Auto-start the session once when cameras are present so "Capture Sample"
+    # works without any click. Re-arm when the device set changes so a rescan
+    # re-applies; guarded so we don't reset/restart on every rerun.
+    device_ids = tuple(d["id"] for d in devices)
+    if devices and st.session_state.get("calib_session_devices") != device_ids:
+        _apply_calibration_session()
+        st.session_state.calib_session_devices = device_ids
+    elif not devices:
+        st.session_state.calib_session_devices = None
+        st.session_state.calib_session_started = False
 
     # --- preview streams (rendered once; keep running across fragment polls) ---
     if not devices:
@@ -198,19 +227,12 @@ def render() -> None:
     st.divider()
 
     _board_params()
-    st.caption("Board parameters are applied when you click Sync & Start Session.")
+    st.caption("Board parameters sync automatically when changed -- no manual step needed.")
 
     st.divider()
 
-    b1, b2, b3 = st.columns(3)
+    b1, b2 = st.columns(2)
     with b1:
-        st.button(
-            "🔄 Sync & Start Session",
-            use_container_width=True,
-            on_click=_sync_and_start,
-            disabled=not devices,
-        )
-    with b2:
         st.button(
             "📸 Capture Sample",
             type="primary",
@@ -218,7 +240,7 @@ def render() -> None:
             on_click=_capture_sample,
             disabled=not devices,
         )
-    with b3:
+    with b2:
         st.button(
             "🗑 Clear Samples",
             use_container_width=True,
@@ -226,22 +248,13 @@ def render() -> None:
             disabled=not devices,
         )
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.button(
-            "Calibrate Intrinsics",
-            use_container_width=True,
-            on_click=_calibrate_intrinsics,
-            disabled=not devices,
-        )
-    with c2:
-        st.button(
-            "Calibrate Extrinsics",
-            type="primary",
-            use_container_width=True,
-            on_click=_calibrate_extrinsics,
-            disabled=not devices,
-        )
+    st.button(
+        "Calibrate Extrinsics",
+        type="primary",
+        use_container_width=True,
+        on_click=_calibrate_extrinsics,
+        disabled=not devices,
+    )
 
     st.caption("Extrinsic calibration requires at least 1 sample per camera.")
 
