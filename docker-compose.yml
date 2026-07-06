@@ -2,7 +2,7 @@ x-common: &common
   build:
     context: .
     dockerfile: docker/Dockerfile
-    target: prod
+    target: backend
   network_mode: host
   privileged: true
   volumes:
@@ -32,12 +32,19 @@ services:
   # Streamlit web UI (the frontend). Talks to the FastAPI service over HTTP on
   # localhost:8000 (host networking), and the browser reaches it on :8501.
   streamlit:
-    <<: *common
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    network_mode: host
+    volumes:
+      - ./viki:/app/viki
+    environment:
+      - PYTHONUNBUFFERED=1
+      - PYTHONPATH=/app
     container_name: viki-streamlit
     restart: unless-stopped
     depends_on:
       - viki
-    entrypoint: ["/app/docker/entrypoint.sh"]
     command:
       - streamlit
       - run

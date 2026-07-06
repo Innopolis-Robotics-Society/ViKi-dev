@@ -23,7 +23,13 @@ import streamlit as st
 # submodules below are then loaded as package members, so their own relative
 # imports work.
 from viki.streamlit_app.api import ViKiApiError
-from viki.streamlit_app.sections import calibration, cameras, config_panel, skeleton
+from viki.streamlit_app.sections import (
+    calibration,
+    cameras,
+    config_panel,
+    recordings,
+    skeleton,
+)
 from viki.streamlit_app.state import get_api, init_state, scan_devices
 
 
@@ -56,10 +62,12 @@ def _stop_all() -> None:
 
 def _record_rgbd() -> None:
     api = get_api()
-    rec = st.session_state.frontend_config["recording"]
+    sc = st.session_state.get("server_config", {})
+    duration = sc.get("RECORDING_DURATION", 10.0)
+    fps = sc.get("RECORDING_FPS", 15)
     try:
-        res = api.record_start(duration=rec["duration"], fps=rec["fps"])
-        st.toast(f"RGB-D recording started ({rec['duration']}s)", icon="🔴")
+        res = api.record_start(duration=duration, fps=fps)
+        st.toast(f"RGB-D recording started ({duration}s)", icon="🔴")
         if isinstance(res, dict) and res.get("status"):
             st.session_state["_last_record_status"] = res["status"]
     except ViKiApiError as exc:
@@ -103,7 +111,7 @@ def _topbar() -> None:
         )
     with cols[4]:
         st.button(
-            "🔴 Record RGB-D",
+            "Record",
             use_container_width=True,
             on_click=_record_rgbd,
             disabled=not st.session_state.get("devices"),
@@ -116,8 +124,8 @@ def main() -> None:
     _topbar()
     st.divider()
 
-    tab_cameras, tab_calib, tab_skeleton, tab_config = st.tabs(
-        ["Cameras", "Calibration", "Skeleton", "Config"]
+    tab_cameras, tab_calib, tab_skeleton, tab_recordings, tab_config = st.tabs(
+        ["Cameras", "Calibration", "Skeleton", "Recordings", "Config"]
     )
     with tab_cameras:
         cameras.render()
@@ -125,6 +133,8 @@ def main() -> None:
         calibration.render()
     with tab_skeleton:
         skeleton.render()
+    with tab_recordings:
+        recordings.render()
     with tab_config:
         config_panel.render()
 
