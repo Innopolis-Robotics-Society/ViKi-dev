@@ -38,11 +38,11 @@ Each frame is expected to contain `landmarks` in either list or dict form. The c
 22     shoulder
 ```
 
-For the current wrist-only phase, landmark `0` is the robot target. Elbow and shoulder are ignored unless `include_arm=true` is explicitly requested.
+Recordings with only landmarks `0..20` are also accepted by the converter. For optimisation, elbow `21` and shoulder `22` are ignored. Landmark `0` supplies the wrist position target. Landmarks `0`, `1`, and `9` supply the palm orientation for `hand_se3`.
 
 ## Conversion Contract
 
-`optimization/convert_viki23_json.py` converts a ViKi 23-landmark JSON recording into the optimiser sample format:
+`optimization/convert_viki23_json.py` converts a ViKi skeleton JSON recording into the optimiser sample format:
 
 ```text
 body:          (T, 33, 3)
@@ -58,7 +58,8 @@ source_json
 source
 coordinate_frame
 working_hand
-include_arm
+orientation_valid
+orientation_valid_frames
 ```
 
 For right-hand wrist-only export:
@@ -73,16 +74,9 @@ For left-hand wrist-only export:
 ViKi landmark 0 -> MediaPipe body index 15
 ```
 
-When `include_arm=true`, elbow and shoulder are copied as well:
-
-```text
-right elbow    -> body index 14
-right shoulder -> body index 12
-left elbow     -> body index 13
-left shoulder  -> body index 11
-```
-
 The converter stores `coordinate_frame="viki_world_or_camera"` by default. Retargeting keeps the legacy coordinate transform for this frame. Samples marked `coordinate_frame="robot_base"` skip that legacy transform.
+
+`orientation_valid` is computed from the raw recording before the converter fills missing landmark coordinates for smoothing. That keeps missing or collinear palm-bone frames visible to `hand_se3`; retargeting fills those rotations from the nearest valid frame and records the validity mask in the HDF5 output.
 
 ## CLI Usage
 
@@ -93,16 +87,6 @@ python skeleton_tests\optimization\convert_viki23_json.py `
   --input rec_1782584807_smoothed.json `
   --out skeleton_tests\samples\rec_1782584807_smoothed_wrist_only.npz `
   --hand right
-```
-
-Include elbow and shoulder only when needed for later experiments:
-
-```powershell
-python skeleton_tests\optimization\convert_viki23_json.py `
-  --input rec_1782584807_smoothed.json `
-  --out skeleton_tests\samples\rec_1782584807_smoothed_arm.npz `
-  --hand right `
-  --include-arm
 ```
 
 Run retargeting directly through the expected FK conda environment:
@@ -165,8 +149,7 @@ Request:
 {
   "recording": "rec_1782584807_smoothed.json",
   "output_name": "rec_1782584807_smoothed_wrist_only.npz",
-  "hand": "right",
-  "include_arm": false
+  "hand": "right"
 }
 ```
 
@@ -176,7 +159,7 @@ The output is written under:
 skeleton_tests/samples/
 ```
 
-The response includes output path, frame count, fps, working hand, and `include_arm`.
+The response includes output path, frame count, fps, working hand, and orientation-valid frame counts.
 
 ### List Samples
 
@@ -275,12 +258,22 @@ Path traversal is rejected.
 
 ## Retargeting Behavior
 
-Use `target_mode="wrist_position"` for the current phase. In this mode, `effective_orientation_cost()` is forced to `0`, so hand orientation, elbow, and shoulder do not drive the robot trajectory.
+Use `target_mode="wrist_position"` for position-only retargeting. In this mode, `effective_orientation_cost()` is forced to `0`, so orientation does not drive the robot trajectory.
+
+Use `target_mode="hand_se3"` to use wrist position plus palm orientation. The palm frame is derived from hand bones:
+
+```text
+x_palm = normalize(MIDDLE_MCP - WRIST)
+z_palm = normalize((MIDDLE_MCP - WRIST) x (THUMB_CMC - WRIST))
+y_palm = z_palm x x_palm
+```
+
+`hand_se3` writes `ee_target_rot` and `orientation_valid` into the HDF5 trajectory output.
 
 The intended current flow is:
 
 ```text
-ViKi skeleton wrist -> optimiser sample -> wrist_position retargeting
+ViKi skeleton recording -> hand-only optimiser sample -> wrist_position or hand_se3 retargeting
 ```
 
 Debug mode:
@@ -302,6 +295,7 @@ Do not use `--recenter-to-neutral` for calibrated robot-base trajectories becaus
 Run the focused tests from the repo root:
 
 ```powershell
+python -m unittest discover viki\skeleton
 python -m unittest viki.server.routes.test_optimization
 python -m unittest discover skeleton_tests\optimization
 ```

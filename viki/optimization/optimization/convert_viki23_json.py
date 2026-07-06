@@ -1,9 +1,9 @@
-"""Convert ViKi-dev 23-landmark skeleton JSON to experiment sample npz.
+"""Convert ViKi-dev skeleton JSON to experiment sample npz.
 
-The ViKi-dev skeleton layout is:
-  0..20: MediaPipe hand landmarks
-  21: elbow
-  22: shoulder
+The current ViKi-dev skeleton layout has 0..20 MediaPipe hand landmarks,
+with elbow and shoulder in slots 21 and 22. This converter copies only
+0..20 into the optimiser hand arrays and ignores 21/22. Older 21-landmark
+hand-only recordings are also accepted.
 
 The retargeting experiments expect MediaPipe-style arrays:
   body: (T, 33, 3)
@@ -20,13 +20,11 @@ from typing import Any
 
 import numpy as np
 
+from viki.skeleton.hand_angles import compute_palm_rotation
 
-RIGHT_SHOULDER = 12
-RIGHT_ELBOW = 14
 RIGHT_WRIST = 16
-LEFT_SHOULDER = 11
-LEFT_ELBOW = 13
 LEFT_WRIST = 15
+HAND_LANDMARKS = 21
 
 
 def interpolate_nans(points: np.ndarray) -> np.ndarray:
@@ -59,13 +57,13 @@ def estimate_fps(timestamps_us: np.ndarray) -> float:
     return float(1.0 / np.median(dt))
 
 
-def load_viki23_json(path: Path) -> tuple[np.ndarray, np.ndarray]:
+def load_viki_hand_json(path: Path) -> tuple[np.ndarray, np.ndarray]:
     with path.open("r", encoding="utf-8") as f:
         frames: list[dict[str, Any]] = json.load(f)
     if not frames:
         raise ValueError(f"{path} contains no frames.")
 
-    landmarks = np.full((len(frames), 23, 3), np.nan, dtype=np.float64)
+    landmarks = np.full((len(frames), HAND_LANDMARKS, 3), np.nan, dtype=np.float64)
     timestamps = np.zeros(len(frames), dtype=np.int64)
     for frame_idx, frame in enumerate(frames):
         timestamps[frame_idx] = int(frame.get("ts", frame_idx))
@@ -77,36 +75,47 @@ def load_viki23_json(path: Path) -> tuple[np.ndarray, np.ndarray]:
         else:
             items = enumerate(raw)
         for idx, value in items:
-            if 0 <= idx < 23:
+            if 0 <= idx < HAND_LANDMARKS:
                 vec = np.asarray(value, dtype=np.float64)
                 if vec.shape == (3,):
                     landmarks[frame_idx, idx] = vec
-    return interpolate_nans(landmarks), timestamps
+    return landmarks, timestamps
 
 
-def convert(input_path: Path, output_path: Path, hand: str, include_arm: bool) -> dict[str, Any]:
-    landmarks, timestamps = load_viki23_json(input_path)
+def orientation_valid_mask(landmarks: np.ndarray) -> np.ndarray:
+    valid = np.zeros(len(landmarks), dtype=bool)
+    for frame_idx, frame in enumerate(landmarks):
+        valid[frame_idx] = (
+            compute_palm_rotation(frame[0], frame[1], frame[9]) is not None
+        )
+    return valid
+
+
+def convert(
+    input_path: Path,
+    output_path: Path,
+    hand: str,
+    include_arm: bool | None = None,
+) -> dict[str, Any]:
+    _ = include_arm  # Deprecated compatibility field; arm landmarks are ignored.
+    raw_landmarks, timestamps = load_viki_hand_json(input_path)
+    landmarks = interpolate_nans(raw_landmarks)
     body = np.full((len(landmarks), 33, 3), np.nan, dtype=np.float64)
     right_hand = np.full((len(landmarks), 21, 3), np.nan, dtype=np.float64)
     left_hand = np.full((len(landmarks), 21, 3), np.nan, dtype=np.float64)
+    orientation_valid = orientation_valid_mask(raw_landmarks)
 
     if hand == "right":
-        right_hand[:] = landmarks[:, :21, :]
+        right_hand[:] = landmarks
         body[:, RIGHT_WRIST, :] = landmarks[:, 0, :]
-        if include_arm:
-            body[:, RIGHT_ELBOW, :] = landmarks[:, 21, :]
-            body[:, RIGHT_SHOULDER, :] = landmarks[:, 22, :]
     elif hand == "left":
-        left_hand[:] = landmarks[:, :21, :]
+        left_hand[:] = landmarks
         body[:, LEFT_WRIST, :] = landmarks[:, 0, :]
-        if include_arm:
-            body[:, LEFT_ELBOW, :] = landmarks[:, 21, :]
-            body[:, LEFT_SHOULDER, :] = landmarks[:, 22, :]
     else:
         raise ValueError("hand must be 'right' or 'left'.")
 
-    # Fill unused body slots from the active arm landmarks so whole-array
-    # smoothing does not propagate NaNs.
+    # Fill unused body slots from the active wrist so whole-array smoothing
+    # does not propagate NaNs.
     active_wrist = RIGHT_WRIST if hand == "right" else LEFT_WRIST
     for idx in range(body.shape[1]):
         missing = ~np.isfinite(body[:, idx, :]).all(axis=1)
@@ -129,30 +138,35 @@ def convert(input_path: Path, output_path: Path, hand: str, include_arm: bool) -
         fps=fps,
         frame_count=len(landmarks),
         timestamps_us=timestamps,
+        orientation_valid=orientation_valid,
+        orientation_valid_frames=int(orientation_valid.sum()),
         source_json=str(input_path),
-        source="viki23_depth_skeleton",
+        source="viki_hand_depth_skeleton",
         coordinate_frame="viki_world_or_camera",
         working_hand=hand,
-        include_arm=bool(include_arm),
     )
     summary = {
         "output_path": str(output_path),
         "frames": int(len(landmarks)),
         "fps": float(fps),
         "working_hand": hand,
-        "include_arm": bool(include_arm),
+        "orientation_valid_frames": int(orientation_valid.sum()),
+        "orientation_total_frames": int(len(orientation_valid)),
     }
     print(f"Saved {output_path}")
-    print(f"frames={len(landmarks)}, fps={fps:.3f}, hand={hand}, include_arm={include_arm}")
+    print(
+        f"frames={len(landmarks)}, fps={fps:.3f}, hand={hand}, "
+        f"orientation_valid={int(orientation_valid.sum())}/{len(orientation_valid)}"
+    )
     return summary
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Convert ViKi-dev 23-landmark skeleton JSON to experiment sample npz.")
+    parser = argparse.ArgumentParser(description="Convert ViKi-dev skeleton JSON to experiment sample npz.")
     parser.add_argument("--input", required=True, help="Input rec_*.json file.")
     parser.add_argument("--out", required=True, help="Output sample .npz path.")
-    parser.add_argument("--hand", default="right", choices=["right", "left"], help="Which hand the 23 landmarks represent.")
-    parser.add_argument("--include-arm", action="store_true", help="Also copy elbow/shoulder into body slots.")
+    parser.add_argument("--hand", default="right", choices=["right", "left"], help="Which hand the landmarks represent.")
+    parser.add_argument("--include-arm", action="store_true", help=argparse.SUPPRESS)
     return parser
 
 

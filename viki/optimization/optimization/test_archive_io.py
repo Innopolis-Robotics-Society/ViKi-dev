@@ -23,6 +23,8 @@ class ArchiveIoTests(unittest.TestCase):
                     "robot": "ur10_description",
                     "fps": 30.0,
                     "recenter_to_neutral": True,
+                    "ee_target_rot": np.repeat(np.eye(3)[None, :, :], 3, axis=0),
+                    "orientation_valid": np.array([True, False, True]),
                 },
             )
 
@@ -32,6 +34,11 @@ class ArchiveIoTests(unittest.TestCase):
                 self.assertEqual(archive["robot"], "ur10_description")
                 self.assertEqual(float(archive["fps"]), 30.0)
                 self.assertTrue(bool(archive["recenter_to_neutral"]))
+                np.testing.assert_allclose(
+                    archive["ee_target_rot"],
+                    np.repeat(np.eye(3)[None, :, :], 3, axis=0),
+                )
+                np.testing.assert_array_equal(archive["orientation_valid"], [True, False, True])
 
 
 if __name__ == "__main__":

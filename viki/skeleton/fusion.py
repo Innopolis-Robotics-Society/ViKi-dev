@@ -8,6 +8,7 @@ import numpy as np
 import viki.config
 
 from viki.calibration.models import CalibrationExtrinsics
+from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame
 
 
@@ -106,4 +107,5 @@ def fuse(
     return SkeletonFrame(
         out_points,
         timestamp_us,
+        end_effector=compute_end_effector_pose(out_points, timestamp_us),
     )

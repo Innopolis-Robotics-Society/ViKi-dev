@@ -10,7 +10,7 @@ relative z coordinate.
 """
 
 from __future__ import annotations
-from typing import Optional
+from typing import Any, Optional
 from time import sleep, time
 import random
 from concurrent.futures import ThreadPoolExecutor
@@ -23,7 +23,6 @@ from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDA
 logger = logging.getLogger(__name__)
 
 
-from viki.capture.kinect import KinectBackend
 from viki.skeleton.models import HandDetection, Landmarks3D, LM, PreparedFrame
 
 
@@ -61,7 +60,7 @@ def _pixel_to_3d(
     return np.array([X, Y, Z], dtype=np.float32)
 
 
-def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: KinectBackend, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray] = None) -> tuple[float, float, float] | None:
+def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: Any, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray] = None) -> tuple[float, float, float] | None:
     """
     Maps a pixel from the color camera to the depth camera coordinate space,
     validated against the SDK's estimation if available.
@@ -71,7 +70,7 @@ def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: K
     """
     return backend.get_validated_depth(u, v, Z, raw_depth, aligned_depth)
 
-def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBackend) -> Landmarks3D:
+def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> Landmarks3D:
     """
     Deproject all 23 pixel landmarks into 3-D camera space using converge/diverge priority.
     """

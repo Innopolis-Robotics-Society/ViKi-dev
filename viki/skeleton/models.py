@@ -7,7 +7,7 @@ Dataclasses for data flowing between skeleton pipeline stages.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, IntEnum
+from enum import IntEnum
 from typing import Optional
 
 import numpy as np
@@ -23,7 +23,7 @@ class PreparedFrame:
     A single camera frame ready for model inference.
 
     Produced by camera_prep from a raw Frame:
-      - color is undistorted and converted BGR → RGB
+      - color is undistorted and converted BGR to RGB
       - depth is float32 metres with 0 replaced by nan
 
     Carries K so that downstream geometry code doesn't need to reach
@@ -61,7 +61,7 @@ class HandDetection:
     """
 
     points: dict[LM, np.ndarray]
-    lm_z_rel: np.ndarray  # float32 — MediaPipe relative z
+    lm_z_rel: np.ndarray  # float32, MediaPipe relative z
     confidence: float
     device_id: str
     timestamp_us: int
@@ -76,7 +76,34 @@ class Landmarks3D:
     def as_dict(self) -> dict:
         return {
             "device_id": self.device_id,
-            "points": {index: vec.tolist() for index, vec in self.points.items()},
+            "points": {index.value: vec.tolist() for index, vec in self.points.items()},
+            "timestamp_us": self.timestamp_us,
+        }
+
+
+@dataclass
+class EndEffectorPose:
+    """
+    World-frame wrist pose derived from hand bones.
+
+    R_world_palm columns are the palm-frame axes expressed in world frame:
+      x: WRIST -> MIDDLE_MCP
+      z: palm normal from (MIDDLE_MCP - WRIST) x (THUMB_CMC - WRIST)
+      y: z x x
+    """
+
+    position: np.ndarray
+    R_world_palm: np.ndarray
+    rpy_deg: np.ndarray
+    valid: bool
+    timestamp_us: int
+
+    def as_dict(self) -> dict:
+        return {
+            "position": self.position.tolist(),
+            "R_world_palm": self.R_world_palm.tolist(),
+            "rpy_deg": self.rpy_deg.tolist(),
+            "valid": self.valid,
             "timestamp_us": self.timestamp_us,
         }
 
@@ -85,12 +112,16 @@ class Landmarks3D:
 class SkeletonFrame:
     points: dict[LM, np.ndarray]
     timestamp_us: int
+    end_effector: EndEffectorPose | None = None
 
     def as_dict(self) -> dict:
-        return {
-            "points": {index: vec.tolist() for index, vec in self.points.items()},
+        record = {
+            "points": {index.value: vec.tolist() for index, vec in self.points.items()},
             "timestamp_us": self.timestamp_us,
         }
+        if self.end_effector is not None:
+            record["end_effector"] = self.end_effector.as_dict()
+        return record
 
 
 @dataclass
