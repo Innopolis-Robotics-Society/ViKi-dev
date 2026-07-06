@@ -1,15 +1,11 @@
 """
 viki.skeleton.hand_angles
 -------------------------
-<<<<<<< HEAD
-Palm-frame orientation from 3-D hand landmarks.
-=======
 Hand orientation from a 3-D skeleton frame
 
-1. compute_hand_angles is deprecated and used for live-demo usage only
+compute_hand_angles is deprecated and used for live-demo usage only
 Angles expressed in a *forearm-local* right-handed basis, so they
 are invariant to overall arm/body rotation in the world
-
 
 Required landmarks:
     WRIST, ELBOW, SHOULDER, THUMB_CMC, MIDDLE_MCP
@@ -19,8 +15,7 @@ Angles (all in degrees, sign consistent with the applied rotation):
     deviation_deg  : angle of ``to_middle`` in the (x, z) plane,
     roll_deg       : angle of ``palm_normal`` in the (y, z) plane,
 
-
-2. ``compute_end_effector_pose`` is world-frame
+compute_end_effector_pose is world-frame
 
 Returns the full world-frame pose of the wrist end-effector: 3-D position
 plus a proper rotation matrix ``R_world_palm ∈ SO(3)`` from a palm-attached
@@ -28,7 +23,9 @@ frame to the world
 
 Required landmarks:
     WRIST, THUMB_CMC, MIDDLE_MCP  (no elbow / shoulder needed).
->>>>>>> 5527db99f1e8525dbcca29c0e3ff6414454b266c
+
+compute_palm_rotation is the palm-only rotation sub-routine used by the
+optimization module.
 """
 
 from __future__ import annotations
@@ -200,6 +197,32 @@ def _rot_to_rpy_extrinsic_xyz(R: np.ndarray) -> np.ndarray:
         roll = float(np.arctan2(R[2, 1], R[2, 2]))
         yaw = float(np.arctan2(R[1, 0], R[0, 0]))
     return np.array([roll, pitch, yaw], dtype=np.float64)
+
+
+def compute_palm_rotation(
+    wrist: np.ndarray,
+    thumb_cmc: np.ndarray,
+    middle_mcp: np.ndarray,
+) -> np.ndarray | None:
+    coords = [np.asarray(p, dtype=np.float64) for p in (wrist, thumb_cmc, middle_mcp)]
+    if any(not np.all(np.isfinite(p)) for p in coords):
+        return None
+
+    to_middle = coords[2] - coords[0]
+    to_thumb = coords[1] - coords[0]
+
+    x_palm = _normalise(to_middle)
+    z_palm = _normalise(np.cross(to_middle, to_thumb))
+    if x_palm is None or z_palm is None:
+        return None
+
+    y_palm = np.cross(z_palm, x_palm)
+    y_norm = float(np.linalg.norm(y_palm))
+    if y_norm < _MIN_LEN:
+        return None
+    y_palm = y_palm / y_norm
+
+    return np.column_stack([x_palm, y_palm, z_palm]).astype(np.float32)
 
 
 def _invalid_pose(timestamp_us: int) -> EndEffectorPose:

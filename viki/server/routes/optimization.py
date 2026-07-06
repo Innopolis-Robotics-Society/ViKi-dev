@@ -22,16 +22,15 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from skeleton_tests.optimization.convert_viki23_json import convert
+from viki.optimization.optimization.convert_viki23_json import convert
 
 
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SKELETON_TESTS_DIR = PROJECT_ROOT / "skeleton_tests"
-OPTIMIZATION_DIR = SKELETON_TESTS_DIR / "optimization"
-SAMPLES_DIR = SKELETON_TESTS_DIR / "samples"
-OUTPUT_DIR = SKELETON_TESTS_DIR / "output"
+OPTIMIZATION_DIR = PROJECT_ROOT / "viki" / "optimization" / "optimization"
+SAMPLES_DIR = PROJECT_ROOT / "data" / "optimization_samples"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "optimization_output"
 RECORDING_DIRS = (PROJECT_ROOT, PROJECT_ROOT / "data" / "skeleton_recs")
 OUTPUT_SUFFIXES = {".h5", ".hdf5", ".json", ".png"}
 COND_ENV_VAR = "VIKI_OPT_CONDA_EXE"

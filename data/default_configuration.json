@@ -65,9 +65,6 @@
   ],
   "KINECT_DEPTH_MODE_MAX_FPS": {
     "WFOV_UNBINNED": 15
-<<<<<<< HEAD
-  }
-=======
   },
   "WEBCAM_RESOLUTIONS": [
     "640x480",
@@ -77,6 +74,7 @@
   "WEBCAM_FPS": [
     15,
     30
-  ]
->>>>>>> main
+  ],
+  "SKELETON_RECS_DIR": "data/skeleton_recs",
+  "SKELETON_SMOOTHED_DIR": "data/skeleton_smoothed"
 }

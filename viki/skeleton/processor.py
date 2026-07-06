@@ -42,11 +42,11 @@ class SkeletonProcessor:
         filename: str, 
         window_length: int = 7, 
         polyorder: int = 2
-    ) -> str:
+    ) -> tuple[str, np.ndarray]:
         """
         Load a recording, smooth its landmarks, and compute end-effector poses.
         Saves result to the smoothed directory.
-        Returns the path to the smoothed file.
+        Returns (path to the smoothed file, smoothed_points array of shape (T, L, 3)).
         """
         input_path = self.recs_dir / filename
         if not input_path.exists():
@@ -102,4 +102,4 @@ class SkeletonProcessor:
             timestamps=timestamps
         )
 
-        return str(output_path)
+        return str(output_path), smoothed_points

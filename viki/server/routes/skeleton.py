@@ -87,7 +87,7 @@ async def smooth_recording(
     processor: SkeletonProcessor = Depends(get_processor)
 ):
     try:
-        path = processor.smooth_recording(
+        path, _ = processor.smooth_recording(
             filename, 
             window_length=req.window_length, 
             polyorder=req.polyorder

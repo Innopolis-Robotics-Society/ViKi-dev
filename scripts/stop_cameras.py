@@ -9,14 +9,14 @@ def stop_all_cameras():
         response = requests.get(f"{BASE_URL}/devices")
         response.raise_for_status()
         devices = response.json()
-
+        
         active_cameras = devices.get("active", [])
         if not active_cameras:
             print("No active cameras to stop.")
             return
 
         print(f"Stopping {len(active_cameras)} active cameras: {', '.join(active_cameras)}")
-
+        
         # 2. Stop each active camera
         for camera_id in active_cameras:
             stop_url = f"{BASE_URL}/cameras/{camera_id}/stop"

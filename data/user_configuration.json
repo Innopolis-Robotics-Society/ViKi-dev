@@ -65,5 +65,7 @@
   ],
   "KINECT_DEPTH_MODE_MAX_FPS": {
     "WFOV_UNBINNED": 15
-  }
+  },
+  "SKELETON_RECS_DIR": "data/skeleton_recs",
+  "SKELETON_SMOOTHED_DIR": "data/skeleton_smoothed"
 }
