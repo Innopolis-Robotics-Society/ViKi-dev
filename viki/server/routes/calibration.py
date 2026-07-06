@@ -305,7 +305,6 @@ async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
 @router.get("/{device_id}/stream")
 def marked_stream(
     device_id: str,
-    undistort: bool = True,
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):

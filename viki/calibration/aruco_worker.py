@@ -238,15 +238,22 @@ class ArucoWorker(_CalibrationWorker):
 
     def mark_board(self, frame: Frame) -> np.ndarray:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-        markers_raw, ids_raw, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
+        markers_raw, ids_raw, _ = self.aruco_detector.detectMarkers(gray)
         if ids_raw is None:
             return frame.color
         corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
         if m_ids is None or len(m_ids) == 0 or c_ids is None or len(c_ids) == 0:
             return frame.color
         debug_img = frame.color.copy()
-        cv2.aruco.drawDetectedMarkers(
-            debug_img, markers, m_ids, borderColor=(0, 255, 0)
-        )
-        cv2.aruco.drawDetectedCornersCharuco(debug_img, corners, c_ids, (0, 0, 255))
+        try:
+            cv2.aruco.drawDetectedMarkers(
+                debug_img, markers, m_ids, borderColor=(0, 255, 0)
+            )
+            corners_pts = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+            corner_ids = np.asarray(c_ids, dtype=np.int32).reshape(-1, 1)
+            cv2.aruco.drawDetectedCornersCharuco(
+                debug_img, corners_pts, corner_ids, (0, 0, 255)
+            )
+        except:
+            pass
         return debug_img
