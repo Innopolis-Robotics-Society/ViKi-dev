@@ -26,6 +26,7 @@ from viki.optimization.optimization.retarget_rgb_only import (
     output_traj_path,
     should_apply_legacy_transform,
     transform_points,
+    transform_rotations_to_robot,
 )
 
 
@@ -180,7 +181,14 @@ class RetargetLogicTests(unittest.TestCase):
             rotations = np.stack([np.eye(3), np.full((3, 3), np.nan)]).astype(np.float32)
             valid = np.array([True, True])
             timestamps = np.array([1_000_000, 1_100_000], dtype=np.int64)
-            np.savez(path, positions=positions, rotations=rotations, valid=valid, timestamps=timestamps)
+            np.savez(
+                path,
+                positions=positions,
+                rotations=rotations,
+                valid=valid,
+                timestamps=timestamps,
+                coordinate_frame="robot_base",
+            )
 
             loaded = load_smoothed_targets(path, "right", limit_frames=None)
 
@@ -202,6 +210,7 @@ class RetargetLogicTests(unittest.TestCase):
                 rotations=np.tile(np.eye(3), (2, 1, 1)),
                 valid=np.array([True, True]),
                 timestamps=np.array([0, 100_000], dtype=np.int64),
+                coordinate_frame="robot_base",
             )
 
             with patch("viki.optimization.optimization.retarget_rgb_only.smooth_savgol") as smooth:
@@ -226,12 +235,32 @@ class RetargetLogicTests(unittest.TestCase):
                 rotations=np.tile(np.eye(3), (3, 1, 1)),
                 valid=np.array([True, True, True]),
                 timestamps=np.array([0, 100_000, 200_000], dtype=np.int64),
+                coordinate_frame="robot_base",
             )
 
             loaded = load_smoothed_targets(path, "right", None)
 
             np.testing.assert_allclose(loaded.body[:, 16, :], [[0, 0, 0], [1, 2, 3], [2, 4, 6]])
             np.testing.assert_array_equal(loaded.orientation_valid, [True, True, True])
+
+    def test_smoothed_targets_apply_legacy_transform_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-legacy.npz"
+            positions = np.array([[1.0, 2.0, 3.0]], dtype=np.float64)
+            rotations = np.tile(np.eye(3), (1, 1, 1))
+            np.savez(
+                path,
+                positions=positions,
+                rotations=rotations,
+                valid=np.array([True]),
+                timestamps=np.array([0], dtype=np.int64),
+            )
+
+            loaded = load_smoothed_targets(path, "right", None)
+
+            np.testing.assert_allclose(loaded.body[:, 16, :], transform_points(positions))
+            np.testing.assert_allclose(loaded.target_rotations, transform_rotations_to_robot(rotations))
+            np.testing.assert_array_equal(loaded.orientation_valid, [True])
 
     def test_smoothed_targets_reject_malformed_archive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

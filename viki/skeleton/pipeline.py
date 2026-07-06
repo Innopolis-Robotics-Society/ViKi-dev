@@ -5,7 +5,7 @@ Public orchestrator for the skeleton detection pipeline.
 """
 
 from __future__ import annotations
- 
+
 from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
@@ -50,6 +50,7 @@ class SkeletonPipeline:
     ----------
     calibrator : CalibrationManager
         Provides per-device intrinsics and extrinsics for prep, lift, fusion.
+    detector : optional CompositeLandmarkDetector.
     hand : {"right", "left"}
         Which arm/hand to track for the default detector.
     """
@@ -93,30 +94,30 @@ class SkeletonPipeline:
         """
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
- 
+
         # 1. Run detections in parallel across all cameras
         futures = {
-            self._executor.submit(self._detect_camera, dev_id, group): dev_id 
+            self._executor.submit(self._detect_camera, dev_id, group): dev_id
             for dev_id in group.frames.keys()
         }
- 
+
         for future in futures:
             dev_id, det, prepared = future.result()
             detections[dev_id] = det
             # 2. Lift to 3D (sequential, but fast)
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
-        
+
         # Extract confidences for weighted fusion
         confidences: dict[str, dict[LM, float]] = {}
         for dev_id, det in detections.items():
             if det:
                 # MediaPipe confidence is overall, but if we have per-landmark we'd use it.
-                # Currently HandDetection only has overall confidence. 
+                # Currently HandDetection only has overall confidence.
                 # We'll map this overall confidence to all landmarks for now.
                 confidences[dev_id] = {LM(i): det.confidence for i in range(LM.N)}
-        
+
         # Fusion logic:
-        
+
         # Master camera is the first device in the group.
 
         # Subordinate camera is the second device (if available).
@@ -152,15 +153,15 @@ class SkeletonPipeline:
                 extrinsics[dev_id] = extr
 
         fused = fuse(
-            dev_ids, 
-            lms_3d, 
-            extrinsics, 
-            group.sync_timestamp_us, 
-            confidences=confidences, 
+            dev_ids,
+            lms_3d,
+            extrinsics,
+            group.sync_timestamp_us,
+            confidences=confidences,
             bone_emas=self._bone_emas,
         )
 
-        if fused:
+        if not np.isnan([x for _, x in fused.points.items()]).any():
             # Update bone EMAs from the fused result
             for parent, child in self._tracked_bones:
                 if parent in fused.points and child in fused.points:
@@ -183,23 +184,23 @@ class SkeletonPipeline:
 
         return PipelineResult(fused_frame=fused, detections=detections)
 
-    def _detect_camera(self, dev_id: str, group: SyncedFrameGroup) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
+    def _detect_camera(
+        self, dev_id: str, group: SyncedFrameGroup
+    ) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
         """Helper for parallel detection."""
         prepared = self._prepare_camera(dev_id, group)
         if prepared is None:
             return dev_id, None, None
-        
+
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
                 detectors=[
-                    MediaPipeArm(hand=self._hand, mode="live"),
+                    # MediaPipeArm(hand=self._hand, mode="live"),
                     MediaPipeHand(hand=self._hand, mode="live"),
                 ],
                 mode=FusionMode.ANY,
             )
 
-
-        
         det = self._detectors[dev_id].detect(prepared)
         return dev_id, det, prepared
 
@@ -223,7 +224,7 @@ class SkeletonPipeline:
         if frame is None:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
-        
+
         intrinsics = self._calibrator.get_intrinsics(device_id)
         if intrinsics is None:
             # Fallback to identity-like intrinsics so we can still get 2D detections
@@ -233,36 +234,41 @@ class SkeletonPipeline:
         else:
             K = intrinsics.camera_matrix
             dist = intrinsics.dist_coeffs
-        
+
         prepared = prepare_frame(frame, K, dist, self._cache)
         if prepared is None:
             return None
-            
+
         # Load base depth map for this camera
-        base_path = os.path.join(viki.config.SKELETON_DEPTH_BASE_DIR, f"{device_id}.npy")
+        base_path = os.path.join(
+            viki.config.SKELETON_DEPTH_BASE_DIR, f"{device_id}.npy"
+        )
         if os.path.exists(base_path):
             try:
                 prepared.base_depth_m = np.load(base_path)
             except Exception as e:
                 logger.error(f"Failed to load base depth for {device_id}: {e}")
-                
+
         return prepared
 
-
     def _lift_camera(
-        self, device_id: str, group: SyncedFrameGroup, detection: Optional[HandDetection], prepared: Optional[PreparedFrame] = None
+        self,
+        device_id: str,
+        group: SyncedFrameGroup,
+        detection: Optional[HandDetection],
+        prepared: Optional[PreparedFrame] = None,
     ) -> Optional[Landmarks3D]:
         """Stage 3: lift 2D detection to 3D."""
         if detection is None:
             return None
- 
+
         # Use the provided prepared frame, or re-prepare if missing
         if prepared is None:
             prepared = self._prepare_camera(device_id, group)
-        
+
         if prepared is None:
             return None
-            
+
         backend = self._manager.get_backend(device_id)
         if backend is None or not isinstance(backend, KinectBackend):
             return None

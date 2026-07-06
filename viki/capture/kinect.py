@@ -15,7 +15,6 @@ import cv2
 import numpy as np
 
 from .base import CameraBackend, CameraIntrinsics, Frame
-from .aligner import DepthAligner
 
 logger = logging.getLogger(__name__)
 
@@ -177,7 +176,7 @@ _lib.k4a_calibration_3d_to_3d.argtypes = [
 
 
 # Calibration & transformation
-K4ACalibration = ctypes.c_void_p
+# K4ACalibration = ctypes.c_void_p
 K4ATransformation = ctypes.c_void_p
 
 _lib.k4a_device_get_calibration.restype = ctypes.c_int
@@ -300,7 +299,6 @@ class KinectBackend(CameraBackend):
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._calibration: K4ACalibration = K4ACalibration(None)
-        self._aligner: Optional[DepthAligner] = None
         self._serial_str: str = f"kinect_{device_index}"
         self._running = False
 
@@ -358,27 +356,6 @@ class KinectBackend(CameraBackend):
                 "WFOV_2X2BINNED": (512, 512),
             }.get(self._depth_mode, (640, 576))
             self._calibration = ctypes.cast(cal_buf, K4ACalibration)
-            if self._align_depth:
-                # Fixed-Matrix Projection Pipeline
-                depth_res_map = {
-                    "NFOV_UNBINNED": (640, 576),
-                    "NFOV_2X2BINNED": (320, 288),
-                    "WFOV_UNBINNED": (1024, 1024),
-                    "WFOV_2X2BINNED": (512, 512),
-                }
-                depth_res = depth_res_map.get(self._depth_mode, (640, 576))
-                try:
-                    self._aligner = DepthAligner(
-                        device_id=self._serial_str,
-                        depth_res=depth_res,
-                        color_res=self._color_resolution
-                    )
-                    # Maintain SDK transform for fallback/comparison
-                    self._transform = _lib.k4a_transformation_create(cal_buf)
-                    logger.info(f"[{self._serial_str}] Custom DepthAligner initialized.")
-                except Exception as e:
-                    logger.error(f"[{self._serial_str}] Custom DepthAligner failed: {e}. Falling back to SDK.")
-                    self._transform = _lib.k4a_transformation_create(cal_buf)
         else:
             logger.error(f"[{self._serial_str}] Failed to get calibration.")
             self._align_depth = False
@@ -391,7 +368,6 @@ class KinectBackend(CameraBackend):
         if self._transform:
             _lib.k4a_transformation_destroy(self._transform)
             self._transform = K4ATransformation(None)
-        self._aligner = None
         _lib.k4a_device_stop_cameras(self._handle)
         _lib.k4a_device_close(self._handle)
         self._handle = K4ADevice(None)
@@ -453,7 +429,7 @@ class KinectBackend(CameraBackend):
         )
 
     def get_validated_depth(
-        self, u: float, v: float, z_est: float, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray]
+        self, u: float, v: float, z_est: float, raw_depth: np.ndarray, aligned_depth: np.ndarray | None
     ) -> tuple[float, float, float] | None:
         """
         Simplified depth projection.
@@ -472,9 +448,6 @@ class KinectBackend(CameraBackend):
 
     def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
         """Project a color pixel and depth into a depth image pixel."""
-        if self._aligner:
-            return self._aligner.project_color_to_depth(u, v, z)
-        
         # Fallback using intrinsics and transform
         ci = self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR)
         x = (u - ci.cx) * z / ci.fx
@@ -488,9 +461,6 @@ class KinectBackend(CameraBackend):
 
     def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
         """Project a 3D point in camera space to a 2D pixel. Coordinates in metres."""
-        if self._aligner:
-            return self._aligner.project_3d_to_2d(x, y, z, cam_type)
-
         if not self._calibration:
             logger.error(f"[{self._serial_str}] project_3d_to_2d failed: no calibration handle")
             return None
@@ -510,11 +480,9 @@ class KinectBackend(CameraBackend):
         logger.debug(f"[{self._serial_str}] SDK project_3d_to_2d result={res}, valid={valid.value} for P=({x}, {y}, {z})")
         return None
 
+
     def transform_3d_to_3d(self, x: float, y: float, z: float, src_type: int, dst_type: int) -> tuple[float, float, float] | None:
         """Transform a 3D point from one camera coordinate system to another. Coordinates in metres."""
-        if self._aligner:
-            return self._aligner.transform_3d_to_3d(x, y, z, src_type, dst_type)
-
         if not self._calibration:
             logger.error(f"[{self._serial_str}] transform_3d_to_3d failed: no calibration handle")
             return None
@@ -533,21 +501,9 @@ class KinectBackend(CameraBackend):
         logger.debug(f"[{self._serial_str}] SDK transform_3d_to_3d result={res} for P=({x}, {y}, {z})")
         return None
 
-    def _get_intrinsics(self, cam_type: int) -> CameraIntrinsics:
-        """Infer intrinsic parameters using SDK projection or return from Aligner."""
-        if self._aligner:
-            if cam_type == K4A_CALIBRATION_TYPE_COLOR:
-                return CameraIntrinsics(self._aligner.fx_c, self._aligner.fy_c, self._aligner.cx_c, self._aligner.cy_c, self._color_resolution[0], self._color_resolution[1])
-            else:
-                depth_res_map = {
-                    "NFOV_UNBINNED": (640, 576),
-                    "NFOV_2X2BINNED": (320, 288),
-                    "WFOV_UNBINNED": (1024, 1024),
-                    "WFOV_2X2BINNED": (512, 512),
-                }
-                w, h = depth_res_map.get(self._depth_mode, (640, 576))
-                return CameraIntrinsics(self._aligner.fx_d, self._aligner.fy_d, self._aligner.cx_d, self._aligner.cy_d, w, h)
 
+    def _get_intrinsics(self, cam_type: int) -> CameraIntrinsics:
+        """Infer intrinsic parameters using SDK projection."""
         # SDK Projection Fallback
         # Project (0,0,1) to get cx, cy
         p0 = (0.0, 0.0, 1.0)
@@ -562,7 +518,7 @@ class KinectBackend(CameraBackend):
         pixY = self.project_3d_to_2d(*pY, cam_type)
         
         if pix0 is None or pixX is None or pixY is None:
-            return CameraIntrinsics(0, 0, 0, 0)
+            return CameraIntrinsics(0, 0, 0, 0, 0, 0)
             
         cx, cy = pix0
         fx = pixX[0] - cx
@@ -584,7 +540,6 @@ class KinectBackend(CameraBackend):
             
         return CameraIntrinsics(fx, fy, cx, cy, w, h)
 
-        return self._serial_str
 
     @property
     def device_id(self) -> str:

@@ -23,8 +23,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from viki.skeleton.hand_angles import compute_palm_rotation
-
 try:
     from archive_io import load_archive, write_hdf5_archive
 except ImportError:  # pragma: no cover - allows package-style imports later.
@@ -40,6 +38,14 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
         from .smoothing import adjusted_savgol_window, smooth_savgol
     except ImportError:
         from experiments.smoothing import adjusted_savgol_window, smooth_savgol
+
+try:
+    from palm_orientation import compute_palm_rotation
+except ImportError:  # pragma: no cover - allows package-style imports later.
+    try:
+        from .palm_orientation import compute_palm_rotation
+    except ImportError:
+        from experiments.palm_orientation import compute_palm_rotation
 
 
 RIGHT_BODY_WRIST = 16
@@ -58,6 +64,7 @@ R_DEFAULT = np.array(
     dtype=np.float64,
 )
 T_DEFAULT = np.zeros(3, dtype=np.float64)
+R_REFLECTION_FIX = np.diag([1.0, 1.0, -1.0])
 
 
 @dataclass(frozen=True)
@@ -257,6 +264,17 @@ def transform_points(points: np.ndarray, rotation: np.ndarray = R_DEFAULT, trans
     return out
 
 
+def transform_rotations_to_robot(rotations: np.ndarray) -> np.ndarray:
+    """Apply the legacy ViKi/world-to-robot rotation convention."""
+    arr = np.asarray(rotations, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1:] != (3, 3):
+        raise ValueError(f"Expected rotations shape (T, 3, 3), got {arr.shape}.")
+    out = np.full_like(arr, np.nan, dtype=np.float64)
+    finite = np.isfinite(arr).all(axis=(1, 2))
+    out[finite] = np.einsum("ij,tjk,kl->til", R_DEFAULT, arr[finite], R_REFLECTION_FIX)
+    return out
+
+
 def load_landmarks(
     sample_path: Path,
     working_hand: str,
@@ -362,6 +380,7 @@ def load_smoothed_targets(
         rotations = np.asarray(data["rotations"], dtype=np.float64)
         valid = np.asarray(data["valid"], dtype=bool)
         timestamps_us = np.asarray(data["timestamps"], dtype=np.int64)
+        coordinate_frame = data["coordinate_frame"] if "coordinate_frame" in data.files else "viki_world_or_camera"
 
     if limit_frames is not None:
         if limit_frames <= 0:
@@ -387,6 +406,9 @@ def load_smoothed_targets(
         )
 
     positions = interpolate_nan_positions(positions)
+    if should_apply_legacy_transform(coordinate_frame):
+        positions = transform_points(positions)
+        rotations = transform_rotations_to_robot(rotations)
     wrist_idx = body_wrist_index(working_hand)
     body = np.broadcast_to(positions[:, None, :], (len(positions), 33, 3)).copy()
     body[:, wrist_idx, :] = positions

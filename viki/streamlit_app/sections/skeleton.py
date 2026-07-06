@@ -1,0 +1,119 @@
+"""Skeleton tab.
+
+Ports the React SkeletonPanel: Start/Stop estimation, Record/Stop recording, the
+embedded live 3D canvas, the per-device detected status and the joint table.
+
+The detected status and joint table are driven by the ``/api/skeleton/stream``
+WebSocket, which is consumed *in the browser* by the embedded
+:func:`~viki.streamlit_app.embeds.skeleton_canvas` component -- that data does not
+exist on any HTTP endpoint, so it is rendered inside the component (browser JS),
+not server-side. The ``@st.fragment(run_every="1s")`` poll of
+``/api/skeleton/status`` drives the server-side Running/Idle + Recording text.
+The view-mode toggle and visualize-camera selector are also inside the component
+so switching them does not trigger a Streamlit rerun (which would reset the WS).
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+import streamlit.components.v1 as components
+
+from ..api import ViKiApiError
+from ..embeds import skeleton_canvas
+from ..settings import ws_url
+from ..state import get_api
+
+
+def _toggle_estimation(enable: bool) -> None:
+    api = get_api()
+    try:
+        api.skeleton_toggle(enable)
+        st.toast(f"Estimation {'ON' if enable else 'OFF'}", icon="✅")
+    except ViKiApiError as exc:
+        st.error(f"Estimation toggle failed: {exc}")
+
+
+def _toggle_recording(enable: bool) -> None:
+    api = get_api()
+    try:
+        api.skeleton_record(enable)
+        st.toast(f"Recording {'ON' if enable else 'OFF'}", icon="✅")
+    except ViKiApiError as exc:
+        st.error(f"Recording toggle failed: {exc}")
+
+
+@st.fragment(run_every="1s")
+def _status() -> None:
+    """Poll /api/skeleton/status for the Running/Idle + Recording indicator."""
+    api = get_api()
+    try:
+        data = api.skeleton_status()
+    except ViKiApiError:
+        st.warning("Skeleton status unavailable (backend unreachable).")
+        return
+    enabled = data.get("enabled", False)
+    recording = data.get("recording", False)
+    bits = ["🟢 Running" if enabled else "⚪ Idle"]
+    if recording:
+        bits.append("🔴 RECORDING")
+    st.markdown("**Status:** " + "  ·  ".join(bits))
+
+
+def render() -> None:
+    st.subheader("3D Skeleton Estimation")
+    devices = st.session_state.get("devices", [])
+
+    _status()
+
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.button(
+            "▶ Start Estimation",
+            type="primary",
+            use_container_width=True,
+            on_click=_toggle_estimation,
+            args=(True,),
+        )
+    with c2:
+        st.button(
+            "■ Stop Estimation",
+            use_container_width=True,
+            on_click=_toggle_estimation,
+            args=(False,),
+        )
+    with c3:
+        st.button(
+            "🔴 Record",
+            use_container_width=True,
+            on_click=_toggle_recording,
+            args=(True,),
+        )
+    with c4:
+        st.button(
+            "⏹ Stop Recording",
+            use_container_width=True,
+            on_click=_toggle_recording,
+            args=(False,),
+        )
+
+    st.caption(
+        "The live pose, per-camera detected state and joint table below update in "
+        "real time from the skeleton WebSocket (in your browser)."
+    )
+
+    html = skeleton_canvas(
+        ws_url=ws_url("/api/skeleton/stream"),
+        devices=devices,
+        extrinsics=st.session_state.get("extrinsics", {}),
+        viz_cam=st.session_state.get("viz_cam"),
+        view_mode=st.session_state.get("view_mode", "projections"),
+        height=380,
+    )
+    # Canvas + detection list + joint table + WS all live inside this component.
+    components.html(html, height=740, scrolling=True)
+
+    if not devices:
+        st.info(
+            "No cameras detected. The skeleton view will show data once cameras "
+            "are running and estimation is started."
+        )

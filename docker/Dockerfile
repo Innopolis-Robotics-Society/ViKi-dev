@@ -1,5 +1,5 @@
 # docker/Dockerfile
-FROM ubuntu:22.04
+FROM ubuntu:22.04 AS base
 
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
@@ -51,22 +51,24 @@ WORKDIR /app
 
 COPY pyproject.toml .
 RUN pip install --no-cache-dir pip-tools && \
-    pip-compile pyproject.toml -o requirements.txt && \
+    pip-compile --extra backend pyproject.toml -o requirements.txt && \
     pip install --no-cache-dir -r requirements.txt
-
-# COPY ./viki/ ./viki/
-# COPY ./skeleton_tests/ ./skeleton_tests/
-# RUN pip install --no-deps --no-cache-dir -e .
 
 RUN mkdir -p viki && touch viki/__init__.py
 RUN pip install --no-deps --no-cache-dir -e .
 
 # Copy real source (will be overwritten by bind mount at runtime anyway)
 COPY ./viki/ ./viki/
-COPY ./skeleton_tests/ ./skeleton_tests/
 
 # ── Entrypoint ────────────────────────────────────────────────────────────────
 COPY docker/entrypoint.sh /app/docker/entrypoint.sh
 RUN chmod +x /app/docker/entrypoint.sh
 
+# Production target
+FROM base AS backend
+CMD ["/bin/bash"]
+
+# Test target
+FROM base AS test
+RUN pip install ".[dev]"
 CMD ["/bin/bash"]

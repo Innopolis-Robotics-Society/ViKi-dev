@@ -144,7 +144,45 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(command[command.index("--ik-position-cost") + 1], "5.0")
         self.assertIn("--ik-orientation-cost", command)
         self.assertEqual(command[command.index("--ik-orientation-cost") + 1], "0.3")
+        self.assertIn("--ik-solver", command)
+        self.assertEqual(command[command.index("--ik-solver") + 1], "quadprog")
+        self.assertIn("--trajectory-scale", command)
+        self.assertEqual(command[command.index("--trajectory-scale") + 1], "0.25")
         self.assertIn("--align-initial-orientation", command)
+
+    def test_retarget_enqueues_iiwa_with_artifact_defaults(self) -> None:
+        (self.samples / "sample.npz").write_bytes(b"fake")
+        fake_job = optimization.OptimizationJob(
+            job_id="job1",
+            status="queued",
+            command=["conda", "run"],
+            output_stem="real_wrist_iiwa14",
+        )
+        with (
+            patch.object(optimization, "_resolve_conda_exe", return_value="conda"),
+            patch.object(optimization, "_enqueue_job", return_value=fake_job) as enqueue,
+        ):
+            response = self.client.post(
+                "/api/optimization/retarget",
+                json={
+                    "sample": "sample.npz",
+                    "robot": "iiwa14",
+                    "output_name": "real_wrist_iiwa14",
+                    "target_mode": "hand_se3",
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        command = enqueue.call_args.args[0]
+        self.assertIn("--ik-position-cost", command)
+        self.assertEqual(command[command.index("--ik-position-cost") + 1], "2.0")
+        self.assertIn("--ik-orientation-cost", command)
+        self.assertEqual(command[command.index("--ik-orientation-cost") + 1], "0.3")
+        self.assertIn("--ik-solver", command)
+        self.assertEqual(command[command.index("--ik-solver") + 1], "quadprog")
+        self.assertIn("--trajectory-scale", command)
+        self.assertEqual(command[command.index("--trajectory-scale") + 1], "0.1")
+        self.assertNotIn("--align-initial-orientation", command)
 
     def test_job_worker_records_subprocess_success(self) -> None:
         completed = subprocess.CompletedProcess(["conda"], 0, stdout="ok", stderr="")

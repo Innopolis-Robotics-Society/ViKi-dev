@@ -55,12 +55,22 @@ class RetargetRequest(BaseModel):
     target_mode: Literal["wrist_position", "hand_se3"] = "wrist_position"
     ik_position_cost: float | None = None
     ik_orientation_cost: float | None = None
+    ik_solver: str | None = None
     joint_sg_window: int = 0
     sg_window: int = 0
     recenter_to_neutral: bool = True
-    trajectory_scale: float = Field(default=0.25, gt=0.0)
-    align_initial_orientation: bool = True
+    trajectory_scale: float | None = Field(default=None, gt=0.0)
+    align_initial_orientation: bool | None = None
     evaluate: bool = True
+
+
+@dataclass(frozen=True)
+class RobotRetargetDefaults:
+    ik_position_cost: float
+    ik_orientation_cost: float
+    ik_solver: str
+    trajectory_scale: float
+    align_initial_orientation: bool
 
 
 @dataclass
@@ -131,11 +141,15 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
     output_stem = output_stem.replace("_traj", "")
     conda_exe = _resolve_conda_exe()
     conda_env = os.getenv(COND_ENV_NAME_VAR, DEFAULT_CONDA_ENV)
-    ik_position_cost = req.ik_position_cost if req.ik_position_cost is not None else _default_position_cost(req.robot)
-    ik_orientation_cost = (
-        req.ik_orientation_cost
-        if req.ik_orientation_cost is not None
-        else (0.3 if req.target_mode == "hand_se3" else 0.0)
+    defaults = _retarget_defaults(req.robot, req.target_mode)
+    ik_position_cost = req.ik_position_cost if req.ik_position_cost is not None else defaults.ik_position_cost
+    ik_orientation_cost = req.ik_orientation_cost if req.ik_orientation_cost is not None else defaults.ik_orientation_cost
+    ik_solver = req.ik_solver if req.ik_solver is not None else defaults.ik_solver
+    trajectory_scale = req.trajectory_scale if req.trajectory_scale is not None else defaults.trajectory_scale
+    align_initial_orientation = (
+        req.align_initial_orientation
+        if req.align_initial_orientation is not None
+        else defaults.align_initial_orientation
     )
 
     command = [
@@ -157,16 +171,18 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
         str(ik_position_cost),
         "--ik-orientation-cost",
         str(ik_orientation_cost),
+        "--ik-solver",
+        ik_solver,
         "--joint-sg-window",
         str(req.joint_sg_window),
         "--sg-window",
         str(req.sg_window),
         "--trajectory-scale",
-        str(req.trajectory_scale),
+        str(trajectory_scale),
     ]
     if req.recenter_to_neutral:
         command.append("--recenter-to-neutral")
-    if req.target_mode == "hand_se3" and req.align_initial_orientation:
+    if req.target_mode == "hand_se3" and align_initial_orientation:
         command.append("--align-initial-orientation")
     if req.evaluate:
         command.append("--evaluate")
@@ -284,9 +300,31 @@ def _resolve_conda_exe() -> str:
     )
 
 
-def _default_position_cost(robot: str) -> float:
+def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
     robot_key = robot.strip().lower()
-    return 2.0 if robot_key in {"iiwa14", "iiwa14_description"} else 5.0
+    if target_mode == "wrist_position":
+        return RobotRetargetDefaults(
+            ik_position_cost=2.0 if robot_key in {"iiwa14", "iiwa14_description"} else 5.0,
+            ik_orientation_cost=0.0,
+            ik_solver="quadprog",
+            trajectory_scale=0.1 if robot_key in {"iiwa14", "iiwa14_description"} else 0.25,
+            align_initial_orientation=False,
+        )
+    if robot_key in {"iiwa14", "iiwa14_description"}:
+        return RobotRetargetDefaults(
+            ik_position_cost=2.0,
+            ik_orientation_cost=0.3,
+            ik_solver="quadprog",
+            trajectory_scale=0.1,
+            align_initial_orientation=False,
+        )
+    return RobotRetargetDefaults(
+        ik_position_cost=5.0,
+        ik_orientation_cost=0.3,
+        ik_solver="quadprog",
+        trajectory_scale=0.25,
+        align_initial_orientation=True,
+    )
 
 
 def _enqueue_job(command: list[str], output_stem: str) -> OptimizationJob:
