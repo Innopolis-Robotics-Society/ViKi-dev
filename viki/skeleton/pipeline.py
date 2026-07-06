@@ -196,7 +196,7 @@ class SkeletonPipeline:
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
                 detectors=[
-                    MediaPipeArm(hand=self._hand, mode="live"),
+                    # MediaPipeArm(hand=self._hand, mode="live"),
                     MediaPipeHand(hand=self._hand, mode="live"),
                 ],  # pyright: ignore
                 mode=FusionMode.ANY,
