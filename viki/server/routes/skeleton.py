@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 import time
 import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -72,54 +73,6 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
         "enabled": worker.is_enabled,
         "recording": worker.is_recording,
     }
-
-
-@router.get("/dataset_recordings")
-async def list_dataset_recordings(
-    page: int = 0,
-    limit: int = 10,
-):
-    # This whole function is just a copy of the SkeletonProcessor's __init__ and list_recordings methods
-    # TODO: add config.SKELETON_OPTIMIZED_RECS_DIR
-    optzd_recs_dir = Path("./data/robot_out")
-    page_size = limit
-    # TODO:  The line below should be moved somewhere else outside of this endpoint
-    optzd_recs_dir.mkdir(parents=True, exist_ok=True)
-    files = sorted([f.name for f in optzd_recs_dir.glob("*.h5")], reverse=True)
-    start = page * page_size
-    end = start + page_size
-    return files[start:end]
-
-
-@router.post("/optimize/{filename}")
-async def optimize_recording(
-    filename: str
-):
-    
-    summary = run_single(Namespace(
-            sample="./data/skeleton_smoothed/" + filename,
-            robot="ur10",
-            working_hand="right",
-            out="./data/robot_out/" + filename + ".h5",
-            target_mode="hand_se3",
-            ik_position_cost=5.0,
-            ik_orientation_cost=0.3,
-            ik_posture_cost=1e-3,
-            ik_substeps=20,
-            is_solver="quadprog",
-            approach_sec=5.0,
-            joint_sg_window=0,
-            joint_sg_polyorder=3,
-            sg_window=0,
-            sg_polyorder=3,
-            limit_frames=None,
-            recenter_to_neutral=True,
-            trajectory_scale=0.25,
-            align_initial_orientation=True,
-            evaluate=True,
-            eval_align="rigid",
-    ))
-
 
 @router.get("/recordings")
 async def list_recordings(

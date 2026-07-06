@@ -22,12 +22,20 @@ from viki.capture.sync import MultiCameraSync
 from viki.skeleton.pipeline import SkeletonPipeline
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
-from viki.server.routes import calibration, cameras, optimization, skeleton, recording, system
+from viki.server.routes import (
+    calibration,
+    cameras,
+    optimization,
+    skeleton,
+    recording,
+    system,
+    dataset,
+)
 
 STATIC_DIR = Path(__file__).parent / "static"
 
 logging.basicConfig(level=logging.DEBUG)
-logging.getLogger('matplotlib').setLevel(logging.WARNING)
+logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 
 @asynccontextmanager
@@ -56,6 +64,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.skeleton_worker.start()
     from viki.skeleton.processor import SkeletonProcessor
+
     app.state.skeleton_processor = SkeletonProcessor()
 
     yield
@@ -72,6 +81,7 @@ app.include_router(system.router)
 app.include_router(optimization.router)
 
 app.include_router(recording.router)
+app.include_router(dataset.router)
 
 
 @app.get("/", response_class=HTMLResponse)
