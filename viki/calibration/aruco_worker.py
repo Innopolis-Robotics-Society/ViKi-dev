@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 from typing import List, Sequence
 
 from cv2.typing import MatLike
@@ -36,6 +37,7 @@ class ArucoWorker(_CalibrationWorker):
         )
 
         self.detector = cv2.aruco.CharucoDetector(self.board)
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.dictionary)
 
     def set_board_params(self, board_params: ArucoBoardParameters) -> None:
         super().set_board_params(board_params)
@@ -46,13 +48,14 @@ class ArucoWorker(_CalibrationWorker):
                 board_params.marker_size,
                 self.dictionary,
             )
-            self.detector = cv2.aruco.CharucoDetector(self.board)
+        self.detector = cv2.aruco.CharucoDetector(self.board)
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.dictionary)
 
     def add_sample(self, frame: Frame) -> None:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
         
         # Debug: detect markers separately to see what's actually visible
-        markers_raw, ids_raw, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
+        markers_raw, ids_raw, _ = self.aruco_detector.detectMarkers(gray)
         if ids_raw is not None:
             self._logger.debug(f"{self.device_id} markers visible: {len(ids_raw)}")
         else:
@@ -139,13 +142,20 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
-        ret, mtx, dist, rvecs, tvecs = cv2.aruco.calibrateCameraCharuco(
-            all_charuco_corners,
-            all_charuco_ids,
-            self.board,
+        all_obj_points = []
+        all_img_points = []
+        board_obj_points = self.board.getObjPoints()
+        for corners, ids in zip(all_charuco_corners, all_charuco_ids):
+            obj_pts = [board_obj_points[i] for i in ids]
+            all_obj_points.append(np.array(obj_pts))
+            all_img_points.append(corners)
+
+        ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+            all_obj_points,
+            all_img_points,
             (w, h),
-            None,  # pyright: ignore
-            None,  # pyright: ignore
+            None,
+            None,
         )
 
         if not ret:
@@ -191,14 +201,13 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(msg)
             raise RuntimeError(msg)
  
-        ret, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
+        board_obj_points = self.board.getObjPoints()
+        obj_pts = np.array([board_obj_points[i] for i in sample.c_ids])
+        ret, rvec, tvec = cv2.solvePnP(
+            obj_pts,
             sample.corners,
-            sample.c_ids,
-            self.board,
             camera_matrix,
             dist_coeffs,
-            None,  # pyright: ignore
-            None,  # pyright: ignore
         )
 
         if not ret:
