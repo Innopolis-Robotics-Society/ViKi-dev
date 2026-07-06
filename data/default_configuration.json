@@ -1,0 +1,78 @@
+{
+  "INTRINSICS_FILENAME": "data/intrinsics_calibration.json",
+  "EXTRINSICS_FILENAME": "data/extrinsics_calibration.json",
+  "DEFAULT_FPS": 15,
+  "DEFAULT_COLOR_WIDTH": 1280,
+  "DEFAULT_COLOR_HEIGHT": 720,
+  "DEFAULT_DEPTH_MODE": "NFOV_UNBINNED",
+  "JPEG_QUALITY": 80,
+  "STREAM_IDLE_SLEEP": 0.005,
+  "PLACEHOLDER_SIZE": [
+    1280,
+    720
+  ],
+  "DEFAULT_SYNCHRONIZED_IMAGES_ONLY": false,
+  "FRAME_BUFFER_SIZE": 12,
+  "RECORD_DEPTH": false,
+  "DEPTH_PROJECTION_DEBUG": true,
+  "SKELETON_DEPTH_SAMP_RADIUS": 15,
+  "SKELETON_DEPTH_BASE_DIR": "data/depth_bases/",
+  "SKELETON_ENABLE_DEPTH_VALIDATION": true,
+  "SKELETON_DEPTH_SUBTRACT_THRESHOLD": 0.01,
+  "HAND_TO_DETECT": "right",
+  "CALIB_MODE": "manual",
+  "CALIB_BOARD_TYPE": "aruco",
+  "BONE_LENGTHS": {},
+  "BONE_TOLERANCE": 0.2,
+  "CALIB_CHESS_BOARD_SIZE": [
+    8,
+    6
+  ],
+  "CALIB_CHESS_SQUARE_SIZE": 0.025,
+  "CALIB_ARUCO_BOARD_SIZE": [
+    8,
+    10
+  ],
+  "CALIB_ARUCO_SQUARE_SIZE": 0.05,
+  "CALIB_ARUCO_MARKER_SIZE": 0.035,
+  "CALIB_ARUCO_DICT": 4,
+  "RECORDING_DURATION": 10,
+  "RECORDING_FPS": 15,
+  "REALSENSE_RESOLUTIONS": [
+    "640x480",
+    "1280x720",
+    "1920x1080"
+  ],
+  "REALSENSE_FPS": [
+    15,
+    30
+  ],
+  "KINECT_RESOLUTIONS": [
+    "1280x720",
+    "1920x1080",
+    "2048x1536"
+  ],
+  "KINECT_FPS": [
+    5,
+    15,
+    30
+  ],
+  "KINECT_DEPTH_MODES": [
+    "NFOV_UNBINNED",
+    "NFOV_2X2BINNED",
+    "WFOV_UNBINNED",
+    "WFOV_2X2BINNED"
+  ],
+  "KINECT_DEPTH_MODE_MAX_FPS": {
+    "WFOV_UNBINNED": 15
+  },
+  "WEBCAM_RESOLUTIONS": [
+    "640x480",
+    "1280x720",
+    "1920x1080"
+  ],
+  "WEBCAM_FPS": [
+    15,
+    30
+  ]
+}
