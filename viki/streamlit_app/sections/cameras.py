@@ -63,11 +63,26 @@ def _render_card(device: dict) -> None:
     if not cfg:
         return
 
-    type_cfg = (
-        st.session_state.camera_config["kinect"]
-        if dtype == "kinect"
-        else st.session_state.camera_config["realsense"]
-    )
+    server_config = st.session_state.get("server_config", {})
+
+    # Dynamic options based on device type
+    if dtype == "kinect":
+        resolutions = server_config.get("KINECT_RESOLUTIONS", [])
+        fps_options = server_config.get("KINECT_FPS", [])
+        depth_modes = server_config.get("KINECT_DEPTH_MODES", [])
+        depth_max_fps = server_config.get("KINECT_DEPTH_MODE_MAX_FPS", {})
+    elif dtype == "realsense":
+        resolutions = server_config.get("REALSENSE_RESOLUTIONS", [])
+        fps_options = server_config.get("REALSENSE_FPS", [])
+        depth_modes = None
+        depth_max_fps = {}
+    elif dtype == "web_camera":
+        resolutions = server_config.get("WEBCAM_RESOLUTIONS", [])
+        fps_options = server_config.get("WEBCAM_FPS", [])
+        depth_modes = None
+        depth_max_fps = {}
+    else:
+        resolutions, fps_options, depth_modes, depth_max_fps = [], [], None, {}
 
     with st.container(border=True):
         dot = "🟢" if running else "⚪"
@@ -95,12 +110,10 @@ def _render_card(device: dict) -> None:
                 args=(device_id,),
             )
 
-        depth_max_fps = type_cfg.get("depthModeMaxFps") or {}
-        has_depth = bool(type_cfg.get("depthModes"))
+        has_depth = bool(depth_modes)
         cols = st.columns(3 if has_depth else 2)
 
         # resolution
-        resolutions = type_cfg["resolutions"]
         res_value = f"{cfg['color_width']}x{cfg['color_height']}"
         if res_value not in resolutions:
             resolutions = [res_value, *resolutions]
@@ -113,10 +126,9 @@ def _render_card(device: dict) -> None:
                 disabled=running,
             )
 
-        # depth mode (rendered before fps so the fps cap can react to it)
+        # depth mode
         new_depth = cfg["depth_mode"]
         if has_depth:
-            depth_modes = type_cfg["depthModes"]
             with cols[2]:
                 new_depth = st.selectbox(
                     "depth mode",
@@ -126,22 +138,20 @@ def _render_card(device: dict) -> None:
                     disabled=running,
                 )
 
-        # fps: forbid values above the depth-mode cap (backend rejects
-        # WFOV_UNBINNED @ 30fps). Key includes the depth mode so the widget
-        # re-instantiates cleanly when the option set shrinks/grows.
+        # fps
         cap = depth_max_fps.get(new_depth, _INFINITY)
-        fps_options = [f for f in type_cfg["fps"] if f <= cap] or [type_cfg["fps"][0]]
-        cur_fps = cfg["fps"] if cfg["fps"] in fps_options else fps_options[-1]
+        valid_fps = [f for f in fps_options if f <= cap] or (fps_options[:1] if fps_options else [15])
+        cur_fps = cfg["fps"] if cfg["fps"] in valid_fps else valid_fps[-1]
         with cols[1]:
             new_fps = st.selectbox(
                 "fps",
-                fps_options,
-                index=fps_options.index(cur_fps),
+                valid_fps,
+                index=valid_fps.index(cur_fps),
                 key=f"fps_{device_id}_{new_depth}",
                 disabled=running,
             )
 
-        # Persist control edits back into the single-source card config.
+        # Persist control edits
         w, h = (int(x) for x in new_res.split("x"))
         st.session_state.card_config[device_id] = {
             "color_width": w,
@@ -159,11 +169,12 @@ def _render_card(device: dict) -> None:
                     mjpeg_img(_color_stream_url(device_id), height=260, label="COLOR"),
                     height=280,
                 )
-            with sc2:
-                components.html(
-                    mjpeg_img(_depth_stream_url(device_id), height=260, label="DEPTH"),
-                    height=280,
-                )
+            if has_depth:
+                with sc2:
+                    components.html(
+                        mjpeg_img(_depth_stream_url(device_id), height=260, label="DEPTH"),
+                        height=280,
+                    )
 
             # --- info footer ---
             if info and info.get("color_shape"):
