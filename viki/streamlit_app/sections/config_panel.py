@@ -13,8 +13,6 @@ import streamlit as st
 
 from ..api import ViKiApiError
 from ..state import (
-    derive_camera_config,
-    derive_frontend_config,
     get_api,
 )
 
@@ -55,10 +53,8 @@ def _load_config() -> None:
     try:
         config = api.get_config()
         st.session_state.config_text = json.dumps(config, indent=2)
-        # Re-derive UI defaults from the freshly loaded config.
+        # Update the shared server config.
         st.session_state.server_config = config
-        st.session_state.camera_config = derive_camera_config(config)
-        st.session_state.frontend_config = derive_frontend_config(config)
         st.toast("Configuration loaded", icon="✅")
     except ViKiApiError as exc:
         st.error(f"Failed to load config: {exc}")

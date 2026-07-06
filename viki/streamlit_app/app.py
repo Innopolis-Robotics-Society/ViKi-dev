@@ -62,10 +62,12 @@ def _stop_all() -> None:
 
 def _record_rgbd() -> None:
     api = get_api()
-    rec = st.session_state.frontend_config["recording"]
+    sc = st.session_state.get("server_config", {})
+    duration = sc.get("RECORDING_DURATION", 10.0)
+    fps = sc.get("RECORDING_FPS", 15)
     try:
-        res = api.record_start(duration=rec["duration"], fps=rec["fps"])
-        st.toast(f"RGB-D recording started ({rec['duration']}s)", icon="🔴")
+        res = api.record_start(duration=duration, fps=fps)
+        st.toast(f"RGB-D recording started ({duration}s)", icon="🔴")
         if isinstance(res, dict) and res.get("status"):
             st.session_state["_last_record_status"] = res["status"]
     except ViKiApiError as exc:
