@@ -1,0 +1,68 @@
+{
+  "align": "rigid",
+  "alignment_rotation": [
+    [
+      0.25641098712800436,
+      0.8217488354237672,
+      0.5089029938600532
+    ],
+    [
+      0.04191657267392769,
+      -0.535463468522733,
+      0.8435175604650303
+    ],
+    [
+      0.9656585352055425,
+      -0.19495570101253007,
+      -0.17174361131465482
+    ]
+  ],
+  "alignment_translation_m": [
+    -0.6860782312576623,
+    -1.1263052492624128,
+    1.5356544458546126
+  ],
+  "ee_frame": "iiwa_link_ee",
+  "fps": 14.975216017491052,
+  "frames_under_50mm_pct": 100.0,
+  "human_path": "data\\skeleton_smoothed\\cln-19.40-06.07.2026.npz",
+  "ik_orientation_cost": 0.3,
+  "ik_position_cost": 2.0,
+  "ik_posture_cost": 0.001,
+  "ik_solver": "quadprog",
+  "ik_substeps": 20,
+  "joint_sg_polyorder": 3,
+  "joint_sg_window": 0,
+  "max_error_mm": 39.87471753977894,
+  "max_orientation_error_deg": 153.70680941922004,
+  "mean_error_mm": 24.76078610338017,
+  "mean_orientation_error_deg": 134.229487092331,
+  "median_error_mm": 23.41534440426883,
+  "median_orientation_error_deg": 135.2899481414239,
+  "num_frames": 30,
+  "orientation_available": true,
+  "p95_error_mm": 37.53648170468023,
+  "p95_orientation_error_deg": 150.01708018947335,
+  "q_key": "q_scene_smooth",
+  "recenter_offset": [
+    0.9218433499336242,
+    -0.2757862508296969,
+    -0.35983859920501726
+  ],
+  "recenter_to_neutral": true,
+  "requested_q_key": "auto",
+  "requested_target_source": "auto",
+  "robot": "iiwa14_description",
+  "robot_traj_path": "data\\robot_out\\smoke_iiwa14_hand_se3.h5",
+  "sample": "cln-19.40-06.07.2026",
+  "sg_polyorder": 3,
+  "sg_window": 0,
+  "smooth_polyorder": 3,
+  "smooth_window": 15,
+  "smoothing": "none",
+  "target_orientation_key": "ee_target_rot",
+  "target_source": "ee_target_pos",
+  "threshold_mm": 50.0,
+  "trajectory_scale": 0.25,
+  "working_hand": "right"
+}

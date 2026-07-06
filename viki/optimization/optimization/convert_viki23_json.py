@@ -15,12 +15,23 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from viki.skeleton.hand_angles import compute_palm_rotation
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+try:
+    from palm_orientation import compute_palm_rotation
+except ImportError:  # pragma: no cover - allows package-style imports later.
+    try:
+        from .palm_orientation import compute_palm_rotation
+    except ImportError:
+        from experiments.palm_orientation import compute_palm_rotation
 
 RIGHT_WRIST = 16
 LEFT_WRIST = 15

@@ -19,7 +19,9 @@ from typing import Any
 
 import numpy as np
 
-from viki.skeleton.hand_angles import compute_palm_rotation
+PROJECT_ROOT = Path(__file__).resolve().parents[3]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 try:
     from archive_io import load_archive, write_hdf5_archive
@@ -37,10 +39,19 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
     except ImportError:
         from experiments.smoothing import adjusted_savgol_window, smooth_savgol
 
+try:
+    from palm_orientation import compute_palm_rotation
+except ImportError:  # pragma: no cover - allows package-style imports later.
+    try:
+        from .palm_orientation import compute_palm_rotation
+    except ImportError:
+        from experiments.palm_orientation import compute_palm_rotation
+
 
 RIGHT_BODY_WRIST = 16
 LEFT_BODY_WRIST = 15
 HAND_IDXS = {"wrist": 0, "thumb_cmc": 1, "middle_mcp": 9}
+SMOOTHED_TARGET_KEYS = {"positions", "rotations", "valid", "timestamps"}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
 # into the robot-facing convention used by the saved trajectory archives.
@@ -53,6 +64,7 @@ R_DEFAULT = np.array(
     dtype=np.float64,
 )
 T_DEFAULT = np.zeros(3, dtype=np.float64)
+R_REFLECTION_FIX = np.diag([1.0, 1.0, -1.0])
 
 
 @dataclass(frozen=True)
@@ -134,6 +146,18 @@ class RunConfig:
     limit_frames: int | None
     recenter_to_neutral: bool
     trajectory_scale: float
+    align_initial_orientation: bool
+
+
+@dataclass(frozen=True)
+class RetargetInput:
+    body: np.ndarray
+    hand: np.ndarray | None
+    fps: float
+    orientation_valid: np.ndarray | None = None
+    target_rotations: np.ndarray | None = None
+    timestamps_us: np.ndarray | None = None
+    source_format: str = "legacy_sample"
 
 
 def require_ik_dependencies():
@@ -213,8 +237,9 @@ def safe_float_label(value: float) -> str:
 
 def sweep_candidate_path(out_dir: Path, sample_path: Path, robot: RobotConfig, cfg: RunConfig) -> Path:
     robot_alias = robot.description.replace("_description", "")
+    orientation_label = "relori" if cfg.align_initial_orientation else "absori"
     name = (
-        f"{sample_path.stem}_{robot_alias}_ori{safe_float_label(cfg.ik_orientation_cost)}"
+        f"{sample_path.stem}_{robot_alias}_{orientation_label}_ori{safe_float_label(cfg.ik_orientation_cost)}"
         f"_pos{safe_float_label(cfg.ik_position_cost)}"
         f"_sub{cfg.ik_substeps}_jtw{cfg.joint_sg_window}_traj.h5"
     )
@@ -223,7 +248,31 @@ def sweep_candidate_path(out_dir: Path, sample_path: Path, robot: RobotConfig, c
 
 def transform_points(points: np.ndarray, rotation: np.ndarray = R_DEFAULT, translation: np.ndarray = T_DEFAULT) -> np.ndarray:
     arr = np.asarray(points, dtype=np.float64)
-    return arr @ rotation.T + translation
+    rot = np.asarray(rotation, dtype=np.float64)
+    trans = np.asarray(translation, dtype=np.float64)
+    if arr.shape[-1] != 3:
+        raise ValueError(f"Expected points with trailing xyz dimension, got {arr.shape}.")
+    if rot.shape != (3, 3):
+        raise ValueError(f"Expected rotation shape (3, 3), got {rot.shape}.")
+    if trans.shape != (3,):
+        raise ValueError(f"Expected translation shape (3,), got {trans.shape}.")
+
+    out = np.empty_like(arr, dtype=np.float64)
+    out[..., 0] = arr[..., 0] * rot[0, 0] + arr[..., 1] * rot[0, 1] + arr[..., 2] * rot[0, 2] + trans[0]
+    out[..., 1] = arr[..., 0] * rot[1, 0] + arr[..., 1] * rot[1, 1] + arr[..., 2] * rot[1, 2] + trans[1]
+    out[..., 2] = arr[..., 0] * rot[2, 0] + arr[..., 1] * rot[2, 1] + arr[..., 2] * rot[2, 2] + trans[2]
+    return out
+
+
+def transform_rotations_to_robot(rotations: np.ndarray) -> np.ndarray:
+    """Apply the legacy ViKi/world-to-robot rotation convention."""
+    arr = np.asarray(rotations, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1:] != (3, 3):
+        raise ValueError(f"Expected rotations shape (T, 3, 3), got {arr.shape}.")
+    out = np.full_like(arr, np.nan, dtype=np.float64)
+    finite = np.isfinite(arr).all(axis=(1, 2))
+    out[finite] = np.einsum("ij,tjk,kl->til", R_DEFAULT, arr[finite], R_REFLECTION_FIX)
+    return out
 
 
 def load_landmarks(
@@ -265,6 +314,9 @@ def load_landmarks(
     else:
         body_robot = body.copy()
         hand_robot = hand.copy()
+    if landmark_sg_window <= 0:
+        return body_robot.copy(), hand_robot.copy(), fps
+
     body_smooth = smooth_savgol(body_robot, window=landmark_sg_window, polyorder=landmark_sg_polyorder, axis=0)
     hand_smooth = smooth_savgol(hand_robot, window=landmark_sg_window, polyorder=landmark_sg_polyorder, axis=0)
     return body_smooth, hand_smooth, fps
@@ -279,6 +331,127 @@ def load_orientation_valid(sample_path: Path, limit_frames: int | None) -> np.nd
     if limit_frames is not None:
         mask = mask[:limit_frames]
     return mask
+
+
+def estimate_fps_from_timestamps(timestamps_us: np.ndarray) -> float:
+    timestamps = np.asarray(timestamps_us, dtype=np.float64)
+    if len(timestamps) < 2:
+        return 30.0
+    dt = np.diff(timestamps)
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    if len(dt) == 0:
+        return 30.0
+    # Current smoothed files store microseconds. Keep a small fallback for
+    # already-second timestamps to make tests and hand-authored files readable.
+    scale = 1_000_000.0 if float(np.median(dt)) > 1_000.0 else 1.0
+    return float(1.0 / np.median(dt / scale))
+
+
+def interpolate_nan_positions(positions: np.ndarray) -> np.ndarray:
+    """Linearly fill missing xyz target positions over time."""
+    out = np.asarray(positions, dtype=np.float64).copy()
+    frames = np.arange(len(out), dtype=np.float64)
+    for dim in range(3):
+        series = out[:, dim]
+        valid = np.isfinite(series)
+        if valid.all():
+            continue
+        if not valid.any():
+            raise ValueError("Smoothed target positions contain no finite samples.")
+        if valid.sum() == 1:
+            series[~valid] = series[valid][0]
+        else:
+            series[~valid] = np.interp(frames[~valid], frames[valid], series[valid])
+        out[:, dim] = series
+    return out
+
+
+def load_smoothed_targets(
+    sample_path: Path,
+    working_hand: str,
+    limit_frames: int | None,
+) -> RetargetInput:
+    """Load already-smoothed wrist positions and palm rotations."""
+    with np.load(sample_path, allow_pickle=True) as data:
+        missing = sorted(SMOOTHED_TARGET_KEYS.difference(data.files))
+        if missing:
+            raise KeyError(f"{sample_path} is missing smoothed target keys: {', '.join(missing)}.")
+        positions = np.asarray(data["positions"], dtype=np.float64)
+        rotations = np.asarray(data["rotations"], dtype=np.float64)
+        valid = np.asarray(data["valid"], dtype=bool)
+        timestamps_us = np.asarray(data["timestamps"], dtype=np.int64)
+        coordinate_frame = data["coordinate_frame"] if "coordinate_frame" in data.files else "viki_world_or_camera"
+
+    if limit_frames is not None:
+        if limit_frames <= 0:
+            raise ValueError("--limit-frames must be positive when set.")
+        positions = positions[:limit_frames]
+        rotations = rotations[:limit_frames]
+        valid = valid[:limit_frames]
+        timestamps_us = timestamps_us[:limit_frames]
+
+    if positions.ndim != 2 or positions.shape[1] != 3:
+        raise ValueError(f"Expected positions shape (T, 3), got {positions.shape}.")
+    if rotations.ndim != 3 or rotations.shape[1:] != (3, 3):
+        raise ValueError(f"Expected rotations shape (T, 3, 3), got {rotations.shape}.")
+    if valid.ndim != 1:
+        raise ValueError(f"Expected valid shape (T,), got {valid.shape}.")
+    if timestamps_us.ndim != 1:
+        raise ValueError(f"Expected timestamps shape (T,), got {timestamps_us.shape}.")
+    if not (len(positions) == len(rotations) == len(valid) == len(timestamps_us)):
+        raise ValueError(
+            "Smoothed target frame counts differ: "
+            f"positions={len(positions)}, rotations={len(rotations)}, "
+            f"valid={len(valid)}, timestamps={len(timestamps_us)}."
+        )
+
+    positions = interpolate_nan_positions(positions)
+    if should_apply_legacy_transform(coordinate_frame):
+        positions = transform_points(positions)
+        rotations = transform_rotations_to_robot(rotations)
+    wrist_idx = body_wrist_index(working_hand)
+    body = np.broadcast_to(positions[:, None, :], (len(positions), 33, 3)).copy()
+    body[:, wrist_idx, :] = positions
+    finite_rotations = np.isfinite(rotations).all(axis=(1, 2))
+    orientation_valid = valid & finite_rotations
+    return RetargetInput(
+        body=body,
+        hand=None,
+        fps=estimate_fps_from_timestamps(timestamps_us),
+        orientation_valid=orientation_valid,
+        target_rotations=rotations,
+        timestamps_us=timestamps_us,
+        source_format="smoothed_targets",
+    )
+
+
+def load_retarget_input(
+    sample_path: Path,
+    working_hand: str,
+    landmark_sg_window: int,
+    landmark_sg_polyorder: int,
+    limit_frames: int | None,
+) -> RetargetInput:
+    """Load either direct smoothed targets or a legacy optimiser sample."""
+    with np.load(sample_path, allow_pickle=True) as data:
+        files = set(data.files)
+    if SMOOTHED_TARGET_KEYS.issubset(files):
+        return load_smoothed_targets(sample_path, working_hand, limit_frames)
+
+    body, hand, fps = load_landmarks(
+        sample_path,
+        working_hand,
+        landmark_sg_window,
+        landmark_sg_polyorder,
+        limit_frames,
+    )
+    return RetargetInput(
+        body=body,
+        hand=hand,
+        fps=fps,
+        orientation_valid=load_orientation_valid(sample_path, limit_frames),
+        source_format="legacy_sample",
+    )
 
 
 def body_wrist_index(working_hand: str) -> int:
@@ -320,12 +493,25 @@ def extract_se3(pin: Any, body_frame: np.ndarray, rotation: np.ndarray, wrist_bo
     return pin.SE3(np.asarray(rotation, dtype=np.float64), p)
 
 
+def align_rotations_to_initial(rotations: np.ndarray, initial_target_rotation: np.ndarray) -> np.ndarray:
+    """Map frame-0 hand rotation onto a desired robot tool rotation."""
+    arr = np.asarray(rotations, dtype=np.float64)
+    initial = np.asarray(initial_target_rotation, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1:] != (3, 3):
+        raise ValueError(f"Expected rotations shape (T, 3, 3), got {arr.shape}.")
+    if initial.shape != (3, 3):
+        raise ValueError(f"Expected initial target rotation shape (3, 3), got {initial.shape}.")
+    offset = arr[0].T @ initial
+    return np.stack([rotation @ offset for rotation in arr], axis=0)
+
+
 def build_targets(
     pin: Any,
     body: np.ndarray,
     hand: np.ndarray,
     working_hand: str,
     orientation_valid_hint: np.ndarray | None = None,
+    initial_target_rotation: np.ndarray | None = None,
 ) -> tuple[list[Any], np.ndarray]:
     wrist_idx = body_wrist_index(working_hand)
     rotations = [hand_palm_rotation(hand[t]) for t in range(len(hand))]
@@ -338,7 +524,40 @@ def build_targets(
             )
         rotations = [rotation if hint[t] else None for t, rotation in enumerate(rotations)]
     rotations, valid = fill_invalid_rotations(rotations)
+    if initial_target_rotation is not None:
+        rotations = align_rotations_to_initial(rotations, initial_target_rotation)
     targets = [extract_se3(pin, body[t], rotations[t], wrist_idx) for t in range(len(body))]
+    return targets, valid
+
+
+def build_direct_rotation_targets(
+    pin: Any,
+    body: np.ndarray,
+    rotations: np.ndarray,
+    working_hand: str,
+    orientation_valid_hint: np.ndarray | None = None,
+    initial_target_rotation: np.ndarray | None = None,
+) -> tuple[list[Any], np.ndarray]:
+    wrist_idx = body_wrist_index(working_hand)
+    arr = np.asarray(rotations, dtype=np.float64)
+    if arr.ndim != 3 or arr.shape[1:] != (3, 3):
+        raise ValueError(f"Expected direct target rotations shape (T, 3, 3), got {arr.shape}.")
+    if len(arr) != len(body):
+        raise ValueError(f"Body/rotation frame counts differ: body={len(body)}, rotations={len(arr)}.")
+    valid_hint = np.isfinite(arr).all(axis=(1, 2))
+    if orientation_valid_hint is not None:
+        hint = np.asarray(orientation_valid_hint, dtype=bool)
+        if len(hint) != len(arr):
+            raise ValueError(
+                "orientation_valid length does not match rotations: "
+                f"{len(hint)} != {len(arr)}."
+            )
+        valid_hint &= hint
+    rotation_items = [arr[t] if valid_hint[t] else None for t in range(len(arr))]
+    filled, valid = fill_invalid_rotations(rotation_items)
+    if initial_target_rotation is not None:
+        filled = align_rotations_to_initial(filled, initial_target_rotation)
+    targets = [extract_se3(pin, body[t], filled[t], wrist_idx) for t in range(len(body))]
     return targets, valid
 
 
@@ -362,32 +581,43 @@ def neutral_ee_position(pin: Any, robot: Any, ee_frame: str) -> np.ndarray:
     return np.asarray(robot.data.oMf[frame_id].translation, dtype=np.float64)
 
 
+def neutral_ee_rotation(pin: Any, robot: Any, ee_frame: str) -> np.ndarray:
+    """Return the end-effector rotation at the robot neutral configuration."""
+    frame_id = robot.model.getFrameId(ee_frame)
+    q0 = pin.neutral(robot.model)
+    pin.forwardKinematics(robot.model, robot.data, q0)
+    pin.updateFramePlacements(robot.model, robot.data)
+    return np.asarray(robot.data.oMf[frame_id].rotation, dtype=np.float64)
+
+
 def recenter_landmarks_to_neutral(
     pin: Any,
     robot: Any,
     ee_frame: str,
     body: np.ndarray,
-    hand: np.ndarray,
+    hand: np.ndarray | None,
     working_hand: str,
-) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
     """Translate all landmarks so the first wrist starts at neutral EE position."""
     wrist_idx = body_wrist_index(working_hand)
     offset = neutral_ee_position(pin, robot, ee_frame) - body[0, wrist_idx]
-    return body + offset, hand + offset, offset
+    shifted_hand = None if hand is None else hand + offset
+    return body + offset, shifted_hand, offset
 
 
 def scale_landmarks_about_initial_wrist(
     body: np.ndarray,
-    hand: np.ndarray,
+    hand: np.ndarray | None,
     working_hand: str,
     scale: float,
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray | None]:
     """Uniformly scale the motion around the first wrist position."""
     if scale <= 0.0:
         raise ValueError("trajectory_scale must be positive.")
     wrist_idx = body_wrist_index(working_hand)
     anchor = body[0, wrist_idx].copy()
-    return anchor + (body - anchor) * scale, anchor + (hand - anchor) * scale
+    scaled_hand = None if hand is None else anchor + (hand - anchor) * scale
+    return anchor + (body - anchor) * scale, scaled_hand
 
 
 def run_approach(
@@ -476,14 +706,16 @@ def compute_tracking_error(pin: Any, robot: Any, ee_frame: str, q_traj: np.ndarr
 def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any]:
     """Run one retargeting job and save a compatible trajectory archive."""
     pin, _pink, Configuration, solve_ik, FrameTask, PostureTask, load_robot_description = require_ik_dependencies()
-    body, hand, fps = load_landmarks(
+    retarget_input = load_retarget_input(
         sample_path,
         cfg.working_hand,
         cfg.landmark_sg_window,
         cfg.landmark_sg_polyorder,
         cfg.limit_frames,
     )
-    sample_orientation_valid = load_orientation_valid(sample_path, cfg.limit_frames)
+    body = retarget_input.body
+    hand = retarget_input.hand
+    fps = retarget_input.fps
 
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
@@ -510,13 +742,31 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
 
     orientation_valid = None
     if cfg.target_mode == "hand_se3":
-        targets, orientation_valid = build_targets(
-            pin,
-            body,
-            hand,
-            cfg.working_hand,
-            sample_orientation_valid,
+        initial_target_rotation = (
+            neutral_ee_rotation(pin, robot, cfg.robot.ee_frame)
+            if cfg.align_initial_orientation
+            else None
         )
+        if retarget_input.target_rotations is not None:
+            targets, orientation_valid = build_direct_rotation_targets(
+                pin,
+                body,
+                retarget_input.target_rotations,
+                cfg.working_hand,
+                retarget_input.orientation_valid,
+                initial_target_rotation,
+            )
+        elif hand is not None:
+            targets, orientation_valid = build_targets(
+                pin,
+                body,
+                hand,
+                cfg.working_hand,
+                retarget_input.orientation_valid,
+                initial_target_rotation,
+            )
+        else:
+            raise ValueError("target_mode=hand_se3 requires either direct rotations or hand landmarks.")
     elif cfg.target_mode == "wrist_position":
         targets = build_wrist_position_targets(pin, body, cfg.working_hand)
     else:
@@ -580,8 +830,12 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset,
         "trajectory_scale": float(cfg.trajectory_scale),
+        "align_initial_orientation": bool(cfg.align_initial_orientation),
+        "source_format": retarget_input.source_format,
         "source_npz": str(sample_path),
     }
+    if retarget_input.timestamps_us is not None:
+        archive["timestamps_us"] = retarget_input.timestamps_us
     if target_rot is not None:
         archive["ee_target_rot"] = target_rot
     if orientation_valid is not None:
@@ -606,6 +860,8 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset.tolist(),
         "trajectory_scale": float(cfg.trajectory_scale),
+        "align_initial_orientation": bool(cfg.align_initial_orientation),
+        "source_format": retarget_input.source_format,
         "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
         "median_not_aligned_pos_error_mm": float(1000.0 * np.median(pos_err_smooth)),
         "mean_not_aligned_orientation_error_deg": float(np.mean(ori_err_smooth_deg)),
@@ -750,6 +1006,7 @@ def build_run_config(
         limit_frames=args.limit_frames,
         recenter_to_neutral=args.recenter_to_neutral,
         trajectory_scale=args.trajectory_scale,
+        align_initial_orientation=args.align_initial_orientation,
     )
 
 
@@ -800,11 +1057,11 @@ def run_sweep(args: argparse.Namespace) -> list[dict[str, Any]]:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Retarget RGB-only MediaPipe landmarks to saved robot trajectories.")
-    parser.add_argument("--sample", required=True, help="Path to experiments/samples/*.npz.")
+    parser.add_argument("--sample", required=True, help="Path to a smoothed target .npz or legacy optimiser sample .npz.")
     parser.add_argument("--robot", default="ur10", help="Robot alias/name: ur10 or iiwa14.")
     parser.add_argument("--working-hand", default="right", choices=["right", "left"], help="Hand to retarget.")
     parser.add_argument("--out", required=True, help="Output .h5 path for a single run, or output directory for --sweep.")
-    parser.add_argument("--sg-window", type=int, default=35, help="Landmark Savitzky-Golay window.")
+    parser.add_argument("--sg-window", type=int, default=0, help="Landmark Savitzky-Golay window; <=0 disables smoothing.")
     parser.add_argument("--sg-polyorder", type=int, default=3, help="Landmark Savitzky-Golay polynomial order.")
     parser.add_argument("--ik-position-cost", type=float, default=1.0, help="PINK frame position cost.")
     parser.add_argument("--ik-orientation-cost", type=float, default=0.3, help="PINK frame orientation cost.")
@@ -834,6 +1091,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--evaluate", action="store_true", help="Run FK evaluator after writing each trajectory.")
     parser.add_argument("--eval-align", default="rigid", choices=["rigid", "none"], help="Evaluator alignment mode.")
+    parser.add_argument(
+        "--align-initial-orientation",
+        action="store_true",
+        help="For hand_se3 debug runs, map frame-0 palm orientation to the robot neutral EE rotation.",
+    )
     parser.add_argument("--sweep", action="store_true", help="Run a parameter sweep instead of one configuration.")
     parser.add_argument("--sweep-position-costs", default="1", help="Comma-separated PINK position costs.")
     parser.add_argument("--sweep-ori-costs", default="0,0.05,0.1,0.3", help="Comma-separated orientation costs.")
