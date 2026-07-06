@@ -954,7 +954,7 @@
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
-          // ...data.web_camera.map(id => ({id, type: "web_camera"})),
+          ...data.web_camera.map(id => ({id, type: "web_camera"})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {
@@ -1219,7 +1219,7 @@
         imgContainer.className = 'calib-img-container';
   
         const img = document.createElement('img');
-        img.src = `/api/cameras/${id}/stream?undistort=false&t=${Date.now()}`;
+        img.src = `/api/calibration/${id}/stream?undistort=false&t=${Date.now()}`;
         imgContainer.appendChild(img);
   
         const label = document.createElement('span');

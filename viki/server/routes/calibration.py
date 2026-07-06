@@ -14,18 +14,26 @@ import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 import logging
+
+from viki.calibration.models import ArucoBoardParameters
+
 logger = logging.getLogger(__name__)
 
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
+from viki.server.streams import marked_camera_stream
 from viki.server.routes.models import (
     ArucoBoardParametersData,
     BoardParametersData,
     IntrinsicsResponse,
     ExtrinsicsResponse,
 )
-from viki.config import INTRINSICS_FILENAME, EXTRINSICS_FILENAME, SKELETON_DEPTH_BASE_DIR
+from viki.config import (
+    INTRINSICS_FILENAME,
+    EXTRINSICS_FILENAME,
+    SKELETON_DEPTH_BASE_DIR,
+)
 from viki.skeleton.camera_prep import prepare_frame, UndistortCache
 
 router = APIRouter(prefix="/api/calibration", tags=["calibration"])
@@ -46,62 +54,64 @@ async def capture_base_depth(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
     os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
-    
+
     active_devices = mgr.active_device_ids()
     if not active_devices:
         raise HTTPException(400, "No active cameras to capture base depth")
-    
+
     cache = UndistortCache()
     captured = []
-    
+
     for dev_id in active_devices:
         # 1. Get latest frame
         frame = mgr.latest_frame(dev_id)
         if frame is None:
             logger.warning(f"No frame available for {dev_id}")
             continue
-            
+
         # 2. Get intrinsics
         intrinsics = cal.get_intrinsics(dev_id)
         if intrinsics is None:
             logger.warning(f"No intrinsics for {dev_id}, skipping base depth capture")
             continue
-            
+
         # 3. Undistort
-        prepared = prepare_frame(frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache)
+        prepared = prepare_frame(
+            frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache
+        )
         if prepared is None:
             logger.warning(f"Failed to prepare frame for {dev_id}")
             continue
-            
+
         # 4. Save base depth map (undistorted depth in meters)
         path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
         np.save(path, prepared.depth_m)
         captured.append(dev_id)
-        
+
     return {"status": "success", "captured": captured}
 
 
 @router.post("/sync")
 async def sync(
-    params: ArucoBoardParametersData | BoardParametersData, 
+    params: ArucoBoardParametersData | BoardParametersData,
     board_type: str,
-    cal: CalibrationManager = Depends(get_calibrator)
+    cal: CalibrationManager = Depends(get_calibrator),
 ):
     # Extract common params
     board_size = params.board_size
     square_size = params.square_size
-    
+
     # Extract aruco specific
     marker_size = 0.025
     aruco_dict = cv2.aruco.DICT_6X6_250
-    
-    if board_type == "aruco" and hasattr(params, "marker_size"):
+
+    if board_type == "aruco" and isinstance(params, ArucoBoardParameters):
         marker_size = params.marker_size
         try:
-            aruco_dict = getattr(cv2.aruco, params.aruco_dict)
+            aruco_dict = getattr(cv2.aruco, str(params.aruco_dict))
         except:
             raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
-            
+
     cal.sync_params(board_type, board_size, square_size, marker_size, aruco_dict)
     return {"status": "success"}
 
@@ -120,8 +130,8 @@ async def capture_all(
 ):
     if not cal._workers:
         raise HTTPException(
-            400, 
-            "Calibration session not started. Please click 'Sync Parameters' first."
+            400,
+            "Calibration session not started. Please click 'Sync Parameters' first.",
         )
     cal.capture_all()
 
@@ -239,38 +249,43 @@ async def extrinsics_post_all(
         frame = mgr.latest_frame(dev_id)
         intrinsics = cal.get_intrinsics(dev_id)
         if frame and intrinsics:
-            prepared = prepare_frame(frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache)
+            prepared = prepare_frame(
+                frame, intrinsics.camera_matrix, intrinsics.dist_coeffs, cache
+            )
             if prepared:
                 path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
                 np.save(path, prepared.depth_m)
                 logger.info(f"Recorded base depth for {dev_id}")
         else:
-            logger.warning(f"Could not capture base depth for {dev_id}: missing frame or intrinsics")
+            logger.warning(
+                f"Could not capture base depth for {dev_id}: missing frame or intrinsics"
+            )
 
     # 2. Run extrinsics calibration
     results = []
     for device_id in active_devices:
         try:
             extr = cal.extrinsics_calibration(device_id, EXTRINSICS_FILENAME)
-            results.append(ExtrinsicsResponse(
-                device_id=device_id,
-                rvec=extr.rvec.flatten().tolist(),
-                tvec=extr.tvec.flatten().tolist(),
-            ))
+            results.append(
+                ExtrinsicsResponse(
+                    device_id=device_id,
+                    rvec=extr.rvec.flatten().tolist(),
+                    tvec=extr.tvec.flatten().tolist(),
+                )
+            )
         except Exception as e:
             logger.error(f"Extrinsics calibration failed for {device_id}: {e}")
             continue
-    
+
     if not results:
         # If we got here, it means all active devices failed to calibrate
         # (e.g. due to lack of samples)
         raise HTTPException(
-            422, 
-            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples."
+            422,
+            "Extrinsics calibration failed for all devices. Make sure you have captured enough samples.",
         )
-        
-    return results
 
+    return results
 
 
 @router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)
@@ -281,6 +296,22 @@ async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
             status_code=404, detail="Extrinsics not found for this device"
         )
     return ExtrinsicsResponse(
+        device_id=device_id,
         rvec=extrinsics.rvec.tolist(),
         tvec=extrinsics.tvec.tolist(),
+    )
+
+
+@router.get("/{device_id}/stream")
+def marked_stream(
+    device_id: str,
+    undistort: bool = True,
+    mgr: CameraManager = Depends(get_manager),
+    cal: CalibrationManager = Depends(get_calibrator),
+):
+    logging.info("marked_stream started" + "!" * 10)
+    return StreamingResponse(
+        marked_camera_stream(mgr, cal, device_id, "color"),
+        media_type=_MJPEG_MEDIA,
+        headers=_STREAM_HEADERS,
     )

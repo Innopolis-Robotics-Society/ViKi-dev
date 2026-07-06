@@ -17,6 +17,7 @@ from typing import Iterator
 import cv2
 import numpy as np
 
+from viki.calibration.aruco_worker import ArucoWorker
 from viki.calibration.manager import CalibrationManager
 from viki.capture.manager import CameraManager
 from viki.config import JPEG_QUALITY, PLACEHOLDER_SIZE, STREAM_IDLE_SLEEP
@@ -26,7 +27,11 @@ from viki.config import INTRINSICS_FILENAME
 
 
 def camera_stream(
-    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str, undistort: bool = True
+    mgr: CameraManager,
+    cal: CalibrationManager,
+    device_id: str,
+    mode: str,
+    undistort: bool = True,
 ) -> Iterator[bytes]:
     """
     Yield MJPEG chunks for one camera.
@@ -74,3 +79,35 @@ def camera_stream(
                     continue
 
         yield mjpeg_chunk(img, JPEG_QUALITY)
+
+
+def marked_camera_stream(
+    mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
+) -> Iterator[bytes]:
+    pw, ph = PLACEHOLDER_SIZE
+    last_ts = -1
+    while True:
+        worker = cal._workers.get(device_id)
+        # if calibration started, there will be a worker, so this check is excessive
+        if worker is None:
+            for i in camera_stream(mgr, cal, device_id, mode):
+                yield i
+                worker = cal._workers.get(device_id)
+                if worker is not None:
+                    break
+        if worker is None:
+            continue
+        frame = mgr.latest_frame(device_id)
+        if frame is None: # I think it's impossible
+            if device_id not in mgr.active_device_ids():
+                return
+            img = placeholder(pw, ph, f"{device_id}: not started")
+            last_ts = -1
+        elif frame.host_timestamp_us == last_ts:
+            time.sleep(STREAM_IDLE_SLEEP)
+            continue
+        else:
+            last_ts = frame.host_timestamp_us
+            yield mjpeg_chunk(
+                worker.mark_board(frame), JPEG_QUALITY
+            )
