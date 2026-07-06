@@ -109,4 +109,24 @@ def _true_runs(mask: np.ndarray) -> Iterator[tuple[int, int]]:
         yield start, len(mask)
 
 
-__all__ = ["smooth_landmark_sequence"]
+def interpolate_nans(points: np.ndarray) -> np.ndarray:
+    """Linearly fill NaNs over time for each landmark coordinate."""
+    out = np.asarray(points, dtype=np.float64).copy()
+    frames = np.arange(out.shape[0], dtype=np.float64)
+    for landmark in range(out.shape[1]):
+        for dim in range(out.shape[2]):
+            series = out[:, landmark, dim]
+            valid = np.isfinite(series)
+            if valid.all():
+                continue
+            if not valid.any():
+                continue
+            if valid.sum() == 1:
+                series[~valid] = series[valid][0]
+            else:
+                series[~valid] = np.interp(frames[~valid], frames[valid], series[valid])
+            out[:, landmark, dim] = series
+    return out
+
+
+__all__ = ["smooth_landmark_sequence", "interpolate_nans"]

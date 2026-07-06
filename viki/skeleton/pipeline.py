@@ -69,13 +69,9 @@ class SkeletonPipeline:
         self._hand_type = hand
         self._executor = ThreadPoolExecutor(max_workers=4)
 
-        # Bone length EMA tracking for outlier rejection
         self._bone_emas: dict[tuple[LM, LM], float] = {}
         self._ema_alpha = 0.1
-        self._tracked_bones = [
-            (LM.SHOULDER, LM.ELBOW),
-            (LM.ELBOW, LM.WRIST),
-        ]
+        self._tracked_bones: list[tuple[LM, LM]] = []
 
         self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 

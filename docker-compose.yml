@@ -30,29 +30,28 @@ services:
     entrypoint: ["/app/docker/entrypoint.sh"]
     command: ["uvicorn", "viki.server.app:app", "--host", "0.0.0.0", "--port", "8000"]  #, "--reload"]
 
-  # Streamlit web UI (the frontend). Talks to the FastAPI service over HTTP on
-  # localhost:8000 (host networking), and the browser reaches it on :8501.
-  streamlit:
-    build:
-      context: .
-      dockerfile: docker/frontend.Dockerfile
-    network_mode: host
-    volumes:
-      - ./viki:/app/viki
-    environment:
-      - PYTHONUNBUFFERED=1
-      - PYTHONPATH=/app
-    container_name: viki-streamlit
-    restart: unless-stopped
-    depends_on:
-      - viki
-    command:
-      - streamlit
-      - run
-      - viki/streamlit_app/app.py
-      - --server.port=8501
-      - --server.address=0.0.0.0
-      - --server.headless=true
+  # Disabled — frontend is now served directly from FastAPI (viki/server/static/).
+  # streamlit:
+  #   build:
+  #     context: .
+  #     dockerfile: docker/frontend.Dockerfile
+  #   network_mode: host
+  #   volumes:
+  #     - ./viki:/app/viki
+  #   environment:
+  #     - PYTHONUNBUFFERED=1
+  #     - PYTHONPATH=/app
+  #   container_name: viki-streamlit
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - viki
+  #   command:
+  #     - streamlit
+  #     - run
+  #     - viki/streamlit_app/app.py
+  #     - --server.port=8501
+  #     - --server.address=0.0.0.0
+  #     - --server.headless=true
 
   terminal:
     <<: *common

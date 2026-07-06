@@ -108,16 +108,18 @@ def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
     """
     Compute forearm-local flexion / deviation / roll from a landmark dict.
 
+    Arm landmarks (ELBOW, SHOULDER) are never detected by the pipeline
+    (MediaPipeArm is disabled), so this function will always return invalid
+    at runtime. Kept for schema compatibility.
+
     parameters
     ----------
     points : mapping of LM enum to world-frame position in metres.
-             ``SkeletonFrame.points`` or ``Landmarks3D.points``
 
     returns
     -------
     HandAngles. On success `.valid == True` and every scalar / vector is
-    finite. On failure (missing / NaN landmarks, or arm ~straight) the
-    result is fully NaN with `.valid == False`.
+    finite. On failure the result is fully NaN with `.valid == False`.
     """
     coords: dict[LM, np.ndarray] = {}
     for lm in REQUIRED_LM:

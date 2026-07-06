@@ -91,7 +91,6 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> 
     # 1. Calculate MediaPipe Z scale (Z_est)
     points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in range(LM.N)}
     
-    # If visualizing, we'll collect data for the arm chain
     viz_data = []
     arm_chain = (LM.SHOULDER, LM.ELBOW, LM.WRIST)
 
@@ -196,7 +195,6 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> 
                 median_pixel = None
 
 
-            # Visualization logic
             if DEPTH_PROJECTION_DEBUG and should_viz_this_frame and LM(i) in arm_chain:
                 status = "SUCCESS" if valid_vals.size > 0 else "NO_VALID_DEPTH"
                 

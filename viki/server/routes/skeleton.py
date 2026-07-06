@@ -120,6 +120,9 @@ async def skeleton_stream(websocket: WebSocket):
                     "landmarks": (
                         sanitize_nan(frame.points) if frame else {}
                     ),
+                    "end_effector": (
+                        sanitize_nan(frame.end_effector.as_dict()) if frame and frame.end_effector else None
+                    ),
                     "detections": {
                         dev_id: (sanitize_nan(det.points) if det else {})
                         for dev_id, det in detections.items()

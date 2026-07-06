@@ -6,12 +6,13 @@ Business logic for processing skeleton recording files.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import List
 
 import numpy as np
 from viki.skeleton import utils
-from viki.skeleton.smoothing import smooth_landmark_sequence
+from viki.skeleton.smoothing import smooth_landmark_sequence, interpolate_nans
 from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import LM
 import viki.config as config
@@ -60,26 +61,30 @@ class SkeletonProcessor:
         if points.size == 0:
             raise ValueError("Recording file is empty.")
 
-        # 1. Smooth landmarks
-        # points shape: (T, L, 3)
+        # Backward compat: strip arm landmarks (21, 22) from old files
+        hand_mask = landmark_ids < LM.N
+        if not hand_mask.all():
+            points = points[:, hand_mask, :]
+            landmark_ids = landmark_ids[hand_mask]
+
+        # 1. Fill NaN gaps via linear interpolation, then smooth
+        filled = interpolate_nans(points)
         smoothed_points = smooth_landmark_sequence(
-            points,
+            filled,
             window_length=window_length,
             polyorder=polyorder,
         )
 
         # 2. Compute end-effector poses
-        # We need to convert smoothed_points back to a Mapping[LM, np.ndarray] for each frame
         T = smoothed_points.shape[0]
         L = smoothed_points.shape[1]
-        
+
         positions = np.zeros((T, 3), dtype=np.float32)
         rotations = np.zeros((T, 3, 3), dtype=np.float32)
         rpy = np.zeros((T, 3), dtype=np.float32)
         valid = np.zeros(T, dtype=bool)
 
         for t in range(T):
-            # Create mapping for the current frame
             current_mapping = {LM(landmark_ids[i]): smoothed_points[t, i] for i in range(L)}
             
             pose = compute_end_effector_pose(current_mapping, int(timestamps[t]))
@@ -101,5 +106,25 @@ class SkeletonProcessor:
             valid=valid,
             timestamps=timestamps
         )
+
+        if getattr(config, 'SKELETON_SAVE_JSON_DEBUG', False):
+            json_path = output_path.with_suffix(".json")
+            json_data = []
+            for t in range(T):
+                frame_pts = {int(landmark_ids[i]): smoothed_points[t, i].tolist() for i in range(L)}
+                frame = {
+                    "ts": int(timestamps[t]),
+                    "landmarks": frame_pts,
+                    "end_effector": {
+                        "position": positions[t].tolist(),
+                        "R_world_palm": rotations[t].tolist(),
+                        "rpy_deg": rpy[t].tolist(),
+                        "valid": bool(valid[t]),
+                        "timestamp_us": int(timestamps[t]),
+                    }
+                }
+                json_data.append(frame)
+            with open(json_path, "w") as f:
+                json.dump(json_data, f, indent=2)
 
         return str(output_path), smoothed_points

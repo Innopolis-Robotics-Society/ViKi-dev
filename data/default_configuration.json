@@ -76,5 +76,6 @@
     30
   ],
   "SKELETON_RECS_DIR": "data/skeleton_recs",
-  "SKELETON_SMOOTHED_DIR": "data/skeleton_smoothed"
+  "SKELETON_SMOOTHED_DIR": "data/skeleton_smoothed",
+  "SKELETON_SAVE_JSON_DEBUG": false
 }

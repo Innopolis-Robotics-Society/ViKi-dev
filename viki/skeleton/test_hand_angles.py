@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -53,7 +52,7 @@ class HandAnglesTests(unittest.TestCase):
         bad[0] = np.nan
         self.assertIsNone(compute_palm_rotation(points[LM.WRIST], bad, points[LM.MIDDLE_MCP]))
 
-    def test_end_effector_pose_and_recorder_json(self) -> None:
+    def test_end_effector_pose_and_recorder_npz(self) -> None:
         points = synthetic_points()
         pose = compute_end_effector_pose(points, timestamp_us=123)
         self.assertTrue(pose.valid)
@@ -65,13 +64,16 @@ class HandAnglesTests(unittest.TestCase):
             saved = recorder.stop()
 
             self.assertIsNotNone(saved)
-            self.assertTrue(filename.startswith("rec_"))
-            data = json.loads(Path(saved).read_text(encoding="utf-8"))
+            self.assertTrue(filename.startswith("rec-"))
+            self.assertTrue(str(saved).endswith(".npz"))
 
-        self.assertIn("landmarks", data[0])
-        self.assertIn("end_effector", data[0])
-        self.assertTrue(data[0]["end_effector"]["valid"])
-        np.testing.assert_allclose(data[0]["end_effector"]["R_world_palm"], np.eye(3), atol=1e-6)
+            with np.load(saved) as data:
+                self.assertIn("timestamps", data)
+                self.assertIn("points", data)
+                self.assertIn("landmark_ids", data)
+                self.assertEqual(data["points"].shape, (1, LM.N, 3))
+                self.assertEqual(data["landmark_ids"].tolist(), list(range(LM.N)))
+                np.testing.assert_allclose(data["points"][0, LM.WRIST.value], [1.0, 2.0, 3.0], atol=1e-6)
 
 
 if __name__ == "__main__":

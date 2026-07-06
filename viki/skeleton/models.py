@@ -193,7 +193,8 @@ class LM(IntEnum):
     PINKY_DIP = 19
     PINKY_TIP = 20
 
-    # Arm landmarks (from MediaPipe Pose, appended after hand landmarks)
+    # Arm landmarks — never detected (MediaPipeArm disabled), but kept for
+    # backward compat and hand_angles schema.
     ELBOW = 21
     SHOULDER = 22
 

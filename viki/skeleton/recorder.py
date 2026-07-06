@@ -56,38 +56,38 @@ class SkeletonRecorder:
     def stop(self) -> str | None:
         """
         Finalise the recording and write to disk as compressed NumPy arrays.
+        Saves all 23 landmarks; missing ones become NaN.
         Returns the path to the saved file.
         """
         if self._current_file is None:
             return None
 
-        # Determine which indices to save
-        indices = self._filter_indices if self._filter_indices else list(LM)
-        landmark_ids = np.array([idx.value for idx in indices], dtype=np.int32)
-        
-        # Extract data
+        all_ids = list(range(LM.N))
+        landmark_ids = np.array(all_ids, dtype=np.int32)
+        nan3 = np.full(3, np.nan, dtype=np.float32)
         timestamps = np.array([f.timestamp_us for f in self._frames], dtype=np.int64)
-        
-        # points shape: (N_frames, N_landmarks, 3)
+
         points = np.array(
-            [[f.points[idx] for idx in indices] for f in self._frames], 
-            dtype=np.float32
+            [[f.points.get(LM(idx), nan3) for idx in all_ids] for f in self._frames],
+            dtype=np.float32,
         )
 
         np.savez_compressed(
             self._current_file,
             timestamps=timestamps,
             points=points,
-            landmark_ids=landmark_ids
+            landmark_ids=landmark_ids,
         )
 
-        if config.SKELETON_SAVE_JSON_DEBUG:
+        if getattr(config, 'SKELETON_SAVE_JSON_DEBUG', False):
             json_path = self._current_file.with_suffix(".json")
             json_data = [
                 {
                     "ts": f.timestamp_us,
-                    "landmarks": {idx.value: f.points[idx].tolist() for idx in indices},
-                    "end_effector": f.end_effector.as_dict() if f.end_effector else None
+                    "landmarks": {
+                        idx: f.points.get(LM(idx), nan3).tolist() for idx in all_ids
+                    },
+                    "end_effector": f.end_effector.as_dict() if f.end_effector else None,
                 }
                 for f in self._frames
             ]
