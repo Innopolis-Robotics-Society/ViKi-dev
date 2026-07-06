@@ -68,6 +68,11 @@ class SkeletonRecorder:
             {
                 "ts": frame.timestamp_us,
                 "landmarks": landmark_data,
+                "end_effector": (
+                    frame.end_effector.as_dict()
+                    if frame.end_effector is not None
+                    else None
+                ),
             }
         )
 

@@ -30,6 +30,7 @@ from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
     MediaPipeArm,
+    MediaPipeHand,
 )
 from viki.skeleton.models import (
     Landmarks3D,
@@ -50,10 +51,6 @@ class SkeletonPipeline:
     calibrator : CalibrationManager
         Provides per-device intrinsics and extrinsics for prep, lift, fusion.
     detector : optional CompositeLandmarkDetector.
-        If None, a default composite is created with only MediaPipeArm in
-        FusionMode.ANY (arm-pose only configuration). To enable additional
-        detectors later, build the composite explicitly and pass
-        it here.
     hand : {"right", "left"}
         Which arm to track for the default detector. Ignored when `detector`
         is supplied explicitly.
@@ -199,7 +196,8 @@ class SkeletonPipeline:
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
                 detectors=[
-                    MediaPipeArm(hand=self._hand, mode="live")
+                    # MediaPipeArm(hand=self._hand, mode="live"),
+                    MediaPipeHand(hand=self._hand, mode="live"),
                 ],  # pyright: ignore
                 mode=FusionMode.ANY,
             )

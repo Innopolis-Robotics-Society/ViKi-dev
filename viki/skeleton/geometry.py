@@ -19,7 +19,7 @@ import numpy as np
 import logging
 import os
 
-from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG, SKELETON_DEPTH_SUBTRACT_THRESHOLD
+from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG, SKELETON_DEPTH_SUBTRACT_THRESHOLD # type: ignore
 logger = logging.getLogger(__name__)
 
 
@@ -42,8 +42,8 @@ def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
     cum_weights = np.cumsum(sorted_weights)
     total_weight = cum_weights[-1]
     if total_weight <= 0:
-        return np.median(values)
-    return sorted_vals[np.searchsorted(cum_weights, total_weight / 2)]
+        return float(np.median(values))
+    return float(sorted_vals[np.searchsorted(cum_weights, total_weight / 2)])
 
 
 def _pixel_to_3d(
@@ -182,7 +182,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                     Z_proj = np.median(valid_vals)
                     search_mask = valid_mask
                 
-                _last_known_z[LM(i)] = Z_proj
+                _last_known_z[LM(i)] = float(Z_proj)
 
                 # Find the pixel that provided the median for visualization
                 median_pixel = None
@@ -204,7 +204,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
                 # Final guess projection for the yellow dot
                 final_ud, final_vd = ud, vd
                 z_for_dot = Z_proj if not np.isnan(Z_proj) else _last_known_z[LM(i)]
-                res_final = backend.project_color_to_depth(u, v, z_for_dot)
+                res_final = backend.project_color_to_depth(u, v, float(z_for_dot))
                 if res_final:
                     final_ud, final_vd = res_final
                 
@@ -246,7 +246,7 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
         Z_final = Z_proj
 
         if not np.isnan(Z_final):
-            points[LM(i)] = _pixel_to_3d(u, v, Z_final, fx, fy, cx, cy)
+            points[LM(i)] = _pixel_to_3d(u, v, float(Z_final), fx, fy, cx, cy)
 
     # Save multi-joint visualization if data was collected
     if viz_data:
@@ -264,4 +264,24 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: KinectBa
         device_id=detection.device_id,
         timestamp_us=detection.timestamp_us,
     )
+
+
+def calculate_pitch(wrist_point, middle_finger_points):
+    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+def calculate_yaw(wrist_point, middle_finger_points):
+    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+def calculate_roll(wrist_point, thumbs_points):
+    '''Here we use wrist_point (x, y, z) and thumb_points (list(x,y,z) to get approximate
+    vector of angle regarding to world-coordinates'''
+    pass
+
+'''flexion/extension — сгибание/разгибание
+radial/ulnar deviation — отведение в стороны
+pronation/supination — ключевой поворот кисти'''
 
