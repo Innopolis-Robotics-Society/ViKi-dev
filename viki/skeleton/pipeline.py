@@ -1,7 +1,7 @@
 """
 viki.skeleton.pipeline
 ----------------------
-Public orchestrator for the skeleton detection pipeline.a
+Public orchestrator for the skeleton detection pipeline.
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
     MediaPipeArm,
+    MediaPipeHand,
 )
 from viki.skeleton.models import (
     Landmarks3D,
@@ -49,14 +50,8 @@ class SkeletonPipeline:
     ----------
     calibrator : CalibrationManager
         Provides per-device intrinsics and extrinsics for prep, lift, fusion.
-    detector : optional CompositeLandmarkDetector.
-        If None, a default composite is created with only MediaPipeArm in
-        FusionMode.ANY (arm-pose only configuration). To enable additional
-        detectors later, build the composite explicitly and pass
-        it here.
     hand : {"right", "left"}
-        Which arm to track for the default detector. Ignored when `detector`
-        is supplied explicitly.
+        Which arm/hand to track for the default detector.
     """
 
     def __init__(
@@ -80,7 +75,6 @@ class SkeletonPipeline:
             (LM.SHOULDER, LM.ELBOW),
             (LM.ELBOW, LM.WRIST),
         ]
-
 
         self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
@@ -163,7 +157,7 @@ class SkeletonPipeline:
             extrinsics, 
             group.sync_timestamp_us, 
             confidences=confidences, 
-            bone_emas=self._bone_emas
+            bone_emas=self._bone_emas,
         )
 
         if fused:
@@ -171,7 +165,7 @@ class SkeletonPipeline:
             for parent, child in self._tracked_bones:
                 if parent in fused.points and child in fused.points:
                     dist = np.linalg.norm(fused.points[parent] - fused.points[child])
-                    
+
                     # Outlier rejection: only update EMA if distance is plausible
                     # (e.g., within 30% of current EMA or first measurement)
                     if (parent, child) not in self._bone_emas:
@@ -180,7 +174,8 @@ class SkeletonPipeline:
                         current_ema = self._bone_emas[(parent, child)]
                         if 0.7 * current_ema < dist < 1.3 * current_ema:
                             self._bone_emas[(parent, child)] = (
-                                self._ema_alpha * dist + (1.0 - self._ema_alpha) * current_ema
+                                self._ema_alpha * dist
+                                + (1.0 - self._ema_alpha) * current_ema
                             )
                         else:
                             # logger.debug(f"Rejected bone length outlier: {dist:.3f}m (EMA: {current_ema:.3f}m)")
@@ -196,7 +191,10 @@ class SkeletonPipeline:
         
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
-                detectors=[MediaPipeArm(hand=self._hand, mode="live")], # pyright: ignore
+                detectors=[
+                    MediaPipeArm(hand=self._hand, mode="live"),
+                    MediaPipeHand(hand=self._hand, mode="live"),
+                ],
                 mode=FusionMode.ANY,
             )
 

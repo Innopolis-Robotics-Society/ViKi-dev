@@ -29,6 +29,10 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.recording = self.root / "rec_api_smoothed.json"
         landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
         landmarks[0] = [1.0, 2.0, 3.0]
+        landmarks[1] = [1.0, 3.0, 3.0]
+        landmarks[9] = [2.0, 2.0, 3.0]
+        landmarks[21] = [100.0, 100.0, 100.0]
+        landmarks[22] = [200.0, 200.0, 200.0]
         self.recording.write_text(
             json.dumps([{"ts": 1_000_000, "landmarks": landmarks}]),
             encoding="utf-8",
@@ -70,6 +74,8 @@ class OptimizationRoutesTests(unittest.TestCase):
         )
         self.assertEqual(converted.status_code, 200)
         self.assertEqual(converted.json()["frames"], 1)
+        self.assertNotIn("include_arm", converted.json())
+        self.assertEqual(converted.json()["orientation_valid_frames"], 1)
         self.assertTrue((self.samples / "sample.npz").exists())
 
         samples = self.client.get("/api/optimization/samples")

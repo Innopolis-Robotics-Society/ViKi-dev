@@ -8,6 +8,7 @@ import numpy as np
 import viki.config
 
 from viki.calibration.models import CalibrationExtrinsics
+from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import Landmarks3D, LM, SkeletonFrame
 
 
@@ -86,10 +87,10 @@ def fuse(
             target_len = viki.config.BONE_LENGTHS.get((parent, child))
             if target_len is None and bone_emas is not None:
                 target_len = bone_emas.get((parent, child))
-            
+
             if target_len is None:
                 continue
-            
+
             # Project child along the observed direction
             dir_vec = out_points[child] - out_points[parent]
             dist = np.linalg.norm(dir_vec)
@@ -97,11 +98,12 @@ def fuse(
                 # Apply soft constraint: only clip if outside [target * (1-TOL), target * (1+TOL)]
                 lower = target_len * (1.0 - tolerance)
                 upper = target_len * (1.0 + tolerance)
-                
+
                 clipped_dist = np.clip(dist, lower, upper)
                 out_points[child] = out_points[parent] + (dir_vec / dist) * clipped_dist
 
     return SkeletonFrame(
         out_points,
         timestamp_us,
+        end_effector=compute_end_effector_pose(out_points, timestamp_us),
     )

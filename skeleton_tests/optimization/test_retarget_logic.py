@@ -11,15 +11,25 @@ import numpy as np
 
 from skeleton_tests.optimization.retarget_rgb_only import (
     R_DEFAULT,
+    build_targets,
     build_parser,
     build_run_config,
     effective_orientation_cost,
+    fill_invalid_rotations,
     load_landmarks,
+    load_orientation_valid,
     normalize_robot,
     output_traj_path,
     should_apply_legacy_transform,
     transform_points,
 )
+
+
+class FakePin:
+    class SE3:
+        def __init__(self, rotation, translation):
+            self.rotation = np.asarray(rotation, dtype=np.float64)
+            self.translation = np.asarray(translation, dtype=np.float64)
 
 
 class RetargetLogicTests(unittest.TestCase):
@@ -38,6 +48,10 @@ class RetargetLogicTests(unittest.TestCase):
         )
         self.assertEqual(args.target_mode, "wrist_position")
         self.assertEqual(args.robot, "ur10")
+
+    def test_parser_defaults_to_wrist_position(self) -> None:
+        args = build_parser().parse_args(["--sample", "sample.npz", "--out", "out"])
+        self.assertEqual(args.target_mode, "wrist_position")
 
     def test_wrist_position_forces_zero_orientation_cost(self) -> None:
         args = build_parser().parse_args(
@@ -66,6 +80,53 @@ class RetargetLogicTests(unittest.TestCase):
         self.assertEqual(output_traj_path(Path("out"), sample, robot).name, "out_traj.h5")
         self.assertEqual(output_traj_path(Path("out.npz"), sample, robot).name, "out.h5")
         self.assertEqual(output_traj_path(Path("out.hdf5"), sample, robot).name, "out.hdf5")
+
+    def test_hand_se3_targets_use_palm_frame_orientation(self) -> None:
+        body = np.zeros((1, 33, 3), dtype=np.float64)
+        body[0, 16] = [1.0, 2.0, 3.0]
+        hand = np.zeros((1, 21, 3), dtype=np.float64)
+        hand[0, 0] = [1.0, 2.0, 3.0]
+        hand[0, 1] = [1.0, 3.0, 3.0]
+        hand[0, 9] = [2.0, 2.0, 3.0]
+
+        targets, valid = build_targets(FakePin, body, hand, "right")
+
+        self.assertTrue(bool(valid[0]))
+        np.testing.assert_allclose(targets[0].translation, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(targets[0].rotation[:, 0], [1.0, 0.0, 0.0])
+        np.testing.assert_allclose(targets[0].rotation[:, 1], [0.0, 1.0, 0.0])
+        np.testing.assert_allclose(targets[0].rotation[:, 2], [0.0, 0.0, 1.0])
+
+    def test_invalid_rotations_fill_from_nearest_valid_frame(self) -> None:
+        valid_rotation = np.eye(3)
+        filled, valid = fill_invalid_rotations([None, valid_rotation, None])
+
+        np.testing.assert_allclose(filled[0], valid_rotation)
+        np.testing.assert_allclose(filled[1], valid_rotation)
+        np.testing.assert_allclose(filled[2], valid_rotation)
+        np.testing.assert_array_equal(valid, [False, True, False])
+
+    def test_hand_se3_targets_respect_orientation_valid_hint(self) -> None:
+        body = np.zeros((2, 33, 3), dtype=np.float64)
+        body[:, 16] = [1.0, 2.0, 3.0]
+        hand = np.zeros((2, 21, 3), dtype=np.float64)
+        hand[:, 0] = [1.0, 2.0, 3.0]
+        hand[:, 1] = [1.0, 3.0, 3.0]
+        hand[:, 9] = [2.0, 2.0, 3.0]
+
+        targets, valid = build_targets(FakePin, body, hand, "right", np.array([True, False]))
+
+        np.testing.assert_array_equal(valid, [True, False])
+        np.testing.assert_allclose(targets[1].rotation, targets[0].rotation)
+
+    def test_load_orientation_valid_reads_optional_sample_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "sample.npz"
+            np.savez(path, orientation_valid=np.array([True, False, True]))
+
+            mask = load_orientation_valid(path, limit_frames=2)
+
+            np.testing.assert_array_equal(mask, [True, False])
 
     def test_robot_base_sample_skips_legacy_transform(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

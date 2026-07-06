@@ -1,4 +1,4 @@
-"""Tests for ViKi-dev skeleton JSON conversion."""
+"""Tests for ViKi-dev hand skeleton JSON conversion."""
 
 from __future__ import annotations
 
@@ -12,53 +12,44 @@ import numpy as np
 from skeleton_tests.optimization.convert_viki23_json import convert
 
 
-class ConvertViki23JsonTests(unittest.TestCase):
-    def test_wrist_only_conversion_ignores_arm_landmarks(self) -> None:
+class ConvertVikiHandJsonTests(unittest.TestCase):
+    def test_hand_only_conversion_maps_wrist_and_orientation_metadata(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             input_path = root / "rec_test.json"
             output_path = root / "sample.npz"
-            wrist = [1.0, 2.0, 3.0]
-            elbow = [100.0, 100.0, 100.0]
-            shoulder = [200.0, 200.0, 200.0]
-            landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
-            landmarks[0] = wrist
-            landmarks[21] = elbow
-            landmarks[22] = shoulder
+            landmarks = [[0.0, 0.0, 0.0] for _ in range(21)]
+            landmarks[0] = [1.0, 2.0, 3.0]
+            landmarks[1] = [1.0, 3.0, 3.0]
+            landmarks[9] = [2.0, 2.0, 3.0]
             input_path.write_text(
-                json.dumps(
-                    [
-                        {"ts": 1_000_000, "landmarks": landmarks},
-                        {"ts": 1_100_000, "landmarks": landmarks},
-                    ]
-                ),
+                json.dumps([{"ts": 1_000_000, "landmarks": landmarks}]),
                 encoding="utf-8",
             )
 
-            summary = convert(input_path, output_path, hand="right", include_arm=False)
+            summary = convert(input_path, output_path, hand="right")
             with np.load(output_path, allow_pickle=True) as data:
-                body = data["body"]
+                self.assertEqual(data["body"].shape, (1, 33, 3))
+                self.assertEqual(data["right_hand"].shape, (1, 21, 3))
+                np.testing.assert_allclose(data["body"][:, 16, :], [[1.0, 2.0, 3.0]])
+                np.testing.assert_allclose(data["right_hand"][0], np.asarray(landmarks))
+                self.assertNotIn("include_arm", data.files)
+                self.assertTrue(bool(data["orientation_valid"][0]))
 
-                self.assertEqual(body.shape, (2, 33, 3))
-                expected_wrist = np.repeat([wrist], len(body), axis=0)
-                np.testing.assert_allclose(body[:, 16, :], expected_wrist)
-                np.testing.assert_allclose(body[:, 14, :], expected_wrist)
-                np.testing.assert_allclose(body[:, 12, :], expected_wrist)
-                self.assertEqual(data["working_hand"].item(), "right")
-                self.assertFalse(bool(data["include_arm"].item()))
+            self.assertEqual(summary["frames"], 1)
+            self.assertEqual(summary["orientation_valid_frames"], 1)
 
-            self.assertEqual(summary["frames"], 2)
-            self.assertEqual(summary["working_hand"], "right")
-
-    def test_include_arm_copies_elbow_and_shoulder(self) -> None:
+    def test_legacy_23_landmark_recording_ignores_elbow_and_shoulder(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            input_path = root / "rec_test.json"
+            input_path = root / "rec_legacy.json"
             output_path = root / "sample.npz"
             landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
             landmarks[0] = [1.0, 2.0, 3.0]
-            landmarks[21] = [4.0, 5.0, 6.0]
-            landmarks[22] = [7.0, 8.0, 9.0]
+            landmarks[1] = [1.0, 3.0, 3.0]
+            landmarks[9] = [2.0, 2.0, 3.0]
+            landmarks[21] = [100.0, 100.0, 100.0]
+            landmarks[22] = [200.0, 200.0, 200.0]
             input_path.write_text(
                 json.dumps([{"ts": 1_000_000, "landmarks": landmarks}]),
                 encoding="utf-8",
@@ -66,11 +57,36 @@ class ConvertViki23JsonTests(unittest.TestCase):
 
             convert(input_path, output_path, hand="right", include_arm=True)
             with np.load(output_path, allow_pickle=True) as data:
-                body = data["body"]
-                np.testing.assert_allclose(body[:, 16, :], [[1.0, 2.0, 3.0]])
-                np.testing.assert_allclose(body[:, 14, :], [[4.0, 5.0, 6.0]])
-                np.testing.assert_allclose(body[:, 12, :], [[7.0, 8.0, 9.0]])
-                self.assertTrue(bool(data["include_arm"].item()))
+                np.testing.assert_allclose(data["right_hand"][0], np.asarray(landmarks[:21]))
+                self.assertNotIn("include_arm", data.files)
+                self.assertFalse(np.any(data["body"] == 100.0))
+                self.assertFalse(np.any(data["body"] == 200.0))
+
+    def test_orientation_valid_uses_raw_recording_before_interpolation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            input_path = root / "rec_missing.json"
+            output_path = root / "sample.npz"
+            valid_landmarks = [[0.0, 0.0, 0.0] for _ in range(21)]
+            valid_landmarks[0] = [1.0, 2.0, 3.0]
+            valid_landmarks[1] = [1.0, 3.0, 3.0]
+            valid_landmarks[9] = [2.0, 2.0, 3.0]
+            missing_landmarks = list(valid_landmarks)
+            missing_landmarks[1] = [float("nan"), float("nan"), float("nan")]
+            input_path.write_text(
+                json.dumps(
+                    [
+                        {"ts": 1_000_000, "landmarks": valid_landmarks},
+                        {"ts": 1_033_333, "landmarks": missing_landmarks},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            convert(input_path, output_path, hand="right")
+            with np.load(output_path, allow_pickle=True) as data:
+                np.testing.assert_array_equal(data["orientation_valid"], [True, False])
+                self.assertTrue(np.isfinite(data["right_hand"][1]).all())
 
 
 if __name__ == "__main__":

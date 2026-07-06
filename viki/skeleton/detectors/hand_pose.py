@@ -35,10 +35,10 @@ _LABEL_LEFT = "Left"
 
 
 class MediaPipeHand(PartialLandmarkDetector):
-    """Partial detector for one hand (wrist only)."""
+    """Partial detector for one hand."""
 
     name = "hand"
-    indices = (0,)  # Only WRIST
+    indices = tuple(range(21))
     priority = 10
 
     def __init__(

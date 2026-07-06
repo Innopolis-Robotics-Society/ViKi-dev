@@ -19,13 +19,15 @@ from typing import Any
 
 import numpy as np
 
+from viki.skeleton.hand_angles import compute_palm_rotation
+
 try:
-    from archive_io import write_hdf5_archive
+    from archive_io import load_archive, write_hdf5_archive
 except ImportError:  # pragma: no cover - allows package-style imports later.
     try:
-        from .archive_io import write_hdf5_archive
+        from .archive_io import load_archive, write_hdf5_archive
     except ImportError:
-        from experiments.archive_io import write_hdf5_archive
+        from experiments.archive_io import load_archive, write_hdf5_archive
 
 try:
     from smoothing import adjusted_savgol_window, smooth_savgol
@@ -36,9 +38,9 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
         from experiments.smoothing import adjusted_savgol_window, smooth_savgol
 
 
-RIGHT_ARM = {"shoulder": 12, "elbow": 14, "wrist": 16}
-LEFT_ARM = {"shoulder": 11, "elbow": 13, "wrist": 15}
-HAND_IDXS = {"wrist": 0, "index_mcp": 5, "middle_mcp": 9, "pinky_mcp": 17}
+RIGHT_BODY_WRIST = 16
+LEFT_BODY_WRIST = 15
+HAND_IDXS = {"wrist": 0, "thumb_cmc": 1, "middle_mcp": 9}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
 # into the robot-facing convention used by the saved trajectory archives.
@@ -268,37 +270,80 @@ def load_landmarks(
     return body_smooth, hand_smooth, fps
 
 
-def normalize_vector(vec: np.ndarray, fallback: np.ndarray) -> np.ndarray:
-    norm = float(np.linalg.norm(vec))
-    if norm < 1e-9:
-        return fallback.astype(np.float64).copy()
-    return np.asarray(vec, dtype=np.float64) / norm
+def load_orientation_valid(sample_path: Path, limit_frames: int | None) -> np.ndarray | None:
+    """Load the optional raw hand-orientation validity mask from a sample."""
+    with load_archive(sample_path) as data:
+        if "orientation_valid" not in data.files:
+            return None
+        mask = np.asarray(data["orientation_valid"], dtype=bool)
+    if limit_frames is not None:
+        mask = mask[:limit_frames]
+    return mask
 
 
-def extract_se3(pin: Any, body_frame: np.ndarray, hand_frame: np.ndarray, wrist_body_idx: int) -> Any:
+def body_wrist_index(working_hand: str) -> int:
+    return RIGHT_BODY_WRIST if working_hand == "right" else LEFT_BODY_WRIST
+
+
+def hand_palm_rotation(hand_frame: np.ndarray) -> np.ndarray | None:
+    return compute_palm_rotation(
+        hand_frame[HAND_IDXS["wrist"]],
+        hand_frame[HAND_IDXS["thumb_cmc"]],
+        hand_frame[HAND_IDXS["middle_mcp"]],
+    )
+
+
+def fill_invalid_rotations(rotations: list[np.ndarray | None]) -> tuple[np.ndarray, np.ndarray]:
+    valid = np.array([rotation is not None for rotation in rotations], dtype=bool)
+    if not valid.any():
+        raise ValueError(
+            "target_mode=hand_se3 requires at least one valid hand orientation "
+            "from landmarks 0 (wrist), 1 (thumb CMC), and 9 (middle MCP)."
+        )
+
+    valid_indices = np.flatnonzero(valid)
+    filled = np.zeros((len(rotations), 3, 3), dtype=np.float64)
+    for frame_idx, rotation in enumerate(rotations):
+        if rotation is not None:
+            filled[frame_idx] = np.asarray(rotation, dtype=np.float64)
+            continue
+        nearest = valid_indices[np.argmin(np.abs(valid_indices - frame_idx))]
+        nearest_rotation = rotations[int(nearest)]
+        assert nearest_rotation is not None
+        filled[frame_idx] = np.asarray(nearest_rotation, dtype=np.float64)
+    return filled, valid
+
+
+def extract_se3(pin: Any, body_frame: np.ndarray, rotation: np.ndarray, wrist_body_idx: int) -> Any:
     """Build a hand target SE3 from body wrist translation and hand orientation."""
     p = np.asarray(body_frame[wrist_body_idx], dtype=np.float64)
-    middle = hand_frame[HAND_IDXS["middle_mcp"]] - hand_frame[HAND_IDXS["wrist"]]
-    spread = hand_frame[HAND_IDXS["index_mcp"]] - hand_frame[HAND_IDXS["pinky_mcp"]]
-
-    x_axis = normalize_vector(middle, np.array([1.0, 0.0, 0.0]))
-    z_axis = normalize_vector(np.cross(x_axis, spread), np.array([0.0, 0.0, 1.0]))
-    x_axis = normalize_vector(x_axis - np.dot(x_axis, z_axis) * z_axis, np.array([1.0, 0.0, 0.0]))
-    y_axis = normalize_vector(np.cross(z_axis, x_axis), np.array([0.0, 1.0, 0.0]))
-    rotation = np.column_stack([x_axis, y_axis, z_axis])
-
-    if np.linalg.det(rotation) < 0.0:
-        rotation[:, 2] *= -1.0
-    return pin.SE3(rotation, p)
+    return pin.SE3(np.asarray(rotation, dtype=np.float64), p)
 
 
-def build_targets(pin: Any, body: np.ndarray, hand: np.ndarray, working_hand: str) -> list[Any]:
-    wrist_idx = RIGHT_ARM["wrist"] if working_hand == "right" else LEFT_ARM["wrist"]
-    return [extract_se3(pin, body[t], hand[t], wrist_idx) for t in range(len(body))]
+def build_targets(
+    pin: Any,
+    body: np.ndarray,
+    hand: np.ndarray,
+    working_hand: str,
+    orientation_valid_hint: np.ndarray | None = None,
+) -> tuple[list[Any], np.ndarray]:
+    wrist_idx = body_wrist_index(working_hand)
+    rotations = [hand_palm_rotation(hand[t]) for t in range(len(hand))]
+    if orientation_valid_hint is not None:
+        hint = np.asarray(orientation_valid_hint, dtype=bool)
+        if len(hint) != len(rotations):
+            raise ValueError(
+                "orientation_valid length does not match hand landmarks: "
+                f"{len(hint)} != {len(rotations)}."
+            )
+        rotations = [rotation if hint[t] else None for t, rotation in enumerate(rotations)]
+    rotations, valid = fill_invalid_rotations(rotations)
+    targets = [extract_se3(pin, body[t], rotations[t], wrist_idx) for t in range(len(body))]
+    return targets, valid
 
 
 def build_wrist_position_targets(pin: Any, body: np.ndarray, working_hand: str) -> list[Any]:
-    wrist_idx = RIGHT_ARM["wrist"] if working_hand == "right" else LEFT_ARM["wrist"]
+    wrist_idx = body_wrist_index(working_hand)
     identity = np.eye(3, dtype=np.float64)
     return [pin.SE3(identity, np.asarray(body[t, wrist_idx], dtype=np.float64)) for t in range(len(body))]
 
@@ -326,7 +371,7 @@ def recenter_landmarks_to_neutral(
     working_hand: str,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Translate all landmarks so the first wrist starts at neutral EE position."""
-    wrist_idx = RIGHT_ARM["wrist"] if working_hand == "right" else LEFT_ARM["wrist"]
+    wrist_idx = body_wrist_index(working_hand)
     offset = neutral_ee_position(pin, robot, ee_frame) - body[0, wrist_idx]
     return body + offset, hand + offset, offset
 
@@ -340,7 +385,7 @@ def scale_landmarks_about_initial_wrist(
     """Uniformly scale the motion around the first wrist position."""
     if scale <= 0.0:
         raise ValueError("trajectory_scale must be positive.")
-    wrist_idx = RIGHT_ARM["wrist"] if working_hand == "right" else LEFT_ARM["wrist"]
+    wrist_idx = body_wrist_index(working_hand)
     anchor = body[0, wrist_idx].copy()
     return anchor + (body - anchor) * scale, anchor + (hand - anchor) * scale
 
@@ -438,6 +483,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         cfg.landmark_sg_polyorder,
         cfg.limit_frames,
     )
+    sample_orientation_valid = load_orientation_valid(sample_path, cfg.limit_frames)
 
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
@@ -462,8 +508,15 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
             cfg.working_hand,
         )
 
+    orientation_valid = None
     if cfg.target_mode == "hand_se3":
-        targets = build_targets(pin, body, hand, cfg.working_hand)
+        targets, orientation_valid = build_targets(
+            pin,
+            body,
+            hand,
+            cfg.working_hand,
+            sample_orientation_valid,
+        )
     elif cfg.target_mode == "wrist_position":
         targets = build_wrist_position_targets(pin, body, cfg.working_hand)
     else:
@@ -531,6 +584,8 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     }
     if target_rot is not None:
         archive["ee_target_rot"] = target_rot
+    if orientation_valid is not None:
+        archive["orientation_valid"] = orientation_valid
     write_hdf5_archive(out_path, archive)
 
     summary = {
@@ -558,6 +613,9 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "p95_not_aligned_orientation_error_deg": float(np.percentile(ori_err_smooth_deg, 95)),
         "max_not_aligned_orientation_error_deg": float(np.max(ori_err_smooth_deg)),
     }
+    if orientation_valid is not None:
+        summary["orientation_valid_frames"] = int(orientation_valid.sum())
+        summary["orientation_total_frames"] = int(len(orientation_valid))
     print(
         f"Saved trajectory: {out_path} "
         f"(mean unaligned notebook-style error={summary['mean_not_aligned_pos_error_mm']:.1f} mm, "
@@ -753,7 +811,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ik-posture-cost", type=float, default=1e-3, help="PINK posture task cost.")
     parser.add_argument(
         "--target-mode",
-        default="hand_se3",
+        default="wrist_position",
         choices=["hand_se3", "wrist_position"],
         help="Use full hand-derived SE3 target or wrist position only.",
     )

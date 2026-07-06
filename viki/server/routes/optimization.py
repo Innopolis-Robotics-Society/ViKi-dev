@@ -45,7 +45,7 @@ class ConvertRequest(BaseModel):
     recording: str
     output_name: str
     hand: Literal["right", "left"] = "right"
-    include_arm: bool = False
+    include_arm: bool | None = None
 
 
 class RetargetRequest(BaseModel):
@@ -96,7 +96,7 @@ async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
     output_path = SAMPLES_DIR / output_name
 
     try:
-        summary = convert(recording, output_path, req.hand, req.include_arm)
+        summary = convert(recording, output_path, req.hand)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -105,7 +105,8 @@ async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
         "frames": summary["frames"],
         "fps": summary["fps"],
         "working_hand": summary["working_hand"],
-        "include_arm": summary["include_arm"],
+        "orientation_valid_frames": summary["orientation_valid_frames"],
+        "orientation_total_frames": summary["orientation_total_frames"],
     }
 
 

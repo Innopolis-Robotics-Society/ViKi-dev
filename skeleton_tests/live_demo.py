@@ -68,7 +68,9 @@ CHAIN_COLORS = [
 def draw_skeleton(frame_bgr: np.ndarray, detection) -> np.ndarray:
     """Draw 2D skeleton overlay from HandDetection pixel coords."""
     img = frame_bgr.copy()
-    px = detection.px  # (23, 2)
+    px = np.full((LM.N, 2), np.nan, dtype=np.float32)
+    for landmark, point in detection.points.items():
+        px[int(landmark)] = point
 
     for chain, color in zip(CHAINS, CHAIN_COLORS):
         pts = px[chain]
@@ -184,13 +186,12 @@ def main():
         print(f"Cannot open camera {args.camera}")
         return
 
-    # Arm + hand together. ANY mode → a kept frame requires only one
-    # detector to succeed, so missing-hand or missing-arm frames are still
-    # rendered with whatever is available.
+    # Arm + hand together. ANY mode keeps frames when either detector succeeds,
+    # so missing-hand or missing-arm frames are still useful.
     detector = CompositeLandmarkDetector(
         detectors=[
             MediaPipeArm(hand=args.hand, mode="live"),
-            # MediaPipeHand(hand=args.hand, mode="live"),
+            MediaPipeHand(hand=args.hand, mode="live"),
         ],
         mode=FusionMode.ANY,
     )
