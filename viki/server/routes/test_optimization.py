@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,11 +22,21 @@ class OptimizationRoutesTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.samples = self.root / "skeleton_tests" / "samples"
-        self.output = self.root / "skeleton_tests" / "output"
-        self.opt_dir = Path("skeleton_tests") / "optimization"
+        self.samples = self.root / "data" / "skeleton_smoothed"
+        self.legacy_samples = self.root / "data" / "optimization_samples"
+        self.output = self.root / "data" / "robot_out"
+        self.opt_dir = self.root / "viki" / "optimization" / "optimization"
         self.samples.mkdir(parents=True)
+        self.legacy_samples.mkdir(parents=True)
         self.output.mkdir(parents=True)
+        self.opt_dir.mkdir(parents=True)
+        np.savez(
+            self.samples / "cln_api.npz",
+            positions=np.ones((2, 3), dtype=np.float64),
+            rotations=np.tile(np.eye(3), (2, 1, 1)),
+            valid=np.array([True, True]),
+            timestamps=np.array([1_000_000, 1_100_000], dtype=np.int64),
+        )
         self.recording = self.root / "rec_api_smoothed.json"
         landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
         landmarks[0] = [1.0, 2.0, 3.0]
@@ -42,7 +53,8 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.client = TestClient(app)
         self.patches = [
             patch.object(optimization, "PROJECT_ROOT", self.root),
-            patch.object(optimization, "SAMPLES_DIR", self.samples),
+            patch.object(optimization, "SMOOTHED_INPUT_DIR", self.samples),
+            patch.object(optimization, "LEGACY_SAMPLES_DIR", self.legacy_samples),
             patch.object(optimization, "OUTPUT_DIR", self.output),
             patch.object(optimization, "OPTIMIZATION_DIR", self.opt_dir),
             patch.object(optimization, "RECORDING_DIRS", (self.root, self.root / "data" / "skeleton_recs")),
@@ -76,11 +88,11 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(converted.json()["frames"], 1)
         self.assertNotIn("include_arm", converted.json())
         self.assertEqual(converted.json()["orientation_valid_frames"], 1)
-        self.assertTrue((self.samples / "sample.npz").exists())
+        self.assertTrue((self.legacy_samples / "sample.npz").exists())
 
         samples = self.client.get("/api/optimization/samples")
         self.assertEqual(samples.status_code, 200)
-        self.assertEqual(samples.json()["samples"][0]["filename"], "sample.npz")
+        self.assertEqual(samples.json()["samples"][0]["filename"], "cln_api.npz")
 
     def test_retarget_rejects_missing_sample_before_conda_check(self) -> None:
         response = self.client.post(
@@ -116,15 +128,23 @@ class OptimizationRoutesTests(unittest.TestCase):
                     "sample": "sample.npz",
                     "robot": "ur10",
                     "output_name": "real_wrist_ur10",
-                    "target_mode": "wrist_position",
+                    "target_mode": "hand_se3",
                 },
             )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["job_id"], "job1")
         command = enqueue.call_args.args[0]
+        self.assertIn(str(self.opt_dir / "retarget_rgb_only.py"), command)
         self.assertIn("--target-mode", command)
-        self.assertIn("wrist_position", command)
+        self.assertIn("hand_se3", command)
+        self.assertIn("--sg-window", command)
+        self.assertEqual(command[command.index("--sg-window") + 1], "0")
+        self.assertIn("--ik-position-cost", command)
+        self.assertEqual(command[command.index("--ik-position-cost") + 1], "5.0")
+        self.assertIn("--ik-orientation-cost", command)
+        self.assertEqual(command[command.index("--ik-orientation-cost") + 1], "0.3")
+        self.assertIn("--align-initial-orientation", command)
 
     def test_job_worker_records_subprocess_success(self) -> None:
         completed = subprocess.CompletedProcess(["conda"], 0, stdout="ok", stderr="")

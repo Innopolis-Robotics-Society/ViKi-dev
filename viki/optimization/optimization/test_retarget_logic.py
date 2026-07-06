@@ -9,9 +9,10 @@ from unittest.mock import patch
 
 import numpy as np
 
-from skeleton_tests.optimization.retarget_rgb_only import (
+from viki.optimization.optimization.retarget_rgb_only import (
     R_DEFAULT,
     align_rotations_to_initial,
+    build_direct_rotation_targets,
     build_targets,
     build_parser,
     build_run_config,
@@ -19,6 +20,8 @@ from skeleton_tests.optimization.retarget_rgb_only import (
     fill_invalid_rotations,
     load_landmarks,
     load_orientation_valid,
+    load_retarget_input,
+    load_smoothed_targets,
     normalize_robot,
     output_traj_path,
     should_apply_legacy_transform,
@@ -170,6 +173,98 @@ class RetargetLogicTests(unittest.TestCase):
 
             np.testing.assert_array_equal(mask, [True, False])
 
+    def test_smoothed_targets_load_positions_rotations_and_timestamps(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-test.npz"
+            positions = np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]], dtype=np.float32)
+            rotations = np.stack([np.eye(3), np.full((3, 3), np.nan)]).astype(np.float32)
+            valid = np.array([True, True])
+            timestamps = np.array([1_000_000, 1_100_000], dtype=np.int64)
+            np.savez(path, positions=positions, rotations=rotations, valid=valid, timestamps=timestamps)
+
+            loaded = load_smoothed_targets(path, "right", limit_frames=None)
+
+            self.assertEqual(loaded.source_format, "smoothed_targets")
+            self.assertIsNone(loaded.hand)
+            self.assertEqual(loaded.body.shape, (2, 33, 3))
+            np.testing.assert_allclose(loaded.body[:, 16, :], positions)
+            np.testing.assert_allclose(loaded.target_rotations, rotations)
+            np.testing.assert_array_equal(loaded.orientation_valid, [True, False])
+            np.testing.assert_array_equal(loaded.timestamps_us, timestamps)
+            self.assertAlmostEqual(loaded.fps, 10.0)
+
+    def test_smoothed_targets_skip_landmark_smoothing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-test.npz"
+            np.savez(
+                path,
+                positions=np.ones((2, 3), dtype=np.float64),
+                rotations=np.tile(np.eye(3), (2, 1, 1)),
+                valid=np.array([True, True]),
+                timestamps=np.array([0, 100_000], dtype=np.int64),
+            )
+
+            with patch("viki.optimization.optimization.retarget_rgb_only.smooth_savgol") as smooth:
+                loaded = load_retarget_input(path, "right", 99, 3, None)
+
+            smooth.assert_not_called()
+            self.assertEqual(loaded.source_format, "smoothed_targets")
+
+    def test_smoothed_targets_interpolate_missing_positions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-gap.npz"
+            np.savez(
+                path,
+                positions=np.array(
+                    [
+                        [0.0, 0.0, 0.0],
+                        [np.nan, np.nan, np.nan],
+                        [2.0, 4.0, 6.0],
+                    ],
+                    dtype=np.float64,
+                ),
+                rotations=np.tile(np.eye(3), (3, 1, 1)),
+                valid=np.array([True, True, True]),
+                timestamps=np.array([0, 100_000, 200_000], dtype=np.int64),
+            )
+
+            loaded = load_smoothed_targets(path, "right", None)
+
+            np.testing.assert_allclose(loaded.body[:, 16, :], [[0, 0, 0], [1, 2, 3], [2, 4, 6]])
+            np.testing.assert_array_equal(loaded.orientation_valid, [True, True, True])
+
+    def test_smoothed_targets_reject_malformed_archive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-bad.npz"
+            np.savez(
+                path,
+                positions=np.ones((2, 3), dtype=np.float64),
+                valid=np.array([True, True]),
+                timestamps=np.array([0, 100_000], dtype=np.int64),
+            )
+
+            with self.assertRaises(KeyError):
+                load_smoothed_targets(path, "right", None)
+
+    def test_direct_rotation_targets_use_positions_and_valid_mask(self) -> None:
+        body = np.zeros((2, 33, 3), dtype=np.float64)
+        body[:, 16, :] = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
+        rotations = np.stack([np.eye(3), np.diag([1.0, -1.0, -1.0])])
+
+        targets, valid = build_direct_rotation_targets(
+            FakePin,
+            body,
+            rotations,
+            "right",
+            np.array([True, False]),
+        )
+
+        np.testing.assert_array_equal(valid, [True, False])
+        np.testing.assert_allclose(targets[0].translation, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(targets[1].translation, [4.0, 5.0, 6.0])
+        np.testing.assert_allclose(targets[0].rotation, np.eye(3))
+        np.testing.assert_allclose(targets[1].rotation, np.eye(3))
+
     def test_robot_base_sample_skips_legacy_transform(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "sample.npz"
@@ -186,7 +281,7 @@ class RetargetLogicTests(unittest.TestCase):
             )
 
             with patch(
-                "skeleton_tests.optimization.retarget_rgb_only.smooth_savgol",
+                "viki.optimization.optimization.retarget_rgb_only.smooth_savgol",
                 side_effect=lambda points, **_: np.asarray(points, dtype=np.float64).copy(),
             ):
                 loaded_body, loaded_hand, fps = load_landmarks(path, "right", 3, 1, None)
@@ -209,7 +304,7 @@ class RetargetLogicTests(unittest.TestCase):
             )
 
             with patch(
-                "skeleton_tests.optimization.retarget_rgb_only.smooth_savgol",
+                "viki.optimization.optimization.retarget_rgb_only.smooth_savgol",
                 side_effect=lambda points, **_: np.asarray(points, dtype=np.float64).copy(),
             ):
                 loaded_body, loaded_hand, _ = load_landmarks(path, "right", 3, 1, None)
@@ -230,7 +325,7 @@ class RetargetLogicTests(unittest.TestCase):
                 coordinate_frame="robot_base",
             )
 
-            with patch("skeleton_tests.optimization.retarget_rgb_only.smooth_savgol") as smooth:
+            with patch("viki.optimization.optimization.retarget_rgb_only.smooth_savgol") as smooth:
                 loaded_body, loaded_hand, _ = load_landmarks(path, "right", 0, 1, None)
 
             smooth.assert_not_called()

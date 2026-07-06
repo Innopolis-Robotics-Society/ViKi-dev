@@ -22,16 +22,16 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from skeleton_tests.optimization.convert_viki23_json import convert
+from viki.optimization.optimization.convert_viki23_json import convert
 
 
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SKELETON_TESTS_DIR = PROJECT_ROOT / "skeleton_tests"
-OPTIMIZATION_DIR = SKELETON_TESTS_DIR / "optimization"
-SAMPLES_DIR = SKELETON_TESTS_DIR / "samples"
-OUTPUT_DIR = SKELETON_TESTS_DIR / "output"
+OPTIMIZATION_DIR = PROJECT_ROOT / "viki" / "optimization" / "optimization"
+SMOOTHED_INPUT_DIR = PROJECT_ROOT / "data" / "skeleton_smoothed"
+LEGACY_SAMPLES_DIR = PROJECT_ROOT / "data" / "optimization_samples"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "robot_out"
 RECORDING_DIRS = (PROJECT_ROOT, PROJECT_ROOT / "data" / "skeleton_recs")
 OUTPUT_SUFFIXES = {".h5", ".hdf5", ".json", ".png"}
 COND_ENV_VAR = "VIKI_OPT_CONDA_EXE"
@@ -53,12 +53,13 @@ class RetargetRequest(BaseModel):
     robot: str = "ur10"
     output_name: str
     target_mode: Literal["wrist_position", "hand_se3"] = "wrist_position"
-    ik_position_cost: float = 1.0
-    ik_orientation_cost: float = 0.0
+    ik_position_cost: float | None = None
+    ik_orientation_cost: float | None = None
     joint_sg_window: int = 0
-    sg_window: int = 7
+    sg_window: int = 0
     recenter_to_neutral: bool = True
     trajectory_scale: float = Field(default=0.25, gt=0.0)
+    align_initial_orientation: bool = True
     evaluate: bool = True
 
 
@@ -93,7 +94,7 @@ async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
     _ensure_dirs()
     recording = _resolve_recording(req.recording)
     output_name = _safe_filename(req.output_name, expected_suffix=".npz")
-    output_path = SAMPLES_DIR / output_name
+    output_path = LEGACY_SAMPLES_DIR / output_name
 
     try:
         summary = convert(recording, output_path, req.hand)
@@ -113,14 +114,14 @@ async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
 @router.get("/samples")
 async def list_samples() -> dict[str, Any]:
     _ensure_dirs()
-    return {"samples": [_file_info(path) for path in sorted(SAMPLES_DIR.glob("*.npz"))]}
+    return {"samples": [_file_info(path) for path in sorted(SMOOTHED_INPUT_DIR.glob("*.npz"))]}
 
 
 @router.post("/retarget")
 async def retarget(req: RetargetRequest) -> dict[str, Any]:
     _ensure_dirs()
     sample_name = _safe_filename(req.sample, expected_suffix=".npz")
-    sample_path = SAMPLES_DIR / sample_name
+    sample_path = SMOOTHED_INPUT_DIR / sample_name
     if not sample_path.exists():
         raise HTTPException(status_code=404, detail=f"Sample not found: {sample_name}")
 
@@ -130,6 +131,12 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
     output_stem = output_stem.replace("_traj", "")
     conda_exe = _resolve_conda_exe()
     conda_env = os.getenv(COND_ENV_NAME_VAR, DEFAULT_CONDA_ENV)
+    ik_position_cost = req.ik_position_cost if req.ik_position_cost is not None else _default_position_cost(req.robot)
+    ik_orientation_cost = (
+        req.ik_orientation_cost
+        if req.ik_orientation_cost is not None
+        else (0.3 if req.target_mode == "hand_se3" else 0.0)
+    )
 
     command = [
         conda_exe,
@@ -147,9 +154,9 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
         "--target-mode",
         req.target_mode,
         "--ik-position-cost",
-        str(req.ik_position_cost),
+        str(ik_position_cost),
         "--ik-orientation-cost",
-        str(req.ik_orientation_cost),
+        str(ik_orientation_cost),
         "--joint-sg-window",
         str(req.joint_sg_window),
         "--sg-window",
@@ -159,6 +166,8 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
     ]
     if req.recenter_to_neutral:
         command.append("--recenter-to-neutral")
+    if req.target_mode == "hand_se3" and req.align_initial_orientation:
+        command.append("--align-initial-orientation")
     if req.evaluate:
         command.append("--evaluate")
 
@@ -206,7 +215,8 @@ async def download_output(filename: str) -> FileResponse:
 
 
 def _ensure_dirs() -> None:
-    SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
+    SMOOTHED_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    LEGACY_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
@@ -247,7 +257,7 @@ def _file_info(path: Path) -> dict[str, Any]:
         "path": _relative_path(path),
         "size": stat.st_size,
         "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        "looks_smoothed": "smoothed" in path.stem.lower(),
+        "looks_smoothed": path.parent == SMOOTHED_INPUT_DIR or "smoothed" in path.stem.lower() or path.stem.lower().startswith("cln-"),
     }
 
 
@@ -272,6 +282,11 @@ def _resolve_conda_exe() -> str:
             f"Set {COND_ENV_VAR} to a valid conda executable."
         ),
     )
+
+
+def _default_position_cost(robot: str) -> float:
+    robot_key = robot.strip().lower()
+    return 2.0 if robot_key in {"iiwa14", "iiwa14_description"} else 5.0
 
 
 def _enqueue_job(command: list[str], output_stem: str) -> OptimizationJob:
