@@ -70,5 +70,5 @@ CMD ["/bin/bash"]
 
 # Test target
 FROM base AS test
-RUN pip install ".[dev]"
+RUN --mount=type=cache,target=/root/.cache/pip pip install ".[dev]"
 CMD ["/bin/bash"]

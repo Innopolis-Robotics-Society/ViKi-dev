@@ -45,7 +45,7 @@ async def lifespan(app: FastAPI):
     from viki.skeleton.models import LM
 
     app.state.skeleton_recorder = SkeletonRecorder(
-        filter_indices=[LM.WRIST, LM.ELBOW, LM.SHOULDER]
+        filter_indices=[LM.WRIST, LM.MIDDLE_MCP, LM.THUMB_CMC]
     )
 
     app.state.skeleton_worker = SkeletonWorker(
@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI):
         app.state.skeleton_recorder,
     )
     app.state.skeleton_worker.start()
+    from viki.skeleton.processor import SkeletonProcessor
+    app.state.skeleton_processor = SkeletonProcessor()
 
     yield
     app.state.skeleton_worker.stop()

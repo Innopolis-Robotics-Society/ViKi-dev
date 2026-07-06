@@ -210,6 +210,7 @@ class CameraManager:
         worker = self._workers.pop(device_id, None)
         if worker:
             worker.stop()
+            worker.join()
 
     def stop_all(self) -> None:
         with ThreadPoolExecutor() as executor:

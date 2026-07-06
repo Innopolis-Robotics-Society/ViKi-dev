@@ -6,13 +6,15 @@ Handles saving skeleton capture sessions to JSON files.
 
 from __future__ import annotations
 
-import json
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import List
 
+import json
 import numpy as np
 from viki.skeleton.models import SkeletonFrame, LM
+import viki.config as config
 
 
 class SkeletonRecorder:
@@ -29,7 +31,7 @@ class SkeletonRecorder:
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._filter_indices = filter_indices
         self._current_file = None
-        self._frames: List[dict] = []
+        self._frames: List[SkeletonFrame] = []
 
     def start(self) -> str:
         """
@@ -37,55 +39,60 @@ class SkeletonRecorder:
         Returns the filename of the recording.
         """
         self._frames = []
-        timestamp = int(time.time())
-        filename = f"rec_{timestamp}.json"
+        timestamp = datetime.now().strftime("%H.%M-%d.%m.%Y")
+        filename = f"rec-{timestamp}.npz"
         self._current_file = self._base_dir / filename
         return filename
 
     def record(self, frame: SkeletonFrame) -> None:
         """
         Add a frame to the current recording session.
-        Discards frames where all landmarks are NaN.
         """
         if self._current_file is None:
             return
 
-        # if np.isnan([vec for _, vec in frame.points.items()]).all():
-        #     return
-
-        # Filter and convert numpy arrays to lists for JSON serialization
-        if self._filter_indices:
-            landmark_data = {
-                index.value: frame.points[index].tolist()
-                for index in self._filter_indices
-            }
-        else:
-            landmark_data = {
-                index.value: vec.tolist() for index, vec in frame.points.items()
-            }
-
-        self._frames.append(
-            {
-                "ts": frame.timestamp_us,
-                "landmarks": landmark_data,
-                "end_effector": (
-                    frame.end_effector.as_dict()
-                    if frame.end_effector is not None
-                    else None
-                ),
-            }
-        )
+        self._frames.append(frame)
 
     def stop(self) -> str | None:
         """
-        Finalise the recording and write to disk.
+        Finalise the recording and write to disk as compressed NumPy arrays.
         Returns the path to the saved file.
         """
         if self._current_file is None:
             return None
 
-        with open(self._current_file, "w") as f:
-            json.dump(self._frames, f, indent=2)
+        # Determine which indices to save
+        indices = self._filter_indices if self._filter_indices else list(LM)
+        landmark_ids = np.array([idx.value for idx in indices], dtype=np.int32)
+        
+        # Extract data
+        timestamps = np.array([f.timestamp_us for f in self._frames], dtype=np.int64)
+        
+        # points shape: (N_frames, N_landmarks, 3)
+        points = np.array(
+            [[f.points[idx] for idx in indices] for f in self._frames], 
+            dtype=np.float32
+        )
+
+        np.savez_compressed(
+            self._current_file,
+            timestamps=timestamps,
+            points=points,
+            landmark_ids=landmark_ids
+        )
+
+        if config.SKELETON_SAVE_JSON_DEBUG:
+            json_path = self._current_file.with_suffix(".json")
+            json_data = [
+                {
+                    "ts": f.timestamp_us,
+                    "landmarks": {idx.value: f.points[idx].tolist() for idx in indices},
+                    "end_effector": f.end_effector.as_dict() if f.end_effector else None
+                }
+                for f in self._frames
+            ]
+            with open(json_path, "w") as f:
+                json.dump(json_data, f, indent=2)
 
         path = str(self._current_file)
         self._current_file = None

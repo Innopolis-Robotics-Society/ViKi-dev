@@ -16,8 +16,9 @@ from pydantic import BaseModel
 import numpy as np
 from viki.skeleton.models import LM
 
-from viki.server.deps import get_worker
+from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
+from viki.skeleton.processor import SkeletonProcessor
 
 
 def sanitize_nan(val):
@@ -39,6 +40,11 @@ logger = logging.getLogger(__name__)
 
 class ToggleRequest(BaseModel):
     enabled: bool
+
+
+class SmoothRequest(BaseModel):
+    window_length: int = 7
+    polyorder: int = 2
 
 
 @router.post("/toggle")
@@ -65,7 +71,39 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
     }
 
 
+@router.get("/recordings")
+async def list_recordings(
+    page: int = 0, 
+    limit: int = 10, 
+    processor: SkeletonProcessor = Depends(get_processor)
+):
+    return {"recordings": processor.list_recordings(page=page, page_size=limit)}
+
+
+@router.post("/smooth/{filename}")
+async def smooth_recording(
+    filename: str,
+    req: SmoothRequest,
+    processor: SkeletonProcessor = Depends(get_processor)
+):
+    try:
+        path = processor.smooth_recording(
+            filename, 
+            window_length=req.window_length, 
+            polyorder=req.polyorder
+        )
+        return {"status": "success", "path": path}
+    except FileNotFoundError:
+        raise HTTPException(404, f"Recording {filename} not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.exception("Smoothing failed")
+        raise HTTPException(500, f"Smoothing failed: {str(e)}")
+
+
 @router.websocket("/stream")
+
 async def skeleton_stream(websocket: WebSocket):
     await websocket.accept()
     # logger.debug("ROUTES/SKELETON: stream endpoint engaged")
