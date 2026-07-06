@@ -16,6 +16,7 @@ backend = [
     "uvicorn[standard]>=0.29",
     "mediapipe>=0.10.35",
     "matplotlib>=3.8",
+    "h5py>=3.10",
 ]
 frontend = [
     "streamlit>=1.37",

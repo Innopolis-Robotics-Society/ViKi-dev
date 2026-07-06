@@ -65,6 +65,9 @@
   ],
   "KINECT_DEPTH_MODE_MAX_FPS": {
     "WFOV_UNBINNED": 15
+<<<<<<< HEAD
+  }
+=======
   },
   "WEBCAM_RESOLUTIONS": [
     "640x480",
@@ -75,4 +78,5 @@
     15,
     30
   ]
+>>>>>>> main
 }

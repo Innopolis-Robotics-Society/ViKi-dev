@@ -1,7 +1,7 @@
 """
 viki.skeleton.pipeline
 ----------------------
-Public orchestrator for the skeleton detection pipeline.a
+Public orchestrator for the skeleton detection pipeline.
 """
 
 from __future__ import annotations
@@ -52,8 +52,7 @@ class SkeletonPipeline:
         Provides per-device intrinsics and extrinsics for prep, lift, fusion.
     detector : optional CompositeLandmarkDetector.
     hand : {"right", "left"}
-        Which arm to track for the default detector. Ignored when `detector`
-        is supplied explicitly.
+        Which arm/hand to track for the default detector.
     """
 
     def __init__(
@@ -198,7 +197,7 @@ class SkeletonPipeline:
                 detectors=[
                     # MediaPipeArm(hand=self._hand, mode="live"),
                     MediaPipeHand(hand=self._hand, mode="live"),
-                ],  # pyright: ignore
+                ],
                 mode=FusionMode.ANY,
             )
 

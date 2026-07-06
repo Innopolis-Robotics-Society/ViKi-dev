@@ -1,6 +1,9 @@
 """
 viki.skeleton.hand_angles
 -------------------------
+<<<<<<< HEAD
+Palm-frame orientation from 3-D hand landmarks.
+=======
 Hand orientation from a 3-D skeleton frame
 
 1. compute_hand_angles is deprecated and used for live-demo usage only
@@ -15,8 +18,8 @@ Angles (all in degrees, sign consistent with the applied rotation):
     flexion_deg    : angle of ``to_middle`` in the (x, y) plane,
     deviation_deg  : angle of ``to_middle`` in the (x, z) plane,
     roll_deg       : angle of ``palm_normal`` in the (y, z) plane,
-    
-    
+
+
 2. ``compute_end_effector_pose`` is world-frame
 
 Returns the full world-frame pose of the wrist end-effector: 3-D position
@@ -25,6 +28,7 @@ frame to the world
 
 Required landmarks:
     WRIST, THUMB_CMC, MIDDLE_MCP  (no elbow / shoulder needed).
+>>>>>>> 5527db99f1e8525dbcca29c0e3ff6414454b266c
 """
 
 from __future__ import annotations
@@ -45,8 +49,8 @@ REQUIRED_LM: tuple[LM, ...] = (
     LM.MIDDLE_MCP,
 )
 
-_MIN_LEN = 1e-6           # zero-length vector threshold
-_MIN_UP_REF_ORTHO = 0.05  
+_MIN_LEN = 1e-6  # zero-length vector threshold
+_MIN_UP_REF_ORTHO = 0.05
 
 _NAN_VEC3 = np.full(3, np.nan, dtype=np.float32)
 
@@ -174,13 +178,14 @@ def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
         valid=True,
     )
 
+
 # Landmarks required to build the palm frame in the world.
 _EE_REQUIRED_LM: tuple[LM, ...] = (LM.WRIST, LM.THUMB_CMC, LM.MIDDLE_MCP)
 
 
 def _rot_to_rpy_extrinsic_xyz(R: np.ndarray) -> np.ndarray:
     """
-    Extract roll/pitch/yaw (radians) from a rotation 
+    Extract roll/pitch/yaw (radians) from a rotation
     R = Rz(yaw) · Ry(pitch) · Rx(roll)  (extrinsic XYZ).
 
     """
