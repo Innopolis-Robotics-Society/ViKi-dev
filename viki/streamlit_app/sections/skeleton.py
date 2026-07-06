@@ -63,10 +63,28 @@ def render() -> None:
     st.subheader("3D Skeleton Estimation")
     devices = st.session_state.get("devices", [])
 
-    _status()
+    main_col, side_col = st.columns([3, 1])
 
-    c1, c2, c3, c4 = st.columns(4)
-    with c1:
+    with main_col:
+        _status()
+
+        st.caption(
+            "The live pose, per-camera detected state and joint table below update in "
+            "real time from the skeleton WebSocket (in your browser)."
+        )
+
+        html = skeleton_canvas(
+            ws_url=ws_url("/api/skeleton/stream"),
+            devices=devices,
+            extrinsics=st.session_state.get("extrinsics", {}),
+            viz_cam=st.session_state.get("viz_cam"),
+            view_mode=st.session_state.get("view_mode", "projections"),
+            height=380,
+        )
+        # Canvas + detection list + joint table + WS all live inside this component.
+        components.html(html, height=740, scrolling=True)
+
+    with side_col:
         st.button(
             "▶ Start Estimation",
             type="primary",
@@ -74,43 +92,26 @@ def render() -> None:
             on_click=_toggle_estimation,
             args=(True,),
         )
-    with c2:
         st.button(
             "■ Stop Estimation",
             use_container_width=True,
             on_click=_toggle_estimation,
             args=(False,),
         )
-    with c3:
+        st.divider()
         st.button(
             "🔴 Record",
+            type="primary",
             use_container_width=True,
             on_click=_toggle_recording,
             args=(True,),
         )
-    with c4:
         st.button(
             "⏹ Stop Recording",
             use_container_width=True,
             on_click=_toggle_recording,
             args=(False,),
         )
-
-    st.caption(
-        "The live pose, per-camera detected state and joint table below update in "
-        "real time from the skeleton WebSocket (in your browser)."
-    )
-
-    html = skeleton_canvas(
-        ws_url=ws_url("/api/skeleton/stream"),
-        devices=devices,
-        extrinsics=st.session_state.get("extrinsics", {}),
-        viz_cam=st.session_state.get("viz_cam"),
-        view_mode=st.session_state.get("view_mode", "projections"),
-        height=380,
-    )
-    # Canvas + detection list + joint table + WS all live inside this component.
-    components.html(html, height=740, scrolling=True)
 
     if not devices:
         st.info(

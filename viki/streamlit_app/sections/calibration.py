@@ -156,39 +156,30 @@ def _board_params() -> None:
         key="board_type",
         on_change=_on_board_type_change,
     )
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.number_input(
-            "Board width", min_value=1, step=1, key="board_width",
-            on_change=_on_board_param_change,
-        )
-    with c2:
-        st.number_input(
-            "Board height", min_value=1, step=1, key="board_height",
-            on_change=_on_board_param_change,
-        )
-    with c3:
-        st.number_input(
-            "Square size (m)", min_value=0.001, step=0.001, format="%.3f",
-            key="square_size", on_change=_on_board_param_change,
-        )
+    st.number_input(
+        "Board width", min_value=1, step=1, key="board_width",
+        on_change=_on_board_param_change,
+    )
+    st.number_input(
+        "Board height", min_value=1, step=1, key="board_height",
+        on_change=_on_board_param_change,
+    )
+    st.number_input(
+        "Square size (m)", min_value=0.001, step=0.001, format="%.3f",
+        key="square_size", on_change=_on_board_param_change,
+    )
 
     if st.session_state.board_type == "aruco":
-        a1, a2 = st.columns(2)
-        with a1:
-            st.number_input(
-                "Marker size (m)", min_value=0.001, step=0.001, format="%.3f",
-                key="marker_size", on_change=_on_board_param_change,
-            )
-        with a2:
-            # Value comes from session_state (seeded in init_state); passing an
-            # index as well would conflict with the pre-set key.
-            if st.session_state.aruco_dict not in ARUCO_DICTS:
-                st.session_state.aruco_dict = ARUCO_DICTS[0]
-            st.selectbox(
-                "Dictionary", ARUCO_DICTS, key="aruco_dict",
-                on_change=_on_board_param_change,
-            )
+        st.number_input(
+            "Marker size (m)", min_value=0.001, step=0.001, format="%.3f",
+            key="marker_size", on_change=_on_board_param_change,
+        )
+        if st.session_state.aruco_dict not in ARUCO_DICTS:
+            st.session_state.aruco_dict = ARUCO_DICTS[0]
+        st.selectbox(
+            "Dictionary", ARUCO_DICTS, key="aruco_dict",
+            on_change=_on_board_param_change,
+        )
 
 
 def render() -> None:
@@ -206,57 +197,59 @@ def render() -> None:
         st.session_state.calib_session_devices = None
         st.session_state.calib_session_started = False
 
-    # --- preview streams (rendered once; keep running across fragment polls) ---
-    if not devices:
-        st.info("No cameras detected. Scan and start cameras before calibrating.")
-    else:
-        cols = st.columns(min(len(devices), 3))
-        for i, d in enumerate(devices):
-            with cols[i % len(cols)]:
-                if st.session_state.running.get(d["id"]):
-                    components.html(
-                        mjpeg_img(_preview_url(d["id"]), height=200, label=d["id"]),
-                        height=220,
-                    )
-                else:
-                    st.caption(f"{d['id']} (not running)")
+    main_col, side_col = st.columns([2, 1])
 
-        st.markdown("**Samples collected**")
-        _sample_counts()
+    with main_col:
+        # --- preview streams (rendered once; keep running across fragment polls) ---
+        if not devices:
+            st.info("No cameras detected. Scan and start cameras before calibrating.")
+        else:
+            cols = st.columns(min(len(devices), 3))
+            for i, d in enumerate(devices):
+                with cols[i % len(cols)]:
+                    if st.session_state.running.get(d["id"]):
+                        components.html(
+                            mjpeg_img(_preview_url(d["id"]), height=200, label=d["id"]),
+                            height=220,
+                        )
+                    else:
+                        st.caption(f"{d['id']} (not running)")
 
-    st.divider()
+            st.markdown("**Samples collected**")
+            _sample_counts()
 
-    _board_params()
-    st.caption("Board parameters sync automatically when changed -- no manual step needed.")
+    with side_col:
+        _board_params()
+        st.caption("Board parameters sync automatically when changed -- no manual step needed.")
 
-    st.divider()
+        st.divider()
 
-    b1, b2 = st.columns(2)
-    with b1:
+        b1, b2 = st.columns(2)
+        with b1:
+            st.button(
+                "📸 Capture Sample",
+                type="primary",
+                use_container_width=True,
+                on_click=_capture_sample,
+                disabled=not devices,
+            )
+        with b2:
+            st.button(
+                "🗑 Clear Samples",
+                use_container_width=True,
+                on_click=_clear_samples,
+                disabled=not devices,
+            )
+
         st.button(
-            "📸 Capture Sample",
+            "Calibrate Extrinsics",
             type="primary",
             use_container_width=True,
-            on_click=_capture_sample,
-            disabled=not devices,
-        )
-    with b2:
-        st.button(
-            "🗑 Clear Samples",
-            use_container_width=True,
-            on_click=_clear_samples,
+            on_click=_calibrate_extrinsics,
             disabled=not devices,
         )
 
-    st.button(
-        "Calibrate Extrinsics",
-        type="primary",
-        use_container_width=True,
-        on_click=_calibrate_extrinsics,
-        disabled=not devices,
-    )
-
-    st.caption("Extrinsic calibration requires at least 1 sample per camera.")
+        st.caption("Extrinsic calibration requires at least 1 sample per camera.")
 
     if st.session_state.get("extrinsics"):
         with st.expander("Computed extrinsics"):
