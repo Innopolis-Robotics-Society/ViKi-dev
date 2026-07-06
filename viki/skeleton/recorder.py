@@ -64,14 +64,17 @@ class SkeletonRecorder:
                 index.value: vec.tolist() for index, vec in frame.points.items()
             }
 
-        record = {
-            "ts": frame.timestamp_us,
-            "landmarks": landmark_data,
-        }
-        if frame.end_effector is not None:
-            record["end_effector"] = frame.end_effector.as_dict()
-
-        self._frames.append(record)
+        self._frames.append(
+            {
+                "ts": frame.timestamp_us,
+                "landmarks": landmark_data,
+                "end_effector": (
+                    frame.end_effector.as_dict()
+                    if frame.end_effector is not None
+                    else None
+                ),
+            }
+        )
 
     def stop(self) -> str | None:
         """

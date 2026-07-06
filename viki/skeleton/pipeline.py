@@ -50,6 +50,7 @@ class SkeletonPipeline:
     ----------
     calibrator : CalibrationManager
         Provides per-device intrinsics and extrinsics for prep, lift, fusion.
+    detector : optional CompositeLandmarkDetector.
     hand : {"right", "left"}
         Which arm/hand to track for the default detector.
     """
