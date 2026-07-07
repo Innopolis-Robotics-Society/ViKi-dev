@@ -1796,6 +1796,7 @@
     let processSelectedRec = null;
     let processJobs = {};
     let processJobsPollInterval = null;
+    let processJobPolls = {};
 
     function toggleProcess() {
       const panel = document.getElementById('process-panel');
@@ -1806,6 +1807,8 @@
         pollProcessJobs();
       } else {
         clearProcessJobsPoll();
+        Object.values(processJobPolls).forEach(clearInterval);
+        processJobPolls = {};
       }
     }
 
@@ -1941,12 +1944,14 @@
               const span = document.getElementById(`job-status-${res.job_id}`);
               if (span) {
                 if (j.status === 'running') { span.innerHTML = '<span style="color:var(--yellow);">⟳ converting...</span>'; }
-                else if (j.status === 'completed') {
+                else                 if (j.status === 'completed') {
                   span.innerHTML = '<span style="color:var(--green);">✅ done</span>';
                   clearInterval(poll);
+                  delete processJobPolls[res.job_id];
                 } else if (j.status === 'failed') {
                   span.innerHTML = `<span style="color:var(--red);">❌ ${j.error || 'failed'}</span>`;
                   clearInterval(poll);
+                  delete processJobPolls[res.job_id];
                 }
               }
               if (j.status === 'completed' || j.status === 'failed') {
@@ -1954,6 +1959,7 @@
               }
             } catch (e) { clearInterval(poll); }
           }, 1000);
+          processJobPolls[res.job_id] = poll;
         } catch (e) {
           statusEl.textContent = `❌ ${e}`;
           log(`Dataset conversion failed: ${e}`, 'error');
