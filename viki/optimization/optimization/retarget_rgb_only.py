@@ -284,10 +284,19 @@ def load_landmarks(
 ) -> tuple[np.ndarray, np.ndarray, float]:
     """Load, transform, and smooth MediaPipe body/hand landmarks."""
     with np.load(sample_path, allow_pickle=True) as data:
-        if "body" not in data.files:
+        files = set(data.files)
+        if SMOOTHED_TARGET_KEYS.issubset(files):
+            raise KeyError(
+                f"{sample_path} is a smoothed end-effector target archive "
+                "with positions/rotations/valid/timestamps, not a legacy "
+                "body/right_hand landmark sample. Use load_retarget_input() "
+                "or load_smoothed_targets() so the wrist position and palm "
+                "rotation targets are preserved."
+            )
+        if "body" not in files:
             raise KeyError(f"{sample_path} does not contain 'body'.")
         hand_key = "right_hand" if working_hand == "right" else "left_hand"
-        if hand_key not in data.files:
+        if hand_key not in files:
             raise KeyError(f"{sample_path} does not contain '{hand_key}'.")
 
         body = np.asarray(data["body"], dtype=np.float64)

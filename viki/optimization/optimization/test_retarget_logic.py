@@ -219,6 +219,50 @@ class RetargetLogicTests(unittest.TestCase):
             smooth.assert_not_called()
             self.assertEqual(loaded.source_format, "smoothed_targets")
 
+    def test_processor_smoothed_archive_routes_around_legacy_loader(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-processor-output.npz"
+            positions = np.array([[1.0, 2.0, 3.0], [1.5, 2.5, 3.5]], dtype=np.float32)
+            rotations = np.tile(np.eye(3, dtype=np.float32), (2, 1, 1))
+            valid = np.array([True, False])
+            timestamps = np.array([1_000_000, 1_033_333], dtype=np.int64)
+            np.savez(
+                path,
+                positions=positions,
+                rotations=rotations,
+                rpy=np.zeros((2, 3), dtype=np.float32),
+                valid=valid,
+                timestamps=timestamps,
+            )
+
+            with patch(
+                "viki.optimization.optimization.retarget_rgb_only.load_landmarks",
+                side_effect=AssertionError("legacy loader should not be called"),
+            ):
+                loaded = load_retarget_input(path, "right", 99, 3, None)
+
+            self.assertEqual(loaded.source_format, "smoothed_targets")
+            self.assertIsNone(loaded.hand)
+            np.testing.assert_allclose(loaded.body[:, 16, :], transform_points(positions))
+            np.testing.assert_allclose(loaded.target_rotations, transform_rotations_to_robot(rotations))
+            np.testing.assert_array_equal(loaded.orientation_valid, valid)
+            np.testing.assert_array_equal(loaded.timestamps_us, timestamps)
+
+    def test_load_landmarks_rejects_processor_smoothed_archive_with_guidance(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "cln-processor-output.npz"
+            np.savez(
+                path,
+                positions=np.ones((2, 3), dtype=np.float64),
+                rotations=np.tile(np.eye(3), (2, 1, 1)),
+                rpy=np.zeros((2, 3), dtype=np.float64),
+                valid=np.array([True, True]),
+                timestamps=np.array([0, 100_000], dtype=np.int64),
+            )
+
+            with self.assertRaisesRegex(KeyError, "smoothed end-effector target archive"):
+                load_landmarks(path, "right", 0, 2, None)
+
     def test_smoothed_targets_interpolate_missing_positions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "cln-gap.npz"
