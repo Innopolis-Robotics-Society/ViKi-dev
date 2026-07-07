@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import requests
 from argparse import Namespace
 import logging
 from pathlib import Path
@@ -44,33 +45,17 @@ async def list_smoothed_recordings(
     return {"recordings": files[start:end]}
 
 
-@router.post("/optimize/{filename}")
-async def optimize_recording(filename: str):
-
-    logging.info(
-        run_single(
-            Namespace(
-                sample="./data/skeleton_smoothed/" + filename,
-                robot="ur10",
-                working_hand="right",
-                out="./data/robot_out/" + filename.split(".")[0] + ".h5",
-                target_mode="hand_se3",
-                ik_position_cost=5.0,
-                ik_orientation_cost=0.3,
-                ik_posture_cost=1e-3,
-                ik_substeps=20,
-                ik_solver="quadprog",
-                approach_sec=5.0,
-                joint_sg_window=0,
-                joint_sg_polyorder=3,
-                sg_window=0,
-                sg_polyorder=3,
-                limit_frames=None,
-                recenter_to_neutral=True,
-                trajectory_scale=0.25,
-                align_initial_orientation=True,
-                evaluate=True,
-                eval_align="rigid",
-            )
-        )
-    )
+# @router.post("/optimize/{filename}")
+# async def optimize_recording(filename: str):
+#
+#     return requests.post(
+#         "http://localhost/api/optimization/retarget",
+#         json={
+#             "sample": "cln-19.40-06.07.2026.npz",
+#             "robot": "iiwa14",
+#             "output_name": "api_iiwa14_hand_se3",
+#             "target_mode": "hand_se3",
+#             "evaluate": True,
+#         },
+#         headers={"ContentType": "application/json"},
+#     )

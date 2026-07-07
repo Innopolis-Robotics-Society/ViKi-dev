@@ -1852,12 +1852,18 @@
       if (!processSelectedRec) return;
       if (processMode === 'dataset') {
         try {
-          const res = await api('POST', `/api/dataset/optimize/${processSelectedRec}`);
+          const res = await api('POST', `/api/optimization/retarget`, {
+            "sample": `${processSelectedRec}`,
+            "robot": "iiwa14",
+            "output_name": "api_iiwa14_hand_se3",
+            "target_mode": "hand_se3",
+            "evaluate": true,
+          })
           statusEl.textContent = `✅ ${res.path}`;
-          log(`Smoothed: ${res.path}`, 'ok');
+          log(`Retarget started: ${res.path}`, 'ok');
         } catch (e) {
           statusEl.textContent = `❌ ${e}`;
-          log(`Smoothing failed: ${e}`, 'error');
+          log(`Retarget failed: ${e}`, 'error');
         }
         document.getElementById('btn-process-smooth').disabled = false;
         return;

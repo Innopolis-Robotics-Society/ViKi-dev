@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libglvnd0 \
     python3 python3-pip \
     g++ \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # ── Intel RealSense SDK ───────────────────────────────────────────────────────

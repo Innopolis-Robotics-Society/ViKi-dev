@@ -29,8 +29,8 @@ router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 OPTIMIZATION_DIR = PROJECT_ROOT / "viki" / "optimization" / "optimization"
-SAMPLES_DIR = PROJECT_ROOT / "data" / "optimization_samples"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "optimization_output"
+SAMPLES_DIR = PROJECT_ROOT / "data" / "skeleton_smoothed"
+OUTPUT_DIR = PROJECT_ROOT / "data" / "robot_out"
 RECORDING_DIRS = (PROJECT_ROOT, PROJECT_ROOT / "data" / "skeleton_recs")
 OUTPUT_SUFFIXES = {".h5", ".hdf5", ".json", ".png"}
 COND_ENV_VAR = "VIKI_OPT_CONDA_EXE"
@@ -121,22 +121,23 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
     sample_name = _safe_filename(req.sample, expected_suffix=".npz")
     sample_path = SAMPLES_DIR / sample_name
     if not sample_path.exists():
-        raise HTTPException(status_code=404, detail=f"Sample not found: {sample_name}")
+        raise HTTPException(status_code=400, detail=f"Sample not found: {sample_name}")
 
     output_name = _safe_filename(req.output_name)
     output_path = OUTPUT_DIR / output_name
     output_stem = output_path.stem if output_path.suffix else output_path.name
     output_stem = output_stem.replace("_traj", "")
-    conda_exe = _resolve_conda_exe()
-    conda_env = os.getenv(COND_ENV_NAME_VAR, DEFAULT_CONDA_ENV)
+    # conda_exe = _resolve_conda_exe()
+    # conda_env = os.getenv(COND_ENV_NAME_VAR, DEFAULT_CONDA_ENV)
+
 
     command = [
-        conda_exe,
-        "run",
-        "-n",
-        conda_env,
-        "python",
-        str(OPTIMIZATION_DIR / "retarget_rgb_only.py"),
+        # conda_exe,
+        # "run",
+        # "-n",
+        # conda_env,
+        "python3",
+        str(OPTIMIZATION_DIR / "retarget_cln.py"),
         "--sample",
         str(sample_path),
         "--robot",
@@ -145,16 +146,7 @@ async def retarget(req: RetargetRequest) -> dict[str, Any]:
         str(output_path),
         "--target-mode",
         req.target_mode,
-        "--ik-position-cost",
-        str(req.ik_position_cost),
-        "--ik-orientation-cost",
-        str(req.ik_orientation_cost),
-        "--joint-sg-window",
-        str(req.joint_sg_window),
-        "--sg-window",
-        str(req.sg_window),
-        "--trajectory-scale",
-        str(req.trajectory_scale),
+        "--recenter-to-neutra",
     ]
     if req.recenter_to_neutral:
         command.append("--recenter-to-neutral")
