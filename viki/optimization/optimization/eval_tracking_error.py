@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -302,7 +303,7 @@ def import_fk_dependencies():
     """Import and validate the FK dependency stack."""
     try:
         import pinocchio as pin
-        from robot_descriptions.loaders.pinocchio import load_robot_description
+        from robot_descriptions.loaders.pinocchio import load_robot_description as _load
     except ImportError as exc:
         py_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
         raise RuntimeError(
@@ -315,10 +316,17 @@ def import_fk_dependencies():
             "Boost/Pinocchio from source."
         ) from exc
 
+    def _cached_load(description: str):
+        os.environ.setdefault(
+            "ROBOT_DESCRIPTIONS_CACHE",
+            "/app/models/robot_descriptions",
+        )
+        return _load(description)
+
     missing = [name for name in REQUIRED_PINOCCHIO_ATTRS if not hasattr(pin, name)]
     if missing:
         raise pinocchio_runtime_error(pin, missing)
-    return pin, load_robot_description
+    return pin, _cached_load
 
 
 def load_robot_poses(

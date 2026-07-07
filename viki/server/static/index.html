@@ -761,6 +761,14 @@
         <div id="process-rec-list"
           style="font-size: 12px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px;">
         </div>
+        <div id="process-robot-row" style="display: none; gap: 8px; align-items: center;">
+          <label for="process-robot" style="font-size: 11px;">Robot:</label>
+          <select id="process-robot"
+            style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 12px;">
+            <option value="ur10">UR10</option>
+            <option value="iiwa14">KUKA iiwa14</option>
+          </select>
+        </div>
         <div style="display: flex; gap: 8px; align-items: center;">
           <label for="process-win-len" style="font-size: 11px;">Window:</label>
           <input type="number" id="process-win-len" value="7" min="3" max="31" step="2"
@@ -772,6 +780,9 @@
             Selected</button>
         </div>
         <div id="process-status" style="font-size: 11px; color: var(--muted);"></div>
+        <div id="process-conversion-status"
+          style="font-size: 11px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; margin-top: 4px; display: none;">
+        </div>
       </div>
     </div>
   </div>
@@ -1783,20 +1794,47 @@
     let processPage = 0;
     let processMode = 'smooth';
     let processSelectedRec = null;
+    let processJobs = {};
+    let processJobsPollInterval = null;
 
     function toggleProcess() {
       const panel = document.getElementById('process-panel');
       const visible = panel.style.display === 'block';
       panel.style.display = visible ? 'none' : 'block';
-      if (!visible) loadProcessRecordings();
+      if (!visible) {
+        loadProcessRecordings();
+        pollProcessJobs();
+      } else {
+        clearProcessJobsPoll();
+      }
     }
 
     function setProcessMode(mode) {
       processMode = mode;
       document.getElementById('btn-process-mode-smooth').className = mode === 'smooth' ? 'primary' : '';
       document.getElementById('btn-process-mode-dataset').className = mode === 'dataset' ? 'primary' : '';
-      document.getElementById('btn-process-smooth').textContent = mode === 'smooth' ? 'Smooth Selected' : 'Robot Dataset';
+      const robotRow = document.getElementById('process-robot-row');
+      const winLabel = document.querySelector('label[for="process-win-len"]');
+      const winInput = document.getElementById('process-win-len');
+      const polyLabel = document.querySelector('label[for="process-poly"]');
+      const polyInput = document.getElementById('process-poly');
+      if (mode === 'dataset') {
+        robotRow.style.display = 'flex';
+        winLabel.style.display = 'none';
+        winInput.style.display = 'none';
+        polyLabel.style.display = 'none';
+        polyInput.style.display = 'none';
+        document.getElementById('btn-process-smooth').textContent = 'Convert to Robot Dataset';
+      } else {
+        robotRow.style.display = 'none';
+        winLabel.style.display = '';
+        winInput.style.display = '';
+        polyLabel.style.display = '';
+        polyInput.style.display = '';
+        document.getElementById('btn-process-smooth').textContent = 'Smooth Selected';
+      }
       document.getElementById('process-status').textContent = '';
+      document.getElementById('process-conversion-status').style.display = 'none';
       loadProcessRecordings();
     }
 
@@ -1847,25 +1885,86 @@
       loadProcessRecordings();
     }
 
+    function pollProcessJobs() {
+      if (processJobsPollInterval) clearInterval(processJobsPollInterval);
+      processJobsPollInterval = setInterval(renderProcessJobs, 2000);
+      renderProcessJobs();
+    }
+
+    function clearProcessJobsPoll() {
+      if (processJobsPollInterval) {
+        clearInterval(processJobsPollInterval);
+        processJobsPollInterval = null;
+      }
+    }
+
+    async function renderProcessJobs() {
+      try {
+        const data = await api('GET', '/api/dataset/optimize/jobs');
+        const container = document.getElementById('process-conversion-status');
+        data.jobs.forEach(j => { processJobs[j.job_id] = j; });
+        const entries = Object.values(processJobs).slice(0, 20);
+        if (entries.length === 0) {
+          container.style.display = 'none';
+          return;
+        }
+        container.style.display = 'block';
+        container.innerHTML = entries.map(j => {
+          const icons = {queued: '⏳', running: '⟳', completed: '✅', failed: '❌'};
+          const colors = {queued: 'var(--muted)', running: 'var(--yellow)', completed: 'var(--green)', failed: 'var(--red)'};
+          return `<div style="padding:2px 0;color:${colors[j.status] || 'var(--muted)'}">${icons[j.status] || '?'} ${j.filename} → ${j.robot} [${j.status}]</div>`;
+        }).join('');
+      } catch (e) { /* ignore poll errors */ }
+    }
+
     async function processSmoothSelected() {
       if (!processSelectedRec) return;
+      const statusEl = document.getElementById('process-status');
+      const btn = document.getElementById('btn-process-smooth');
+      btn.disabled = true;
+
       if (processMode === 'dataset') {
+        const robot = document.getElementById('process-robot').value;
+        statusEl.textContent = `Queueing ${processSelectedRec} for robot ${robot}...`;
         try {
-          const res = await api('POST', `/api/dataset/optimize/${processSelectedRec}`);
-          statusEl.textContent = `✅ ${res.path}`;
-          log(`Smoothed: ${res.path}`, 'ok');
+          const res = await api('POST', `/api/dataset/optimize/${processSelectedRec}?robot=${robot}`);
+          log(`Dataset conversion queued: ${processSelectedRec} -> ${robot} (job: ${res.job_id})`, 'ok');
+          statusEl.innerHTML = `⏳ Job queued — <span id="job-status-${res.job_id}" style="color:var(--yellow);">pending</span>`;
+          processJobs[res.job_id] = {job_id: res.job_id, filename: processSelectedRec, robot, status: 'queued'};
+          renderProcessJobs();
+
+          const poll = setInterval(async () => {
+            try {
+              const j = await api('GET', `/api/dataset/optimize/status/${res.job_id}`);
+              processJobs[res.job_id] = j;
+              renderProcessJobs();
+              const span = document.getElementById(`job-status-${res.job_id}`);
+              if (span) {
+                if (j.status === 'running') { span.innerHTML = '<span style="color:var(--yellow);">⟳ converting...</span>'; }
+                else if (j.status === 'completed') {
+                  span.innerHTML = '<span style="color:var(--green);">✅ done</span>';
+                  clearInterval(poll);
+                } else if (j.status === 'failed') {
+                  span.innerHTML = `<span style="color:var(--red);">❌ ${j.error || 'failed'}</span>`;
+                  clearInterval(poll);
+                }
+              }
+              if (j.status === 'completed' || j.status === 'failed') {
+                statusEl.innerHTML = `${j.status === 'completed' ? '✅' : '❌'} ${processSelectedRec} → ${robot} [${j.status}]`;
+              }
+            } catch (e) { clearInterval(poll); }
+          }, 1000);
         } catch (e) {
           statusEl.textContent = `❌ ${e}`;
-          log(`Smoothing failed: ${e}`, 'error');
+          log(`Dataset conversion failed: ${e}`, 'error');
         }
-        document.getElementById('btn-process-smooth').disabled = false;
+        btn.disabled = false;
         return;
       }
-      const statusEl = document.getElementById('process-status');
+
       const winLen = parseInt(document.getElementById('process-win-len').value) || 7;
       const poly = parseInt(document.getElementById('process-poly').value) || 2;
       statusEl.textContent = `Smoothing ${processSelectedRec}...`;
-      document.getElementById('btn-process-smooth').disabled = true;
       try {
         const res = await api('POST', `/api/skeleton/smooth/${processSelectedRec}`, {window_length: winLen, polyorder: poly});
         statusEl.textContent = `✅ ${res.path}`;
@@ -1874,7 +1973,7 @@
         statusEl.textContent = `❌ ${e}`;
         log(`Smoothing failed: ${e}`, 'error');
       }
-      document.getElementById('btn-process-smooth').disabled = false;
+      btn.disabled = false;
     }
 
     async function intrinsicsCalibration() {

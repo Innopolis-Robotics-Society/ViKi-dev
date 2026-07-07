@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import sys
 from dataclasses import dataclass
 from itertools import product
@@ -136,6 +137,20 @@ class RunConfig:
     trajectory_scale: float
 
 
+MODELS_DIR = "/app/models"
+
+
+def _load_robot_description(description: str):
+    """Load robot description, caching git clones in MODELS_DIR."""
+    os.environ.setdefault(
+        "ROBOT_DESCRIPTIONS_CACHE",
+        os.path.join(MODELS_DIR, "robot_descriptions"),
+    )
+    from robot_descriptions.loaders.pinocchio import load_robot_description as _load
+
+    return _load(description)
+
+
 def require_ik_dependencies():
     """Import PINK/Pinocchio dependencies with a direct runtime message."""
     try:
@@ -143,7 +158,6 @@ def require_ik_dependencies():
         import pink
         from pink import Configuration, solve_ik
         from pink.tasks import FrameTask, PostureTask
-        from robot_descriptions.loaders.pinocchio import load_robot_description
     except ImportError as exc:
         raise RuntimeError(
             "RGB-only retargeting requires robotics Pinocchio, PINK "
@@ -158,7 +172,7 @@ def require_ik_dependencies():
             "The imported 'pinocchio' module is not the robotics Pinocchio "
             f"runtime. Missing attributes: {', '.join(missing)}."
         )
-    return pin, pink, Configuration, solve_ik, FrameTask, PostureTask, load_robot_description
+    return pin, pink, Configuration, solve_ik, FrameTask, PostureTask, _load_robot_description
 
 
 def parse_float_list(value: str) -> list[float]:
