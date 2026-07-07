@@ -96,12 +96,12 @@ async def list_outputs():
 
 
 @router.get("/viz-stream")
-async def robot_viz_stream(filename: str):
+async def robot_viz_stream(filename: str, loop: bool = True):
     h5_path = ROBOT_OUT_DIR / filename
     if not h5_path.exists():
         raise HTTPException(status_code=404, detail=f"Output not found: {filename}")
     return StreamingResponse(
-        robot_trajectory_stream(h5_path),
+        robot_trajectory_stream(h5_path, loop=loop),
         media_type=_MJPEG_MEDIA,
         headers=_STREAM_HEADERS,
     )

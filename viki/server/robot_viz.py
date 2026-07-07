@@ -99,9 +99,9 @@ def robot_trajectory_stream(
     all_pts_flat = joint_positions_all.reshape(-1, 3)
     margin = 0.1
     half_range = max(
-        all_pts_flat[:, 0].ptp(),
-        all_pts_flat[:, 1].ptp(),
-        all_pts_flat[:, 2].ptp(),
+        np.ptp(all_pts_flat[:, 0]),
+        np.ptp(all_pts_flat[:, 1]),
+        np.ptp(all_pts_flat[:, 2]),
         0.3,
     ) / 2
     mid = all_pts_flat.mean(axis=0)
@@ -131,9 +131,9 @@ def robot_trajectory_stream(
         f_text.set_text(f"Frame {frame_idx + 1} / {n_frames}")
 
         fig.canvas.draw()
-        img = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-        img = img.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-        img = img[:, :, ::-1]
+        img = np.frombuffer(fig.canvas.buffer_rgba(), dtype=np.uint8)
+        img = img.reshape(fig.canvas.get_width_height()[::-1] + (4,))
+        img = img[:, :, [2, 1, 0]]
         yield mjpeg_chunk(img, 85)
         frame_idx += 1
         time.sleep(interval_s)

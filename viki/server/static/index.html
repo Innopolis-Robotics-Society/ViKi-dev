@@ -547,6 +547,59 @@
       height: 100%;
       display: block;
     }
+
+    .robotviz-panel {
+      display: none;
+      margin: 0 24px 24px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+
+    .robotviz-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .robotviz-header .title {
+      font-weight: 600;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    .robotviz-body {
+      display: flex;
+      gap: 20px;
+      padding: 14px;
+    }
+
+    .robotviz-stream {
+      flex: 1;
+      background: #000;
+      border-radius: 4px;
+      overflow: hidden;
+      min-height: 400px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .robotviz-stream img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+
+    .robotviz-controls {
+      width: 220px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
   </style>
 </head>
 
@@ -566,6 +619,7 @@
     <button id="btn-calib-toggle" onclick="toggleCalibration()">⚙ Calibration</button>
     <button id="btn-skeleton-toggle" onclick="toggleSkeleton()">🦴 Skeleton</button>
     <button id="btn-process-toggle" onclick="toggleProcess()">📊 Process</button>
+    <button id="btn-robotviz-toggle" onclick="toggleRobotViz()">🤖 Robot Viz</button>
     <div class="sep"></div>
     <button id="btn-record-rgbd" class="primary" onclick="startRGBDRecording()">🔴 Record RGB-D</button>
     <button style="margin-left: auto" onclick="toggleConfig()">⚙ Config</button>
@@ -786,6 +840,27 @@
       </div>
       <div id="process-smooth-plot"
         style="flex: 1; display: none; background: #000; border-radius: 6px; overflow: hidden; min-height: 300px; align-items: center; justify-content: center;">
+      </div>
+    </div>
+  </div>
+
+  <div class="robotviz-panel" id="robotviz-panel">
+    <div class="robotviz-header">
+      <span class="title">Robot Trajectory Visualization</span>
+      <button class="danger" onclick="toggleRobotViz()">✕ Close</button>
+    </div>
+    <div class="robotviz-body">
+      <div class="robotviz-stream" id="robotviz-stream">
+        <div style="color:var(--muted);padding:20px;text-align:center;">Select an output file to view</div>
+      </div>
+      <div class="robotviz-controls">
+        <div style="display:flex;gap:8px;align-items:center;">
+          <button onclick="loadRobotVizOutputs()" style="font-size:11px;">⟳ Refresh</button>
+        </div>
+        <div id="robotviz-output-list"
+          style="font-size:12px;max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+        </div>
+        <div id="robotviz-info" style="font-size:11px;color:var(--muted);"></div>
       </div>
     </div>
   </div>
@@ -2022,6 +2097,62 @@
       }
       log('Calibration samples cleared');
       updateCalibStatus();
+    }
+
+    // --- Robot Viz ---
+    let robotVizInterval = null;
+
+    function toggleRobotViz() {
+      const panel = document.getElementById('robotviz-panel');
+      const visible = panel.style.display === 'block';
+      panel.style.display = visible ? 'none' : 'block';
+      if (!visible) {
+        loadRobotVizOutputs();
+      } else {
+        const img = document.querySelector('#robotviz-stream img');
+        if (img) img.src = '';
+        if (robotVizInterval) { clearInterval(robotVizInterval); robotVizInterval = null; }
+      }
+    }
+
+    async function loadRobotVizOutputs() {
+      const listEl = document.getElementById('robotviz-output-list');
+      const infoEl = document.getElementById('robotviz-info');
+      infoEl.textContent = 'Loading...';
+      try {
+        const data = await api('GET', '/api/dataset/outputs');
+        const files = data.outputs || [];
+        listEl.innerHTML = files.length === 0
+          ? '<div style="padding:8px;color:var(--muted);">No outputs found</div>'
+          : files.map(f =>
+            `<div style="padding:6px 8px;cursor:pointer;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;"
+                    onclick="selectRobotVizOutput('${f}', this)">
+                <span>${f}</span>
+              </div>`
+          ).join('');
+        infoEl.textContent = `${files.length} output(s)`;
+      } catch (e) {
+        infoEl.textContent = `Failed: ${e}`;
+        listEl.innerHTML = '<div style="padding:8px;color:var(--red);">Failed to load outputs</div>';
+      }
+    }
+
+    let robotVizStreamUrl = null;
+
+    function selectRobotVizOutput(filename, el) {
+      document.querySelectorAll('#robotviz-output-list div').forEach(d => d.style.background = '');
+      if (el) el.style.background = 'var(--surface)';
+
+      const streamDiv = document.getElementById('robotviz-stream');
+      const url = `/api/dataset/viz-stream?filename=${encodeURIComponent(filename)}&t=${Date.now()}`;
+
+      if (robotVizStreamUrl) {
+        // Remove old img to stop previous stream
+        const oldImg = streamDiv.querySelector('img');
+        if (oldImg) oldImg.src = '';
+      }
+      robotVizStreamUrl = url;
+      streamDiv.innerHTML = `<img src="${url}" alt="robot trajectory">`;
     }
 
     async function init() {
