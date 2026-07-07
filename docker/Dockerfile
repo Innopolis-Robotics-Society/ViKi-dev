@@ -51,12 +51,8 @@ RUN echo 'libk4a1.4 libk4a1.4/accepted-eula-hash string 0f5d5c5de396e4fee4c0753a
 WORKDIR /app
 
 COPY pyproject.toml .
-RUN pip install --no-cache-dir pip-tools && \
-    pip-compile --extra backend pyproject.toml -o requirements.txt && \
-    pip install --no-cache-dir -r requirements.txt
-
 RUN mkdir -p viki && touch viki/__init__.py
-RUN pip install --no-deps --no-cache-dir -e .
+RUN pip install --no-cache-dir -e ".[backend]"
 
 # Copy real source (will be overwritten by bind mount at runtime anyway)
 COPY ./viki/ ./viki/

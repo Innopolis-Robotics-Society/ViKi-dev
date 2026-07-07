@@ -62,8 +62,10 @@ ROBOT_DEFAULTS = {
     "iiwa": RobotDefaults("iiwa14_description", "iiwa_link_ee"),
     "iiwa14": RobotDefaults("iiwa14_description", "iiwa_link_ee"),
     "iiwa14_description": RobotDefaults("iiwa14_description", "iiwa_link_ee"),
-    "ur10": RobotDefaults("ur10_description", "tool0"),
-    "ur10_description": RobotDefaults("ur10_description", "tool0"),
+    "ur10": RobotDefaults("ur10_official_description", "tool0"),
+    "ur10_description": RobotDefaults("ur10_official_description", "tool0"),
+    "ur10_official": RobotDefaults("ur10_official_description", "tool0"),
+    "ur10_official_description": RobotDefaults("ur10_official_description", "tool0"),
 }
 
 

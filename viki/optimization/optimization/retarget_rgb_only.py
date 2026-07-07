@@ -64,7 +64,7 @@ class RobotConfig:
 
 ROBOT_CONFIGS = {
     "ur10": RobotConfig(
-        "ur10_description",
+        "ur10_official_description",
         "tool0",
         (
             "shoulder_pan_joint",
@@ -76,7 +76,7 @@ ROBOT_CONFIGS = {
         ),
     ),
     "ur10_description": RobotConfig(
-        "ur10_description",
+        "ur10_official_description",
         "tool0",
         (
             "shoulder_pan_joint",

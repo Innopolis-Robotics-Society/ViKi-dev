@@ -23,6 +23,7 @@ backend = [
     "h5py>=3.10",
     "scipy>=1.11",
     "typing_extensions>=4.12",
+    "xacrodoc",
 ]
 frontend = [
     "streamlit>=1.37",

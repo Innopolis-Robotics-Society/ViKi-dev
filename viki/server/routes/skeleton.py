@@ -18,7 +18,6 @@ import numpy as np
 from viki.skeleton.models import LM
 
 from argparse import Namespace
-from viki.optimization.optimization.retarget_rgb_only import run_single
 
 from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
