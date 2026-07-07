@@ -16,6 +16,7 @@ x-common: &common
   environment:
     - PYTHONUNBUFFERED=1
     - PYTHONPATH=/app
+    - GIT_PYTHON_REFRESH=quiet
     - DISPLAY=${DISPLAY}
     - LIBGL_ALWAYS_SOFTWARE=1
     - GALLIUM_DRIVER=llvmpipe

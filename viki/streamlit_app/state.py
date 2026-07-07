@@ -110,9 +110,6 @@ def scan_devices(quiet: bool = False) -> None:
         devices.append({"id": did, "type": "realsense"})
     for did in data.get("kinect", []) or []:
         devices.append({"id": did, "type": "kinect"})
-    # for did in data.get("web_camera", []) or []:
-    #     devices.append({"id": did, "type": "web_camera"})
-
     active = data.get("active", []) or []
     server_config = st.session_state.get("server_config", {})
     prev_cfg = st.session_state.get("card_config", {})

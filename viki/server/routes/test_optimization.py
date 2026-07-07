@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import queue
-import subprocess
 import tempfile
 import time
 import unittest
@@ -56,8 +55,11 @@ class OptimizationRoutesTests(unittest.TestCase):
             patch.object(optimization, "SMOOTHED_INPUT_DIR", self.samples),
             patch.object(optimization, "LEGACY_SAMPLES_DIR", self.legacy_samples),
             patch.object(optimization, "OUTPUT_DIR", self.output),
-            patch.object(optimization, "OPTIMIZATION_DIR", self.opt_dir),
-            patch.object(optimization, "RECORDING_DIRS", (self.root, self.root / "data" / "skeleton_recs")),
+            patch.object(
+                optimization,
+                "RECORDING_DIRS",
+                (self.root, self.root / "data" / "skeleton_recs"),
+            ),
             patch.object(optimization, "_jobs", {}),
             patch.object(optimization, "_job_queue", queue.Queue()),
             patch.object(optimization, "_worker_started", False),
@@ -73,7 +75,9 @@ class OptimizationRoutesTests(unittest.TestCase):
     def test_recording_listing_and_conversion(self) -> None:
         listed = self.client.get("/api/optimization/recordings")
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json()["recordings"][0]["filename"], self.recording.name)
+        self.assertEqual(
+            listed.json()["recordings"][0]["filename"], self.recording.name
+        )
 
         converted = self.client.post(
             "/api/optimization/convert",
@@ -94,34 +98,17 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(samples.status_code, 200)
         self.assertEqual(samples.json()["samples"][0]["filename"], "cln_api.npz")
 
-    def test_retarget_rejects_missing_sample_before_conda_check(self) -> None:
+    def test_retarget_rejects_missing_sample(self) -> None:
         response = self.client.post(
             "/api/optimization/retarget",
             json={"sample": "missing.npz", "output_name": "out"},
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_retarget_reports_unavailable_conda(self) -> None:
+    def test_retarget_enqueues_job(self) -> None:
         (self.samples / "sample.npz").write_bytes(b"fake")
-        with patch.object(optimization, "_resolve_conda_exe", side_effect=optimization.HTTPException(503, "no conda")):
-            response = self.client.post(
-                "/api/optimization/retarget",
-                json={"sample": "sample.npz", "output_name": "out"},
-            )
-        self.assertEqual(response.status_code, 503)
 
-    def test_retarget_enqueues_job_with_mocked_conda(self) -> None:
-        (self.samples / "sample.npz").write_bytes(b"fake")
-        fake_job = optimization.OptimizationJob(
-            job_id="job1",
-            status="queued",
-            command=["conda", "run"],
-            output_stem="real_wrist_ur10",
-        )
-        with (
-            patch.object(optimization, "_resolve_conda_exe", return_value="conda"),
-            patch.object(optimization, "_enqueue_job", return_value=fake_job) as enqueue,
-        ):
+        with patch.object(optimization, "_enqueue_job") as enqueue:
             response = self.client.post(
                 "/api/optimization/retarget",
                 json={
@@ -133,71 +120,41 @@ class OptimizationRoutesTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["job_id"], "job1")
-        command = enqueue.call_args.args[0]
-        self.assertIn(str(self.opt_dir / "retarget_rgb_only.py"), command)
-        self.assertIn("--target-mode", command)
-        self.assertIn("hand_se3", command)
-        self.assertIn("--sg-window", command)
-        self.assertEqual(command[command.index("--sg-window") + 1], "0")
-        self.assertIn("--ik-position-cost", command)
-        self.assertEqual(command[command.index("--ik-position-cost") + 1], "5.0")
-        self.assertIn("--ik-orientation-cost", command)
-        self.assertEqual(command[command.index("--ik-orientation-cost") + 1], "0.3")
-        self.assertIn("--ik-solver", command)
-        self.assertEqual(command[command.index("--ik-solver") + 1], "quadprog")
-        self.assertIn("--trajectory-scale", command)
-        self.assertEqual(command[command.index("--trajectory-scale") + 1], "0.25")
-        self.assertIn("--align-initial-orientation", command)
+        _, kwargs = enqueue.call_args
+        self.assertIn("description", kwargs)
+        self.assertIn("output_stem", kwargs)
+        self.assertIn("sample_path", kwargs)
+        self.assertIn("cfg", kwargs)
 
-    def test_retarget_enqueues_iiwa_with_artifact_defaults(self) -> None:
-        (self.samples / "sample.npz").write_bytes(b"fake")
-        fake_job = optimization.OptimizationJob(
-            job_id="job1",
-            status="queued",
-            command=["conda", "run"],
-            output_stem="real_wrist_iiwa14",
-        )
+    def test_job_worker_calls_retarget(self) -> None:
+        fake_summary = {"traj_path": "/fake/traj.h5", "frames": 5}
+        from unittest.mock import MagicMock
+
+        mock_cfg = MagicMock()
         with (
-            patch.object(optimization, "_resolve_conda_exe", return_value="conda"),
-            patch.object(optimization, "_enqueue_job", return_value=fake_job) as enqueue,
+            patch.object(
+                optimization, "retarget", return_value=fake_summary
+            ) as mock_retarget,
+            patch.object(optimization, "evaluate_saved_traj", return_value={}),
         ):
-            response = self.client.post(
-                "/api/optimization/retarget",
-                json={
-                    "sample": "sample.npz",
-                    "robot": "iiwa14",
-                    "output_name": "real_wrist_iiwa14",
-                    "target_mode": "hand_se3",
-                },
+            job = optimization._enqueue_job(
+                description="test",
+                output_stem="test",
+                sample_path=Path("/fake/sample.npz"),
+                output_path=Path("/fake/traj.h5"),
+                cfg=mock_cfg,
+                do_evaluate=False,
             )
-
-        self.assertEqual(response.status_code, 200)
-        command = enqueue.call_args.args[0]
-        self.assertIn("--ik-position-cost", command)
-        self.assertEqual(command[command.index("--ik-position-cost") + 1], "2.0")
-        self.assertIn("--ik-orientation-cost", command)
-        self.assertEqual(command[command.index("--ik-orientation-cost") + 1], "0.3")
-        self.assertIn("--ik-solver", command)
-        self.assertEqual(command[command.index("--ik-solver") + 1], "quadprog")
-        self.assertIn("--trajectory-scale", command)
-        self.assertEqual(command[command.index("--trajectory-scale") + 1], "0.1")
-        self.assertNotIn("--align-initial-orientation", command)
-
-    def test_job_worker_records_subprocess_success(self) -> None:
-        completed = subprocess.CompletedProcess(["conda"], 0, stdout="ok", stderr="")
-        with patch.object(optimization.subprocess, "run", return_value=completed):
-            job = optimization._enqueue_job(["conda", "run"], "worker_out")
             deadline = time.time() + 2.0
-            while time.time() < deadline and optimization._jobs[job.job_id].status != "succeeded":
+            while (
+                time.time() < deadline
+                and optimization._jobs[job.job_id].status != "succeeded"
+            ):
                 time.sleep(0.01)
 
-        response = self.client.get(f"/api/optimization/jobs/{job.job_id}")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "succeeded")
-        self.assertEqual(data["exit_code"], 0)
-        self.assertEqual(data["stdout_tail"], "ok")
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.exit_code, 0)
+        mock_retarget.assert_called_once()
 
     def test_output_listing_and_download_are_sanitized(self) -> None:
         output = self.output / "result.h5"

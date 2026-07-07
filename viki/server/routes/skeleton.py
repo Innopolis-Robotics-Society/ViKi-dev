@@ -9,12 +9,15 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 import time
 import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 import numpy as np
 from viki.skeleton.models import LM
+
+from argparse import Namespace
 
 from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
@@ -69,7 +72,6 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
         "enabled": worker.is_enabled,
         "recording": worker.is_recording,
     }
-
 
 @router.get("/recordings")
 async def list_recordings(

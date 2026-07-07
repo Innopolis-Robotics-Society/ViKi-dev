@@ -76,11 +76,6 @@ def _render_card(device: dict) -> None:
         fps_options = server_config.get("REALSENSE_FPS", [])
         depth_modes = None
         depth_max_fps = {}
-    elif dtype == "web_camera":
-        resolutions = server_config.get("WEBCAM_RESOLUTIONS", [])
-        fps_options = server_config.get("WEBCAM_FPS", [])
-        depth_modes = None
-        depth_max_fps = {}
     else:
         resolutions, fps_options, depth_modes, depth_max_fps = [], [], None, {}
 
