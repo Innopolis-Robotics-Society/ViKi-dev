@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 # ── System deps ───────────────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl wget ca-certificates gnupg2 apt-transport-https \
+    git \
     libusb-1.0-0 libgl1 libglib2.0-0 \
     libgl1-mesa-dri mesa-vulkan-drivers \
     libgles2-mesa \

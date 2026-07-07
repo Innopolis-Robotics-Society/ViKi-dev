@@ -624,6 +624,188 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     return summary
 
 
+def retarget_from_poses(
+    positions: np.ndarray,
+    rotations: np.ndarray | None,
+    validity: np.ndarray | None,
+    fps: float,
+    out_path: Path,
+    cfg: RunConfig,
+) -> dict[str, Any]:
+    """Retarget pre-computed wrist positions and palm rotations to a robot trajectory.
+
+    Parameters
+    ----------
+    positions : (T, 3) wrist positions in robot-frame metres.
+    rotations : (T, 3, 3) palm rotation matrices, or None for position-only.
+    validity  : (T,) bool mask of frames with valid rotations, or None (all valid).
+    fps       : video frame rate.
+    out_path  : output .h5 path.
+    cfg       : run configuration (IK costs, smoothing, recenter, scale, etc.).
+
+    Returns summary dict (same schema as retarget()).
+    """
+    pin, _pink, Configuration, solve_ik, FrameTask, PostureTask, load_robot_description = require_ik_dependencies()
+
+    T = len(positions)
+    positions = np.asarray(positions, dtype=np.float64)
+
+    if rotations is not None:
+        rotations = np.asarray(rotations, dtype=np.float64)
+        if rotations.shape != (T, 3, 3):
+            raise ValueError(f"Expected rotations shape ({T}, 3, 3), got {rotations.shape}.")
+
+    robot = load_robot_description(cfg.robot.description)
+    if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
+        raise ValueError(f"End-effector frame '{cfg.robot.ee_frame}' not found in {cfg.robot.description}.")
+
+    # Scaling (about initial wrist position)
+    if abs(cfg.trajectory_scale - 1.0) > 1e-12:
+        if cfg.trajectory_scale <= 0.0:
+            raise ValueError("trajectory_scale must be positive.")
+        anchor = positions[0].copy()
+        positions = anchor + (positions - anchor) * cfg.trajectory_scale
+
+    # Recenter so frame-0 wrist matches robot neutral EE position
+    recenter_offset = np.zeros(3, dtype=np.float64)
+    if cfg.recenter_to_neutral:
+        offset = neutral_ee_position(pin, robot, cfg.robot.ee_frame) - positions[0]
+        positions = positions + offset
+        recenter_offset = offset
+
+    # Build SE3 targets
+    if rotations is not None:
+        if validity is not None:
+            hint = np.asarray(validity, dtype=bool)
+            if len(hint) != T:
+                raise ValueError(f"validity length {len(hint)} != {T}.")
+            rot_list: list[np.ndarray | None] = [rotations[t] if hint[t] else None for t in range(T)]
+        else:
+            rot_list = [rotations[t] for t in range(T)]
+
+        valid_mask = np.array([r is not None for r in rot_list], dtype=bool)
+        if not valid_mask.any():
+            raise ValueError("No valid rotation frames — cannot build hand_se3 targets.")
+        valid_indices = np.flatnonzero(valid_mask)
+        filled_rots = np.zeros((T, 3, 3), dtype=np.float64)
+        for t in range(T):
+            if rot_list[t] is not None:
+                filled_rots[t] = np.asarray(rot_list[t], dtype=np.float64)
+            else:
+                nearest = int(valid_indices[np.argmin(np.abs(valid_indices - t))])
+                filled_rots[t] = np.asarray(rot_list[nearest], dtype=np.float64)
+
+        targets = [pin.SE3(filled_rots[t], positions[t]) for t in range(T)]
+        target_rot = filled_rots.copy()
+        orientation_valid = valid_mask.copy()
+    else:
+        identity = np.eye(3, dtype=np.float64)
+        targets = [pin.SE3(identity, positions[t]) for t in range(T)]
+        target_rot = None
+        orientation_valid = None
+
+    target_pos = np.vstack([t.translation for t in targets])
+
+    q_approach = run_approach(
+        pin,
+        Configuration,
+        solve_ik,
+        FrameTask,
+        PostureTask,
+        robot,
+        cfg.robot.ee_frame,
+        targets[0],
+        cfg,
+        fps,
+    )
+    q_scene_raw = run_scene_ik(
+        Configuration,
+        solve_ik,
+        FrameTask,
+        PostureTask,
+        robot,
+        cfg.robot.ee_frame,
+        targets,
+        q_approach[-1],
+        cfg,
+        fps,
+    )
+    q_scene_smooth = smooth_joint_trajectory(q_scene_raw, cfg.joint_sg_window, cfg.joint_sg_polyorder)
+    pos_err_smooth, ori_err_smooth = compute_tracking_error(pin, robot, cfg.robot.ee_frame, q_scene_smooth, targets)
+    ori_err_smooth_deg = np.degrees(ori_err_smooth)
+
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    archive = {
+        "q_approach": q_approach,
+        "q_scene_raw": q_scene_raw,
+        "q_scene_smooth": q_scene_smooth,
+        "ee_target_pos": target_pos,
+        "pos_err_smooth": pos_err_smooth,
+        "ori_err_smooth": ori_err_smooth,
+        "ori_err_smooth_deg": ori_err_smooth_deg,
+        "fps": float(fps),
+        "dt": float(1.0 / max(fps, 1e-9)),
+        "robot": cfg.robot.description,
+        "ee_frame": cfg.robot.ee_frame,
+        "working_hand": cfg.working_hand,
+        "target_mode": "hand_se3" if rotations is not None else "wrist_position",
+        "sg_window": 0,
+        "sg_polyorder": 0,
+        "joint_sg_window": int(cfg.joint_sg_window),
+        "joint_sg_polyorder": int(cfg.joint_sg_polyorder),
+        "ik_position_cost": float(cfg.ik_position_cost),
+        "ik_orientation_cost": float(cfg.ik_orientation_cost),
+        "effective_orientation_cost": float(effective_orientation_cost(cfg)),
+        "ik_posture_cost": float(cfg.ik_posture_cost),
+        "ik_substeps": int(cfg.ik_substeps),
+        "ik_solver": cfg.ik_solver,
+        "recenter_to_neutral": bool(cfg.recenter_to_neutral),
+        "recenter_offset": recenter_offset,
+        "trajectory_scale": float(cfg.trajectory_scale),
+        "source_cln": str(out_path),
+    }
+    if target_rot is not None:
+        archive["ee_target_rot"] = target_rot
+    if orientation_valid is not None:
+        archive["orientation_valid"] = orientation_valid
+    write_hdf5_archive(out_path, archive)
+
+    summary = {
+        "traj_path": str(out_path),
+        "robot": cfg.robot.description,
+        "ee_frame": cfg.robot.ee_frame,
+        "frames": int(len(q_scene_smooth)),
+        "fps": float(fps),
+        "working_hand": cfg.working_hand,
+        "ik_position_cost": float(cfg.ik_position_cost),
+        "ik_orientation_cost": float(cfg.ik_orientation_cost),
+        "effective_orientation_cost": float(effective_orientation_cost(cfg)),
+        "ik_posture_cost": float(cfg.ik_posture_cost),
+        "ik_substeps": int(cfg.ik_substeps),
+        "ik_solver": cfg.ik_solver,
+        "target_mode": "hand_se3" if rotations is not None else "wrist_position",
+        "joint_sg_window": int(cfg.joint_sg_window),
+        "recenter_to_neutral": bool(cfg.recenter_to_neutral),
+        "recenter_offset": recenter_offset.tolist(),
+        "trajectory_scale": float(cfg.trajectory_scale),
+        "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
+        "median_not_aligned_pos_error_mm": float(1000.0 * np.median(pos_err_smooth)),
+        "mean_not_aligned_orientation_error_deg": float(np.mean(ori_err_smooth_deg)),
+        "median_not_aligned_orientation_error_deg": float(np.median(ori_err_smooth_deg)),
+        "p95_not_aligned_orientation_error_deg": float(np.percentile(ori_err_smooth_deg, 95)),
+        "max_not_aligned_orientation_error_deg": float(np.max(ori_err_smooth_deg)),
+    }
+    if orientation_valid is not None:
+        summary["orientation_valid_frames"] = int(orientation_valid.sum())
+        summary["orientation_total_frames"] = int(len(orientation_valid))
+    print(
+        f"Saved trajectory: {out_path} "
+        f"(mean error={summary['mean_not_aligned_pos_error_mm']:.1f} mm, "
+        f"orientation={summary['mean_not_aligned_orientation_error_deg']:.1f} deg)"
+    )
+    return summary
+
+
 def evaluate_saved_traj(sample_path: Path, traj_path: Path, robot: RobotConfig, align: str, out_prefix: Path) -> dict[str, Any]:
     """Run eval_tracking_error.py's evaluator for a saved trajectory."""
     try:
