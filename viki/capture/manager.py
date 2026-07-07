@@ -106,7 +106,6 @@ class CameraManager:
         devices: dict = {
             "realsense": [],
             "kinect": [],
-            "web_camera": [],
             "active": list(self._workers.keys()),
         }
 
@@ -124,13 +123,6 @@ class CameraManager:
             devices["kinect"] = [f"kinect_{i}" for i in range(count)]
         except Exception as e:
             devices["kinect_error"] = str(e)
-
-        try:
-            from .web_camera import WebCameraBackend
-
-            devices["web_camera"] = WebCameraBackend.list_devices()
-        except Exception as e:
-            devices["web_camera_error"] = str(e)
 
         return devices
 
@@ -210,6 +202,7 @@ class CameraManager:
         worker = self._workers.pop(device_id, None)
         if worker:
             worker.stop()
+            worker.join()
 
     def stop_all(self) -> None:
         with ThreadPoolExecutor() as executor:
@@ -278,13 +271,6 @@ class CameraManager:
                 depth_mode=depth_mode,
                 fps=fps,
                 **kwargs,
-            )
-        elif device_id.startswith("web_camera_"):
-            from .web_camera import WebCameraBackend
-
-            idx = int(device_id.split("_")[-1])
-            return WebCameraBackend(
-                idx, width=color_width, height=color_height, fps=fps
             )
         else:
             from .realsense import RealSenseBackend

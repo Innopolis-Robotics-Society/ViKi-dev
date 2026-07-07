@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import json
 import queue
-import subprocess
 import tempfile
 import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import numpy as np
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -21,11 +21,21 @@ class OptimizationRoutesTests(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
-        self.samples = self.root / "skeleton_tests" / "samples"
-        self.output = self.root / "skeleton_tests" / "output"
-        self.opt_dir = Path("skeleton_tests") / "optimization"
+        self.samples = self.root / "data" / "skeleton_smoothed"
+        self.legacy_samples = self.root / "data" / "optimization_samples"
+        self.output = self.root / "data" / "robot_out"
+        self.opt_dir = self.root / "viki" / "optimization" / "optimization"
         self.samples.mkdir(parents=True)
+        self.legacy_samples.mkdir(parents=True)
         self.output.mkdir(parents=True)
+        self.opt_dir.mkdir(parents=True)
+        np.savez(
+            self.samples / "cln_api.npz",
+            positions=np.ones((2, 3), dtype=np.float64),
+            rotations=np.tile(np.eye(3), (2, 1, 1)),
+            valid=np.array([True, True]),
+            timestamps=np.array([1_000_000, 1_100_000], dtype=np.int64),
+        )
         self.recording = self.root / "rec_api_smoothed.json"
         landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
         landmarks[0] = [1.0, 2.0, 3.0]
@@ -42,10 +52,14 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.client = TestClient(app)
         self.patches = [
             patch.object(optimization, "PROJECT_ROOT", self.root),
-            patch.object(optimization, "SAMPLES_DIR", self.samples),
+            patch.object(optimization, "SMOOTHED_INPUT_DIR", self.samples),
+            patch.object(optimization, "LEGACY_SAMPLES_DIR", self.legacy_samples),
             patch.object(optimization, "OUTPUT_DIR", self.output),
-            patch.object(optimization, "OPTIMIZATION_DIR", self.opt_dir),
-            patch.object(optimization, "RECORDING_DIRS", (self.root, self.root / "data" / "skeleton_recs")),
+            patch.object(
+                optimization,
+                "RECORDING_DIRS",
+                (self.root, self.root / "data" / "skeleton_recs"),
+            ),
             patch.object(optimization, "_jobs", {}),
             patch.object(optimization, "_job_queue", queue.Queue()),
             patch.object(optimization, "_worker_started", False),
@@ -61,7 +75,9 @@ class OptimizationRoutesTests(unittest.TestCase):
     def test_recording_listing_and_conversion(self) -> None:
         listed = self.client.get("/api/optimization/recordings")
         self.assertEqual(listed.status_code, 200)
-        self.assertEqual(listed.json()["recordings"][0]["filename"], self.recording.name)
+        self.assertEqual(
+            listed.json()["recordings"][0]["filename"], self.recording.name
+        )
 
         converted = self.client.post(
             "/api/optimization/convert",
@@ -76,70 +92,69 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(converted.json()["frames"], 1)
         self.assertNotIn("include_arm", converted.json())
         self.assertEqual(converted.json()["orientation_valid_frames"], 1)
-        self.assertTrue((self.samples / "sample.npz").exists())
+        self.assertTrue((self.legacy_samples / "sample.npz").exists())
 
         samples = self.client.get("/api/optimization/samples")
         self.assertEqual(samples.status_code, 200)
-        self.assertEqual(samples.json()["samples"][0]["filename"], "sample.npz")
+        self.assertEqual(samples.json()["samples"][0]["filename"], "cln_api.npz")
 
-    def test_retarget_rejects_missing_sample_before_conda_check(self) -> None:
+    def test_retarget_rejects_missing_sample(self) -> None:
         response = self.client.post(
             "/api/optimization/retarget",
             json={"sample": "missing.npz", "output_name": "out"},
         )
         self.assertEqual(response.status_code, 404)
 
-    def test_retarget_reports_unavailable_conda(self) -> None:
+    def test_retarget_enqueues_job(self) -> None:
         (self.samples / "sample.npz").write_bytes(b"fake")
-        with patch.object(optimization, "_resolve_conda_exe", side_effect=optimization.HTTPException(503, "no conda")):
-            response = self.client.post(
-                "/api/optimization/retarget",
-                json={"sample": "sample.npz", "output_name": "out"},
-            )
-        self.assertEqual(response.status_code, 503)
 
-    def test_retarget_enqueues_job_with_mocked_conda(self) -> None:
-        (self.samples / "sample.npz").write_bytes(b"fake")
-        fake_job = optimization.OptimizationJob(
-            job_id="job1",
-            status="queued",
-            command=["conda", "run"],
-            output_stem="real_wrist_ur10",
-        )
-        with (
-            patch.object(optimization, "_resolve_conda_exe", return_value="conda"),
-            patch.object(optimization, "_enqueue_job", return_value=fake_job) as enqueue,
-        ):
+        with patch.object(optimization, "_enqueue_job") as enqueue:
             response = self.client.post(
                 "/api/optimization/retarget",
                 json={
                     "sample": "sample.npz",
                     "robot": "ur10",
                     "output_name": "real_wrist_ur10",
-                    "target_mode": "wrist_position",
+                    "target_mode": "hand_se3",
                 },
             )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["job_id"], "job1")
-        command = enqueue.call_args.args[0]
-        self.assertIn("--target-mode", command)
-        self.assertIn("wrist_position", command)
+        _, kwargs = enqueue.call_args
+        self.assertIn("description", kwargs)
+        self.assertIn("output_stem", kwargs)
+        self.assertIn("sample_path", kwargs)
+        self.assertIn("cfg", kwargs)
 
-    def test_job_worker_records_subprocess_success(self) -> None:
-        completed = subprocess.CompletedProcess(["conda"], 0, stdout="ok", stderr="")
-        with patch.object(optimization.subprocess, "run", return_value=completed):
-            job = optimization._enqueue_job(["conda", "run"], "worker_out")
+    def test_job_worker_calls_retarget(self) -> None:
+        fake_summary = {"traj_path": "/fake/traj.h5", "frames": 5}
+        from unittest.mock import MagicMock
+
+        mock_cfg = MagicMock()
+        with (
+            patch.object(
+                optimization, "retarget", return_value=fake_summary
+            ) as mock_retarget,
+            patch.object(optimization, "evaluate_saved_traj", return_value={}),
+        ):
+            job = optimization._enqueue_job(
+                description="test",
+                output_stem="test",
+                sample_path=Path("/fake/sample.npz"),
+                output_path=Path("/fake/traj.h5"),
+                cfg=mock_cfg,
+                do_evaluate=False,
+            )
             deadline = time.time() + 2.0
-            while time.time() < deadline and optimization._jobs[job.job_id].status != "succeeded":
+            while (
+                time.time() < deadline
+                and optimization._jobs[job.job_id].status != "succeeded"
+            ):
                 time.sleep(0.01)
 
-        response = self.client.get(f"/api/optimization/jobs/{job.job_id}")
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "succeeded")
-        self.assertEqual(data["exit_code"], 0)
-        self.assertEqual(data["stdout_tail"], "ok")
+        self.assertEqual(job.status, "succeeded")
+        self.assertEqual(job.exit_code, 0)
+        mock_retarget.assert_called_once()
 
     def test_output_listing_and_download_are_sanitized(self) -> None:
         output = self.output / "result.h5"

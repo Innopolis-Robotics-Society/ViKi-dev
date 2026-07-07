@@ -81,6 +81,10 @@ class _CalibrationWorker(ABC):
             return
         self.add_sample(frame)
 
+    @abstractmethod
+    def mark_board(self, frame: Frame) -> np.ndarray:
+        pass
+
     def _loop(self) -> None:
         while not self._stop_event.is_set():
             try:

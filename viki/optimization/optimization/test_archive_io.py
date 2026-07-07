@@ -20,7 +20,7 @@ class ArchiveIoTests(unittest.TestCase):
                 path,
                 {
                     "q_scene_smooth": q,
-                    "robot": "ur10_description",
+                    "robot": "ur10_official_description",
                     "fps": 30.0,
                     "recenter_to_neutral": True,
                     "ee_target_rot": np.repeat(np.eye(3)[None, :, :], 3, axis=0),
@@ -31,7 +31,7 @@ class ArchiveIoTests(unittest.TestCase):
             with load_archive(path) as archive:
                 self.assertIn("q_scene_smooth", archive.files)
                 np.testing.assert_allclose(archive["q_scene_smooth"], q)
-                self.assertEqual(archive["robot"], "ur10_description")
+                self.assertEqual(archive["robot"], "ur10_official_description")
                 self.assertEqual(float(archive["fps"]), 30.0)
                 self.assertTrue(bool(archive["recenter_to_neutral"]))
                 np.testing.assert_allclose(

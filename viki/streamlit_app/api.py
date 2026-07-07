@@ -94,7 +94,7 @@ class ViKiApi:
 
     # -- cameras -------------------------------------------------------------
     def list_devices(self) -> dict:
-        """GET /api/devices -> {realsense, kinect, web_camera, active, ...}."""
+        """GET /api/devices -> {realsense, kinect, active, ...}."""
         return self._get("/api/devices")
 
     def start_camera(self, device_id: str, cfg: dict) -> dict:

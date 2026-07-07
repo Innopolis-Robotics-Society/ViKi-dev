@@ -123,7 +123,7 @@ class EvalTrackingErrorTests(unittest.TestCase):
                 robot_traj,
                 {
                     "q_scene_smooth": np.zeros((5, 6), dtype=np.float64),
-                    "robot": "ur10_description",
+                    "robot": "ur10_official_description",
                     "ee_frame": "tool0",
                     "working_hand": "right",
                 },

@@ -1,4 +1,5 @@
 import cv2
+import numpy as np
 from typing import List, Sequence
 
 from cv2.typing import MatLike
@@ -6,6 +7,7 @@ from viki.capture.base import Frame
 from viki.capture.manager import CameraManager
 from viki.calibration.models import (
     ArucoBoardParameters,
+    BoardParameters,
     ArucoCalibrationSample,
     CalibrationSample,
     CalibrationIntrinsics,
@@ -26,6 +28,7 @@ class ArucoWorker(_CalibrationWorker):
 
         dict_id = aruco_board_params.aruco_dict
         self.dictionary = cv2.aruco.getPredefinedDictionary(dict_id)
+        self.aruco_detector = cv2.aruco.ArucoDetector(self.dictionary)
 
         # Create the ChArUco board object once (reused for all detections)
         self.board = cv2.aruco.CharucoBoard(
@@ -37,8 +40,10 @@ class ArucoWorker(_CalibrationWorker):
 
         self.detector = cv2.aruco.CharucoDetector(self.board)
 
-    def set_board_params(self, board_params: ArucoBoardParameters) -> None:
-        super().set_board_params(board_params)
+    def set_board_params(self, board_params: BoardParameters) -> None:
+        # super().set_board_params(board_params)
+        if not isinstance(board_params, ArucoBoardParameters):
+            return
         with self._lock:
             self.board = cv2.aruco.CharucoBoard(
                 board_params.board_size,
@@ -50,9 +55,9 @@ class ArucoWorker(_CalibrationWorker):
 
     def add_sample(self, frame: Frame) -> None:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
-        
+
         # Debug: detect markers separately to see what's actually visible
-        markers_raw, ids_raw, _ = cv2.aruco.detectMarkers(gray, self.dictionary)
+        markers_raw, ids_raw, _ = self.aruco_detector.detectMarkers(gray)
         if ids_raw is not None:
             self._logger.debug(f"{self.device_id} markers visible: {len(ids_raw)}")
         else:
@@ -60,7 +65,7 @@ class ArucoWorker(_CalibrationWorker):
 
         # 1. Detect ArUco markers
         corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
-        
+
         if m_ids is None or len(m_ids) == 0:
             self._logger.debug(
                 f"{self.device_id} add_sample: detectBoard failed to find markers. Board size: {self.board_params.board_size}. "
@@ -72,11 +77,13 @@ class ArucoWorker(_CalibrationWorker):
                 f"{self.device_id} add_sample: detectBoard found markers but no corners. Board size: {self.board_params.board_size}"
             )
             return
-        
-        self._logger.debug(f"{self.device_id} add_sample: success. Corners: {len(corners)}, Markers: {len(m_ids)}")
-        
+
+        self._logger.debug(
+            f"{self.device_id} add_sample: success. Corners: {len(corners)}, Markers: {len(m_ids)}"
+        )
+
         h, w = frame.color.shape[:2]
-        
+
         # Store the detected corners and IDs inside the sample
         sample = ArucoCalibrationSample(
             frame=frame,
@@ -87,13 +94,12 @@ class ArucoWorker(_CalibrationWorker):
             c_ids=c_ids,
             m_ids=m_ids,
         )
-        
+
         with self._lock:
             self._samples.append(sample)
 
-
         self._logger.debug(
-            f"{self.device_id} add_sample: success)" # (ids: {corners, c_ids})"
+            f"{self.device_id} add_sample: success)"  # (ids: {corners, c_ids})"
         )
 
     def intrinsics_calibration(
@@ -122,7 +128,6 @@ class ArucoWorker(_CalibrationWorker):
         for sample in samples:
             if not type(sample) is ArucoCalibrationSample:
                 continue
-            print(sample.corners)
             if (
                 sample.corners is not None
                 and sample.c_ids is not None
@@ -139,19 +144,32 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
-        ret, mtx, dist, rvecs, tvecs = cv2.aruco.calibrateCameraCharuco(
-            all_charuco_corners,
-            all_charuco_ids,
-            self.board,
-            (w, h),
-            None,  # pyright: ignore
-            None,  # pyright: ignore
-        )
+        try:
+            ret, mtx, dist, rvecs, tvecs = cv2.aruco.calibrateCameraCharuco(
+                all_charuco_corners,
+                all_charuco_ids,
+                self.board,
+                (w, h),
+                None,  # pyright: ignore
+                None,  # pyright: ignore
+            )
+        except AttributeError:
+            # Fallback: Use cv2.calibrateCamera
+            all_obj_points = []
+            all_img_points = []
+            board_corners_3d = self.board.getChessboardCorners()
+
+            for corners, ids in zip(all_charuco_corners, all_charuco_ids):
+                obj_pts = board_corners_3d[ids]
+                all_obj_points.append(obj_pts)
+                all_img_points.append(corners)
+
+            ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(
+                all_obj_points, all_img_points, (w, h), None, None
+            )
 
         if not ret:
-            msg = (
-                f"{self.device_id} intrinsics: cv2.aruco.calibrateCameraCharuco failed"
-            )
+            msg = f"{self.device_id} intrinsics: calibration failed"
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
@@ -177,34 +195,65 @@ class ArucoWorker(_CalibrationWorker):
                 self._logger.debug(msg)
                 raise RuntimeError(msg)
             sample = self._samples[-1]
- 
         if not type(sample) is ArucoCalibrationSample:
             msg = f"ArucoWorker extrinsics_calibration: sample is not CharUco sample"
             self._logger.debug(msg)
             raise RuntimeError(msg)
- 
         camera_matrix = intrinsics.camera_matrix
         dist_coeffs = intrinsics.dist_coeffs
- 
         if sample.corners is None:
             msg = f"ArucoWorker extrinsics_calibration: corners are None"
             self._logger.debug(msg)
             raise RuntimeError(msg)
- 
-        ret, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
-            sample.corners,
-            sample.c_ids,
-            self.board,
-            camera_matrix,
-            dist_coeffs,
-            None,  # pyright: ignore
-            None,  # pyright: ignore
-        )
 
+        try:
+            ret, rvec, tvec = cv2.aruco.estimatePoseCharucoBoard(
+                sample.corners,
+                sample.c_ids,
+                self.board,
+                camera_matrix,
+                dist_coeffs,
+                None,  # pyright: ignore
+                None,  # pyright: ignore,
+            )
+        except AttributeError:
+            all_corners_3d = self.board.getChessboardCorners()
+            object_points = all_corners_3d[sample.c_ids].astype(np.float32)
+            image_points = sample.corners.astype(np.float32)
+
+            ret, rvec, tvec = cv2.solvePnP(
+                object_points,
+                image_points,
+                camera_matrix,
+                dist_coeffs,
+                flags=cv2.SOLVEPNP_ITERATIVE,
+            )
         if not ret:
-            msg = f"{self.device_id} extrinsics: cv2.aruco.estimatePoseCharucoBoard failed"
+            msg = f"{self.device_id} extrinsics: pose estimation failed"
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
         self._logger.debug(f"{self.device_id} extrinsics: success")
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
+
+    def mark_board(self, frame: Frame) -> np.ndarray:
+        gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
+        markers_raw, ids_raw, _ = self.aruco_detector.detectMarkers(gray)
+        if ids_raw is None:
+            return frame.color
+        corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
+        if m_ids is None or len(m_ids) == 0 or c_ids is None or len(c_ids) == 0:
+            return frame.color
+        debug_img = frame.color.copy()
+        try:
+            cv2.aruco.drawDetectedMarkers(
+                debug_img, markers, m_ids, borderColor=(0, 255, 0)
+            )
+            corners_pts = np.asarray(corners, dtype=np.float32).reshape(-1, 1, 2)
+            corner_ids = np.asarray(c_ids, dtype=np.int32).reshape(-1, 1)
+            cv2.aruco.drawDetectedCornersCharuco(
+                debug_img, corners_pts, corner_ids, (0, 0, 255)
+            )
+        except:
+            pass
+        return debug_img

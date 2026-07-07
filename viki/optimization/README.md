@@ -100,7 +100,7 @@ Run retargeting directly through the expected FK conda environment:
   --ik-position-cost 5 `
   --ik-orientation-cost 0 `
   --joint-sg-window 0 `
-  --sg-window 7 `
+  --sg-window 0 `
   --recenter-to-neutral `
   --trajectory-scale 0.25 `
   --evaluate
@@ -269,6 +269,8 @@ y_palm = z_palm x x_palm
 ```
 
 `hand_se3` writes `ee_target_rot` and `orientation_valid` into the HDF5 trajectory output.
+
+For uncalibrated debug runs, `--align-initial-orientation` maps the first valid palm orientation onto the robot's neutral end-effector rotation, then tracks relative hand rotation after that. Leave it off when the sample orientation is already calibrated to the robot tool frame.
 
 The intended current flow is:
 

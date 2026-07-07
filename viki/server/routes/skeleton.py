@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 import time
 import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -16,8 +17,11 @@ from pydantic import BaseModel
 import numpy as np
 from viki.skeleton.models import LM
 
-from viki.server.deps import get_worker
+from argparse import Namespace
+
+from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
+from viki.skeleton.processor import SkeletonProcessor
 
 
 def sanitize_nan(val):
@@ -39,6 +43,11 @@ logger = logging.getLogger(__name__)
 
 class ToggleRequest(BaseModel):
     enabled: bool
+
+
+class SmoothRequest(BaseModel):
+    window_length: int = 7
+    polyorder: int = 2
 
 
 @router.post("/toggle")
@@ -64,8 +73,39 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
         "recording": worker.is_recording,
     }
 
+@router.get("/recordings")
+async def list_recordings(
+    page: int = 0, 
+    limit: int = 10, 
+    processor: SkeletonProcessor = Depends(get_processor)
+):
+    return {"recordings": processor.list_recordings(page=page, page_size=limit)}
+
+
+@router.post("/smooth/{filename}")
+async def smooth_recording(
+    filename: str,
+    req: SmoothRequest,
+    processor: SkeletonProcessor = Depends(get_processor)
+):
+    try:
+        path, _ = processor.smooth_recording(
+            filename, 
+            window_length=req.window_length, 
+            polyorder=req.polyorder
+        )
+        return {"status": "success", "path": path}
+    except FileNotFoundError:
+        raise HTTPException(404, f"Recording {filename} not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.exception("Smoothing failed")
+        raise HTTPException(500, f"Smoothing failed: {str(e)}")
+
 
 @router.websocket("/stream")
+
 async def skeleton_stream(websocket: WebSocket):
     await websocket.accept()
     # logger.debug("ROUTES/SKELETON: stream endpoint engaged")
@@ -81,6 +121,9 @@ async def skeleton_stream(websocket: WebSocket):
                     "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
                     "landmarks": (
                         sanitize_nan(frame.points) if frame else {}
+                    ),
+                    "end_effector": (
+                        sanitize_nan(frame.end_effector.as_dict()) if frame and frame.end_effector else None
                     ),
                     "detections": {
                         dev_id: (sanitize_nan(det.points) if det else {})
