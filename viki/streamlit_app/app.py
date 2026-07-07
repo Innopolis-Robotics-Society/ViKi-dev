@@ -27,6 +27,7 @@ from viki.streamlit_app.sections import (
     calibration,
     cameras,
     config_panel,
+    dataset,
     recordings,
     skeleton,
 )
@@ -124,8 +125,8 @@ def main() -> None:
     _topbar()
     st.divider()
 
-    tab_cameras, tab_calib, tab_skeleton, tab_recordings, tab_config = st.tabs(
-        ["Cameras", "Calibration", "Skeleton", "Recordings", "Config"]
+    tab_cameras, tab_calib, tab_skeleton, tab_recordings, tab_dataset, tab_config = st.tabs(
+        ["Cameras", "Calibration", "Skeleton", "Recordings", "Dataset", "Config"]
     )
     with tab_cameras:
         cameras.render()
@@ -135,6 +136,8 @@ def main() -> None:
         skeleton.render()
     with tab_recordings:
         recordings.render()
+    with tab_dataset:
+        dataset.render()
     with tab_config:
         config_panel.render()
 

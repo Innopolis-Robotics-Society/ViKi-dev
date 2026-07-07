@@ -104,7 +104,9 @@ class SkeletonProcessor:
             rotations=rotations,
             rpy=rpy,
             valid=valid,
-            timestamps=timestamps
+            timestamps=timestamps,
+            raw_points=points.astype(np.float32),
+            landmark_ids=landmark_ids,
         )
 
         if getattr(config, 'SKELETON_SAVE_JSON_DEBUG', False):
