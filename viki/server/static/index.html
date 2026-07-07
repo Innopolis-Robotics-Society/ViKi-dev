@@ -996,7 +996,6 @@
         const all = [
           ...data.realsense.map(id => ({id, type: 'realsense'})),
           ...data.kinect.map(id => ({id, type: 'kinect'})),
-          // ...data.web_camera.map(id => ({id, type: "web_camera"})),
         ];
         renderCards(all, data.active || []);
       } catch (e) {

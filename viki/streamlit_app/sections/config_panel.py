@@ -45,6 +45,32 @@ HELP_ITEMS: list[tuple[str, str]] = [
     ("CALIB_ARUCO_BOARD_SIZE", "Default aruco board dimensions [cols, rows]"),
     ("CALIB_ARUCO_SQUARE_SIZE", "Default aruco square size in meters"),
     ("CALIB_ARUCO_MARKER_SIZE", "Default aruco marker size in meters"),
+    ("CALIB_ARUCO_DICT", "OpenCV Aruco dictionary ID (our main board has 40 markers total, each 5x5, so DICT_5X5_50 is good)"),
+    ("RECORDING_DURATION", "Max recording duration in seconds"),
+    ("RECORDING_FPS", "Recording frames per second"),
+    ("REALSENSE_RESOLUTIONS", "Available RealSense resolutions (list of WxH strings)"),
+    ("REALSENSE_FPS", "Available RealSense FPS options"),
+    ("KINECT_RESOLUTIONS", "Available Kinect color resolutions (list of WxH strings)"),
+    ("KINECT_FPS", "Available Kinect FPS options"),
+    ("KINECT_DEPTH_MODES", "Available Kinect depth modes"),
+    ("KINECT_DEPTH_MODE_MAX_FPS", "Max FPS per depth mode for Kinect (e.g. WFOV_UNBINNED capped at 15)"),
+    ("SKELETON_RECS_DIR", "Directory for raw skeleton recordings"),
+    ("SKELETON_SMOOTHED_DIR", "Directory for smoothed skeleton recordings"),
+    ("SKELETON_SAVE_JSON_DEBUG", "Save additional JSON debug files during skeleton recording"),
+    ("RETARGET_DEFAULT_ROBOT", "Default robot model for retargeting (ur10, iiwa14)"),
+    ("RETARGET_LANDMARK_SG_WINDOW", "Savitzky-Golay window size for landmark smoothing (0 = disabled)"),
+    ("RETARGET_LANDMARK_SG_POLYORDER", "Savitzky-Golay polynomial order for landmark smoothing"),
+    ("RETARGET_IK_POSITION_COST", "IK position tracking weight (higher = tighter wrist tracking)"),
+    ("RETARGET_IK_ORIENTATION_COST", "IK orientation tracking weight (higher = tighter hand orientation)"),
+    ("RETARGET_IK_POSTURE_COST", "IK posture regularization weight (keeps joints near neutral)"),
+    ("RETARGET_TARGET_MODE", "Target mode: wrist_position or hand_se3 (SE3 includes orientation)"),
+    ("RETARGET_IK_SUBSTEPS", "Number of IK solver substeps per frame"),
+    ("RETARGET_IK_SOLVER", "IK solver backend (quadprog recommended)"),
+    ("RETARGET_APPROACH_SEC", "Duration in seconds of approach phase before main motion"),
+    ("RETARGET_JOINT_SG_WINDOW", "Savitzky-Golay window size for joint trajectory smoothing (0 = disabled)"),
+    ("RETARGET_JOINT_SG_POLYORDER", "Savitzky-Golay polynomial order for joint smoothing"),
+    ("RETARGET_RECENTER_TO_NEUTRAL", "Offset trajectory so frame-0 wrist matches robot neutral EE position"),
+    ("RETARGET_TRAJECTORY_SCALE", "Scale human wrist motion by this factor (0.25 = human 1m -> robot 0.25m)"),
 ]
 
 
@@ -118,10 +144,6 @@ def render() -> None:
     with st.expander("❔ Help"):
         for key, desc in HELP_ITEMS:
             st.markdown(f"**{key}**: {desc}")
-        st.markdown(
-            "**CALIB_ARUCO_DICT**: OpenCV Aruco dictionary ID (our main board has "
-            "40 markers total, each 5x5, so DICT_5X5_50 is good)"
-        )
         st.markdown("---")
         st.markdown("**Load**: pulls the user configuration from backend")
         st.markdown("**Reset to Defaults**: loads the default parameters for the system")
