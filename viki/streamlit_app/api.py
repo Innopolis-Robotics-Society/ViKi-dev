@@ -12,6 +12,7 @@ Endpoint shapes verified against ``viki/server/routes/*.py`` and the React
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import requests
 
@@ -177,12 +178,51 @@ class ViKiApi:
         """GET /api/skeleton/status -> {enabled, recording}."""
         return self._get("/api/skeleton/status")
 
+    def skeleton_list_recordings(self) -> list[str]:
+        """GET /api/skeleton/recordings -> {recordings: [filenames]}."""
+        return self._get("/api/skeleton/recordings").get("recordings", [])
+
     # -- recording -----------------------------------------------------------
     def record_start(self, duration: float, fps: int) -> dict:
         """POST /api/record/start (RGB-D recording in the background worker)."""
         return self._post(
             "/api/record/start", json={"duration": duration, "fps": fps}
         )
+
+    # -- skeleton smoothing --------------------------------------------------
+    def smooth_recording(self, filename: str, window_length: int = 7, polyorder: int = 2) -> dict:
+        """POST /api/skeleton/smooth -> {status, path}."""
+        return self._post(
+            "/api/skeleton/smooth",
+            json={"filename": filename, "window_length": window_length, "polyorder": polyorder},
+        )
+
+    def smooth_plot_url(self, filename: str) -> str:
+        """URL for the smooth comparison PNG (browser fetches directly)."""
+        from .settings import browser_url
+        return browser_url(f"/api/skeleton/smooth-plot?filename={quote(filename)}")
+
+    # -- dataset (smooth -> robot trajectory) --------------------------------
+    def dataset_optimize(self, filename: str, robot: str = "ur10") -> dict:
+        """POST /api/dataset/optimize -> {job_id, status}."""
+        return self._post("/api/dataset/optimize", json={"filename": filename, "robot": robot})
+
+    def dataset_job_status(self, job_id: str) -> dict:
+        """GET /api/dataset/optimize/status/{job_id} -> job dict."""
+        return self._get(f"/api/dataset/optimize/status/{job_id}")
+
+    def dataset_list_jobs(self) -> dict:
+        """GET /api/dataset/optimize/jobs -> {jobs: [...]}."""
+        return self._get("/api/dataset/optimize/jobs")
+
+    def dataset_list_outputs(self) -> list[str]:
+        """GET /api/dataset/outputs -> {outputs: [filenames]}."""
+        return self._get("/api/dataset/outputs").get("outputs", [])
+
+    def dataset_viz_stream_url(self, filename: str) -> str:
+        """URL for the robot viz MJPEG stream."""
+        from .settings import browser_url
+        return browser_url(f"/api/dataset/viz-stream?filename={quote(filename)}")
 
     # -- recordings (browse / download) --------------------------------------
     # NOTE: these three endpoints are NOT YET implemented on the backend. They

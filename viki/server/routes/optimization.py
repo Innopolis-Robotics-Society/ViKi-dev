@@ -181,7 +181,7 @@ async def list_outputs() -> dict[str, Any]:
     return {"outputs": [_file_info(path) for path in paths]}
 
 
-@router.get("/outputs/{filename:path}")
+@router.get("/outputs/download")
 async def download_output(filename: str) -> FileResponse:
     name = _safe_filename(filename)
     path = OUTPUT_DIR / name

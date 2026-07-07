@@ -8,17 +8,20 @@ and a WebSocket for streaming the latest skeleton frame.
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 from pathlib import Path
 import time
 import logging
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi.responses import Response
 from pydantic import BaseModel
 import numpy as np
 from viki.skeleton.models import LM
 
 from argparse import Namespace
 
+import viki.config as config
 from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
 from viki.skeleton.processor import SkeletonProcessor
@@ -46,6 +49,7 @@ class ToggleRequest(BaseModel):
 
 
 class SmoothRequest(BaseModel):
+    filename: str
     window_length: int = 7
     polyorder: int = 2
 
@@ -82,26 +86,70 @@ async def list_recordings(
     return {"recordings": processor.list_recordings(page=page, page_size=limit)}
 
 
-@router.post("/smooth/{filename}")
+@router.post("/smooth")
 async def smooth_recording(
-    filename: str,
     req: SmoothRequest,
     processor: SkeletonProcessor = Depends(get_processor)
 ):
     try:
         path, _ = processor.smooth_recording(
-            filename, 
-            window_length=req.window_length, 
+            req.filename,
+            window_length=req.window_length,
             polyorder=req.polyorder
         )
         return {"status": "success", "path": path}
     except FileNotFoundError:
-        raise HTTPException(404, f"Recording {filename} not found")
+        raise HTTPException(404, f"Recording {req.filename} not found")
     except ValueError as e:
         raise HTTPException(400, str(e))
     except Exception as e:
         logger.exception("Smoothing failed")
         raise HTTPException(500, f"Smoothing failed: {str(e)}")
+
+
+@router.get("/smooth-plot")
+async def smooth_plot(filename: str):
+    """Return a PNG comparison of raw vs smoothed wrist trajectory."""
+    smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
+    npz_path = smoothed_dir / filename
+    if not npz_path.exists():
+        raise HTTPException(status_code=404, detail=f"Smoothed recording not found: {filename}")
+
+    with np.load(npz_path) as data:
+        positions = data["positions"]
+        timestamps = data["timestamps"]
+        raw_points = data.get("raw_points")
+        landmark_ids = data.get("landmark_ids")
+
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
+    t_sec = (timestamps - timestamps[0]) / 1_000_000
+
+    labels = ["X", "Y", "Z"]
+    colors_raw = ["#e74c3c", "#e67e22", "#3498db"]
+    colors_smooth = ["#2ecc71", "#1abc9c", "#9b59b6"]
+
+    for i, (ax, label, cr, cs) in enumerate(zip(axes, labels, colors_raw, colors_smooth)):
+        ax.plot(t_sec, positions[:, i], color=cs, linewidth=2, label="Smoothed" if i == 0 else None)
+        if raw_points is not None and landmark_ids is not None:
+            wrist_col = int(np.where(landmark_ids == 0)[0][0])
+            ax.plot(t_sec, raw_points[:, wrist_col, i], color=cr, linewidth=1, alpha=0.5, label="Raw" if i == 0 else None)
+        ax.set_ylabel(f"{label} (m)")
+        ax.legend(loc="upper right", fontsize=8)
+        ax.grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel("Time (s)")
+    fig.suptitle(f"Smoothing comparison — {filename}", fontsize=12)
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @router.websocket("/stream")

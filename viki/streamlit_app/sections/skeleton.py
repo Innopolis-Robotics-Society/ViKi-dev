@@ -15,6 +15,8 @@ so switching them does not trigger a Streamlit rerun (which would reset the WS).
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -112,6 +114,38 @@ def render() -> None:
             on_click=_toggle_recording,
             args=(False,),
         )
+
+    st.divider()
+    st.subheader("Smoothing")
+
+    api = get_api()
+    try:
+        recs = api.skeleton_list_recordings()
+    except ViKiApiError:
+        recs = []
+
+    if recs:
+        smooth_rec = st.selectbox("Recording to smooth", recs, key="smooth_rec_select")
+        col_a, col_b = st.columns([1, 1])
+        with col_a:
+            win = st.number_input("Window", min_value=3, max_value=31, value=7, step=2, key="smooth_win")
+        with col_b:
+            order = st.number_input("Polyorder", min_value=1, max_value=5, value=2, key="smooth_order")
+
+        if st.button("Smooth", type="primary", use_container_width=True):
+            try:
+                res = api.smooth_recording(smooth_rec, window_length=win, polyorder=order)
+                cln_name = Path(res["path"]).name
+                st.session_state["_last_smoothed"] = cln_name
+                st.success(f"Smoothed → {cln_name}")
+            except ViKiApiError as exc:
+                st.error(f"Smoothing failed: {exc}")
+
+        last = st.session_state.get("_last_smoothed")
+        if last:
+            st.image(api.smooth_plot_url(last), use_container_width=True)
+    else:
+        st.caption("No recordings found. Record a skeleton session first.")
 
     if not devices:
         st.info(

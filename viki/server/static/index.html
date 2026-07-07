@@ -746,8 +746,8 @@
       <span class="title">Process Recordings</span>
       <button class="danger" onclick="toggleProcess()">✕ Close</button>
     </div>
-    <div class="skeleton-body">
-      <div class="skeleton-controls" style="flex-direction: column; gap: 8px; padding: 12px;">
+    <div class="skeleton-body" id="process-body">
+      <div class="skeleton-controls" style="flex-direction: column; gap: 8px; padding: 12px; min-width: 280px;">
         <div style="display: flex; gap: 8px;">
           <button id="btn-process-mode-smooth" class="primary" onclick="setProcessMode('smooth')">Smoothing</button>
           <button id="btn-process-mode-dataset" onclick="setProcessMode('dataset')">Robot Dataset</button>
@@ -783,6 +783,9 @@
         <div id="process-conversion-status"
           style="font-size: 11px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; margin-top: 4px; display: none;">
         </div>
+      </div>
+      <div id="process-smooth-plot"
+        style="flex: 1; display: none; background: #000; border-radius: 6px; overflow: hidden; min-height: 300px; align-items: center; justify-content: center;">
       </div>
     </div>
   </div>
@@ -1927,7 +1930,7 @@
         const robot = document.getElementById('process-robot').value;
         statusEl.textContent = `Queueing ${processSelectedRec} for robot ${robot}...`;
         try {
-          const res = await api('POST', `/api/dataset/optimize/${processSelectedRec}?robot=${robot}`);
+          const res = await api('POST', '/api/dataset/optimize', {filename: processSelectedRec, robot});
           log(`Dataset conversion queued: ${processSelectedRec} -> ${robot} (job: ${res.job_id})`, 'ok');
           statusEl.innerHTML = `⏳ Job queued — <span id="job-status-${res.job_id}" style="color:var(--yellow);">pending</span>`;
           processJobs[res.job_id] = {job_id: res.job_id, filename: processSelectedRec, robot, status: 'queued'};
@@ -1966,9 +1969,13 @@
       const poly = parseInt(document.getElementById('process-poly').value) || 2;
       statusEl.textContent = `Smoothing ${processSelectedRec}...`;
       try {
-        const res = await api('POST', `/api/skeleton/smooth/${processSelectedRec}`, {window_length: winLen, polyorder: poly});
+        const res = await api('POST', '/api/skeleton/smooth', {filename: processSelectedRec, window_length: winLen, polyorder: poly});
         statusEl.textContent = `✅ ${res.path}`;
         log(`Smoothed: ${res.path}`, 'ok');
+        const plotContainer = document.getElementById('process-smooth-plot');
+        const plotName = res.path.split('/').pop() || res.path.split('\\').pop();
+        plotContainer.innerHTML = `<img src="/api/skeleton/smooth-plot?filename=${encodeURIComponent(plotName)}" style="width:100%;height:100%;object-fit:contain;">`;
+        plotContainer.style.display = 'flex';
       } catch (e) {
         statusEl.textContent = `❌ ${e}`;
         log(`Smoothing failed: ${e}`, 'error');
