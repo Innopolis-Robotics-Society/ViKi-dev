@@ -7,7 +7,9 @@ import uuid
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from viki.optimization.optimization.convert_viki23_json import estimate_fps
 from viki.optimization.optimization.retarget_rgb_only import (
@@ -16,9 +18,14 @@ from viki.optimization.optimization.retarget_rgb_only import (
     RunConfig,
 )
 from viki.config import RETARGET_DEFAULT_ROBOT, SKELETON_SMOOTHED_DIR
+from viki.server.robot_viz import robot_trajectory_stream
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
 logger = logging.getLogger(__name__)
+
+_MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
+_STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
+ROBOT_OUT_DIR = Path("data/robot_out")
 
 _dataset_jobs: dict[str, dict] = {}
 _dataset_jobs_lock = threading.Lock()
@@ -34,21 +41,25 @@ async def list_smoothed_recordings(page: int = 0, limit: int = 10):
     return {"recordings": files[start:end]}
 
 
-@router.post("/optimize/{filename}")
+class OptimizeRequest(BaseModel):
+    filename: str
+    robot: str = RETARGET_DEFAULT_ROBOT
+
+
+@router.post("/optimize")
 async def optimize_recording(
-    filename: str,
-    robot: str = Query(default=RETARGET_DEFAULT_ROBOT),
+    req: OptimizeRequest,
 ):
     smoothed_dir = Path(SKELETON_SMOOTHED_DIR)
-    cln_path = smoothed_dir / filename
+    cln_path = smoothed_dir / req.filename
     if not cln_path.exists():
-        raise HTTPException(status_code=404, detail=f"Recording not found: {filename}")
+        raise HTTPException(status_code=404, detail=f"Recording not found: {req.filename}")
 
     job_id = uuid.uuid4().hex
     job = {
         "job_id": job_id,
-        "filename": filename,
-        "robot": robot,
+        "filename": req.filename,
+        "robot": req.robot,
         "status": "queued",
         "created_at": time.time(),
         "result": None,
@@ -58,7 +69,7 @@ async def optimize_recording(
         _dataset_jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_optimize, args=(job_id, cln_path, robot, filename), daemon=True
+        target=_run_optimize, args=(job_id, cln_path, req.robot, req.filename), daemon=True
     )
     thread.start()
 
@@ -72,6 +83,28 @@ async def optimize_status(job_id: str):
         if job is None:
             raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
         return job
+
+
+@router.get("/outputs")
+async def list_outputs():
+    ROBOT_OUT_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(
+        [f.name for f in ROBOT_OUT_DIR.glob("*.h5") if f.is_file()],
+        reverse=True,
+    )
+    return {"outputs": files}
+
+
+@router.get("/viz-stream")
+async def robot_viz_stream(filename: str, loop: bool = True):
+    h5_path = ROBOT_OUT_DIR / filename
+    if not h5_path.exists():
+        raise HTTPException(status_code=404, detail=f"Output not found: {filename}")
+    return StreamingResponse(
+        robot_trajectory_stream(h5_path, loop=loop),
+        media_type=_MJPEG_MEDIA,
+        headers=_STREAM_HEADERS,
+    )
 
 
 @router.get("/optimize/jobs")
@@ -116,9 +149,8 @@ def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
             align_initial_orientation=False,
         )
 
-        out_dir = Path("data/robot_out")
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / filename.replace(".npz", ".h5")
+        ROBOT_OUT_DIR.mkdir(parents=True, exist_ok=True)
+        out_path = ROBOT_OUT_DIR / filename.replace(".npz", ".h5")
 
         summary = retarget_from_poses(
             positions, rotations, validity, fps, out_path, cfg
