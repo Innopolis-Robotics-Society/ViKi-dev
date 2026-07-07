@@ -21,6 +21,7 @@ from typing import Any
 import numpy as np
 
 from viki.skeleton.hand_angles import compute_palm_rotation
+from viki.config import MODELS_DIR
 
 try:
     from archive_io import load_archive, write_hdf5_archive
@@ -28,7 +29,7 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
     try:
         from .archive_io import load_archive, write_hdf5_archive
     except ImportError:
-        from experiments.archive_io import load_archive, write_hdf5_archive
+        from viki.optimization.optimization.archive_io import load_archive, write_hdf5_archive
 
 try:
     from smoothing import adjusted_savgol_window, smooth_savgol
@@ -36,7 +37,7 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
     try:
         from .smoothing import adjusted_savgol_window, smooth_savgol
     except ImportError:
-        from experiments.smoothing import adjusted_savgol_window, smooth_savgol
+        from viki.optimization.optimization.smoothing import adjusted_savgol_window, smooth_savgol
 
 
 RIGHT_BODY_WRIST = 16
@@ -135,9 +136,6 @@ class RunConfig:
     limit_frames: int | None
     recenter_to_neutral: bool
     trajectory_scale: float
-
-
-MODELS_DIR = "/app/models"
 
 
 def _load_robot_description(description: str):
