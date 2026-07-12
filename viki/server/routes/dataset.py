@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+import traceback
 import uuid
 from pathlib import Path
 
@@ -161,18 +162,18 @@ def _run_optimize(job_id: str, cln_path: Path, req: OptimizeRequest):
             working_hand="right",
             landmark_sg_window=0,
             landmark_sg_polyorder=0,
-            ik_position_cost=req.ik_position_cost or RETARGET_IK_POSITION_COST,
-            ik_orientation_cost=req.ik_orientation_cost or RETARGET_IK_ORIENTATION_COST,
-            ik_posture_cost=req.ik_posture_cost or RETARGET_IK_POSTURE_COST,
+            ik_position_cost=float(req.ik_position_cost) if req.ik_position_cost is not None else float(RETARGET_IK_POSITION_COST),
+            ik_orientation_cost=float(req.ik_orientation_cost) if req.ik_orientation_cost is not None else float(RETARGET_IK_ORIENTATION_COST),
+            ik_posture_cost=float(req.ik_posture_cost) if req.ik_posture_cost is not None else float(RETARGET_IK_POSTURE_COST),
             target_mode=req.target_mode,
-            ik_substeps=req.ik_substeps or RETARGET_IK_SUBSTEPS,
-            ik_solver=req.ik_solver or RETARGET_IK_SOLVER,
-            approach_sec=req.approach_sec or RETARGET_APPROACH_SEC,
-            joint_sg_window=req.joint_sg_window or RETARGET_JOINT_SG_WINDOW,
-            joint_sg_polyorder=req.joint_sg_polyorder or RETARGET_JOINT_SG_POLYORDER,
+            ik_substeps=req.ik_substeps if req.ik_substeps is not None else RETARGET_IK_SUBSTEPS,
+            ik_solver=req.ik_solver if req.ik_solver is not None else RETARGET_IK_SOLVER,
+            approach_sec=float(req.approach_sec) if req.approach_sec is not None else float(RETARGET_APPROACH_SEC),
+            joint_sg_window=req.joint_sg_window if req.joint_sg_window is not None else RETARGET_JOINT_SG_WINDOW,
+            joint_sg_polyorder=req.joint_sg_polyorder if req.joint_sg_polyorder is not None else RETARGET_JOINT_SG_POLYORDER,
             limit_frames=None,
             recenter_to_neutral=req.recenter_to_neutral if req.recenter_to_neutral is not None else RETARGET_RECENTER_TO_NEUTRAL,
-            trajectory_scale=req.trajectory_scale or RETARGET_TRAJECTORY_SCALE,
+            trajectory_scale=float(req.trajectory_scale) if req.trajectory_scale is not None else float(RETARGET_TRAJECTORY_SCALE),
             align_initial_orientation=req.align_initial_orientation if req.align_initial_orientation is not None else True,
         )
 
@@ -189,7 +190,7 @@ def _run_optimize(job_id: str, cln_path: Path, req: OptimizeRequest):
             _dataset_jobs[job_id]["finished_at"] = time.time()
             _dataset_jobs[job_id]["result"] = summary
     except Exception as exc:
-        logger.error("Optimization failed: %s", exc)
+        logger.error("Optimization failed: %s\n%s", exc, traceback.format_exc())
         with _dataset_jobs_lock:
             _dataset_jobs[job_id]["status"] = "failed"
             _dataset_jobs[job_id]["finished_at"] = time.time()
