@@ -83,5 +83,27 @@
   "RETARGET_JOINT_SG_POLYORDER": 3,
   "RETARGET_RECENTER_TO_NEUTRAL": true,
   "RETARGET_TRAJECTORY_SCALE": 0.25,
+  "RETARGET_BASE_TRANSLATION": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "RETARGET_BASE_ROTATION": [
+    [
+      0.0,
+      0.0,
+      1.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      -1.0,
+      0.0
+    ]
+  ],
   "MODELS_DIR": "models/"
 }

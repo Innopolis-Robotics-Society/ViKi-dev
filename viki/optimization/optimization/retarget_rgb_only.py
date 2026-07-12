@@ -55,6 +55,7 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
 RIGHT_BODY_WRIST = 16
 LEFT_BODY_WRIST = 15
 HAND_IDXS = {"wrist": 0, "thumb_cmc": 1, "middle_mcp": 9}
+HAND_WRIST_CLUSTER = np.array([0, 1, 5, 9, 13, 17], dtype=np.intp)
 SMOOTHED_TARGET_KEYS = {"positions", "rotations", "valid", "timestamps"}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
@@ -489,6 +490,15 @@ def hand_palm_rotation(hand_frame: np.ndarray) -> np.ndarray | None:
     )
 
 
+def compute_hand_center_position(hand_frame: np.ndarray) -> np.ndarray:
+    indices = HAND_WRIST_CLUSTER
+    cluster_points = hand_frame[indices]
+    valid = np.all(np.isfinite(cluster_points), axis=1)
+    if not valid.any():
+        raise ValueError("No valid hand landmarks in wrist cluster.")
+    return np.mean(cluster_points[valid], axis=0)
+
+
 def fill_invalid_rotations(rotations: list[np.ndarray | None]) -> tuple[np.ndarray, np.ndarray]:
     valid = np.array([rotation is not None for rotation in rotations], dtype=bool)
     if not valid.any():
@@ -508,12 +518,6 @@ def fill_invalid_rotations(rotations: list[np.ndarray | None]) -> tuple[np.ndarr
         assert nearest_rotation is not None
         filled[frame_idx] = np.asarray(nearest_rotation, dtype=np.float64)
     return filled, valid
-
-
-def extract_se3(pin: Any, body_frame: np.ndarray, rotation: np.ndarray, wrist_body_idx: int) -> Any:
-    """Build a hand target SE3 from body wrist translation and hand orientation."""
-    p = np.asarray(body_frame[wrist_body_idx], dtype=np.float64)
-    return pin.SE3(np.asarray(rotation, dtype=np.float64), p)
 
 
 def align_rotations_to_initial(rotations: np.ndarray, initial_target_rotation: np.ndarray) -> np.ndarray:
@@ -536,7 +540,6 @@ def build_targets(
     orientation_valid_hint: np.ndarray | None = None,
     initial_target_rotation: np.ndarray | None = None,
 ) -> tuple[list[Any], np.ndarray]:
-    wrist_idx = body_wrist_index(working_hand)
     rotations = [hand_palm_rotation(hand[t]) for t in range(len(hand))]
     if orientation_valid_hint is not None:
         hint = np.asarray(orientation_valid_hint, dtype=bool)
@@ -549,7 +552,8 @@ def build_targets(
     rotations, valid = fill_invalid_rotations(rotations)
     if initial_target_rotation is not None:
         rotations = align_rotations_to_initial(rotations, initial_target_rotation)
-    targets = [extract_se3(pin, body[t], rotations[t], wrist_idx) for t in range(len(body))]
+    hand_centers = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
+    targets = [pin.SE3(rotations[t], hand_centers[t]) for t in range(len(body))]
     return targets, valid
 
 
@@ -560,6 +564,7 @@ def build_direct_rotation_targets(
     working_hand: str,
     orientation_valid_hint: np.ndarray | None = None,
     initial_target_rotation: np.ndarray | None = None,
+    hand: np.ndarray | None = None,
 ) -> tuple[list[Any], np.ndarray]:
     wrist_idx = body_wrist_index(working_hand)
     arr = np.asarray(rotations, dtype=np.float64)
@@ -580,13 +585,20 @@ def build_direct_rotation_targets(
     filled, valid = fill_invalid_rotations(rotation_items)
     if initial_target_rotation is not None:
         filled = align_rotations_to_initial(filled, initial_target_rotation)
-    targets = [extract_se3(pin, body[t], filled[t], wrist_idx) for t in range(len(body))]
+    if hand is not None:
+        positions = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
+    else:
+        positions = body[:, wrist_idx, :]
+    targets = [pin.SE3(filled[t], positions[t]) for t in range(len(body))]
     return targets, valid
 
 
-def build_wrist_position_targets(pin: Any, body: np.ndarray, working_hand: str) -> list[Any]:
+def build_wrist_position_targets(pin: Any, body: np.ndarray, working_hand: str, hand: np.ndarray | None = None) -> list[Any]:
     wrist_idx = body_wrist_index(working_hand)
     identity = np.eye(3, dtype=np.float64)
+    if hand is not None:
+        positions = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
+        return [pin.SE3(identity, positions[t]) for t in range(len(body))]
     return [pin.SE3(identity, np.asarray(body[t, wrist_idx], dtype=np.float64)) for t in range(len(body))]
 
 
@@ -778,6 +790,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
                 cfg.working_hand,
                 retarget_input.orientation_valid,
                 initial_target_rotation,
+                hand=hand,
             )
         elif hand is not None:
             targets, orientation_valid = build_targets(
@@ -791,7 +804,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         else:
             raise ValueError("target_mode=hand_se3 requires either direct rotations or hand landmarks.")
     elif cfg.target_mode == "wrist_position":
-        targets = build_wrist_position_targets(pin, body, cfg.working_hand)
+        targets = build_wrist_position_targets(pin, body, cfg.working_hand, hand=hand)
     else:
         raise ValueError(f"Unknown target_mode: {cfg.target_mode}")
     target_pos = np.vstack([target.translation for target in targets])

@@ -10,6 +10,7 @@ import numpy as np
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from typing import Literal
 
 from viki.optimization.optimization.convert_viki23_json import estimate_fps
 from viki.optimization.optimization.retarget_rgb_only import (
@@ -17,7 +18,21 @@ from viki.optimization.optimization.retarget_rgb_only import (
     retarget_from_poses,
     RunConfig,
 )
-from viki.config import RETARGET_DEFAULT_ROBOT, SKELETON_SMOOTHED_DIR
+from viki.config import (
+    RETARGET_DEFAULT_ROBOT,
+    RETARGET_TARGET_MODE,
+    RETARGET_IK_POSITION_COST,
+    RETARGET_IK_ORIENTATION_COST,
+    RETARGET_IK_POSTURE_COST,
+    RETARGET_IK_SUBSTEPS,
+    RETARGET_IK_SOLVER,
+    RETARGET_APPROACH_SEC,
+    RETARGET_JOINT_SG_WINDOW,
+    RETARGET_JOINT_SG_POLYORDER,
+    RETARGET_RECENTER_TO_NEUTRAL,
+    RETARGET_TRAJECTORY_SCALE,
+    SKELETON_SMOOTHED_DIR,
+)
 from viki.server.robot_viz import robot_trajectory_stream
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -44,6 +59,18 @@ async def list_smoothed_recordings(page: int = 0, limit: int = 10):
 class OptimizeRequest(BaseModel):
     filename: str
     robot: str = RETARGET_DEFAULT_ROBOT
+    target_mode: Literal["wrist_position", "hand_se3"] = "wrist_position"
+    ik_position_cost: float | None = None
+    ik_orientation_cost: float | None = None
+    ik_posture_cost: float | None = None
+    ik_substeps: int | None = None
+    ik_solver: str | None = None
+    approach_sec: float | None = None
+    joint_sg_window: int | None = None
+    joint_sg_polyorder: int | None = None
+    recenter_to_neutral: bool | None = None
+    trajectory_scale: float | None = None
+    align_initial_orientation: bool | None = None
 
 
 @router.post("/optimize")
@@ -69,7 +96,7 @@ async def optimize_recording(
         _dataset_jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_optimize, args=(job_id, cln_path, req.robot, req.filename), daemon=True
+        target=_run_optimize, args=(job_id, cln_path, req), daemon=True
     )
     thread.start()
 
@@ -116,7 +143,7 @@ async def list_optimize_jobs():
     return {"jobs": jobs}
 
 
-def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
+def _run_optimize(job_id: str, cln_path: Path, req: OptimizeRequest):
     with _dataset_jobs_lock:
         _dataset_jobs[job_id]["status"] = "running"
         _dataset_jobs[job_id]["started_at"] = time.time()
@@ -128,29 +155,29 @@ def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
             timestamps = data["timestamps"]
 
         fps = estimate_fps(timestamps)
-        robot = normalize_robot(robot_name)
+        robot = normalize_robot(req.robot)
         cfg = RunConfig(
             robot=robot,
             working_hand="right",
             landmark_sg_window=0,
             landmark_sg_polyorder=0,
-            ik_position_cost=5.0,
-            ik_orientation_cost=0.3,
-            ik_posture_cost=1e-3,
-            target_mode="hand_se3",
-            ik_substeps=20,
-            ik_solver="quadprog",
-            approach_sec=5.0,
-            joint_sg_window=0,
-            joint_sg_polyorder=3,
+            ik_position_cost=req.ik_position_cost or RETARGET_IK_POSITION_COST,
+            ik_orientation_cost=req.ik_orientation_cost or RETARGET_IK_ORIENTATION_COST,
+            ik_posture_cost=req.ik_posture_cost or RETARGET_IK_POSTURE_COST,
+            target_mode=req.target_mode,
+            ik_substeps=req.ik_substeps or RETARGET_IK_SUBSTEPS,
+            ik_solver=req.ik_solver or RETARGET_IK_SOLVER,
+            approach_sec=req.approach_sec or RETARGET_APPROACH_SEC,
+            joint_sg_window=req.joint_sg_window or RETARGET_JOINT_SG_WINDOW,
+            joint_sg_polyorder=req.joint_sg_polyorder or RETARGET_JOINT_SG_POLYORDER,
             limit_frames=None,
-            recenter_to_neutral=True,
-            trajectory_scale=0.25,
-            align_initial_orientation=False,
+            recenter_to_neutral=req.recenter_to_neutral if req.recenter_to_neutral is not None else RETARGET_RECENTER_TO_NEUTRAL,
+            trajectory_scale=req.trajectory_scale or RETARGET_TRAJECTORY_SCALE,
+            align_initial_orientation=req.align_initial_orientation if req.align_initial_orientation is not None else True,
         )
 
         ROBOT_OUT_DIR.mkdir(parents=True, exist_ok=True)
-        out_path = ROBOT_OUT_DIR / filename.replace(".npz", ".h5")
+        out_path = ROBOT_OUT_DIR / req.filename.replace(".npz", ".h5")
 
         summary = retarget_from_poses(
             positions, rotations, validity, fps, out_path, cfg
