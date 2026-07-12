@@ -35,7 +35,22 @@ _LABEL_LEFT = "Left"
 
 
 class MediaPipeHand(PartialLandmarkDetector):
-    """Partial detector for one hand."""
+    """
+    Partial detector for one hand using MediaPipe Hand Landmarker.
+
+    Emits 21 hand landmarks (slots 0..20). This detector has higher priority
+    than the arm detector (10), so it will overwrite the wrist slot if both are
+    present.
+
+    Attributes
+    ----------
+    name : str
+        Detector identifier ("hand").
+    indices : tuple[int, ...]
+        Global slots written: (0..20).
+    priority : int
+        Priority (10).
+    """
 
     name = "hand"
     indices = tuple(range(21))
@@ -50,15 +65,19 @@ class MediaPipeHand(PartialLandmarkDetector):
         min_hand_confidence: float = 0.5,
     ) -> None:
         """
-        parameters
+        Parameters
         ----------
-        hand                : "right" or "left" — which hand to keep.
-        mode                : MediaPipe running mode ("image" / "video" / "live").
-        hand_model          : explicit path to a hand_landmarker.task; auto-
-                              downloaded into `models_dir` when None.
-        models_dir          : local cache directory for downloaded models.
-        min_hand_confidence : threshold reused for detection, presence,
-                              and tracking confidence.
+        hand : Literal["right", "left"], default="right"
+            Which hand to track.
+        mode : Literal["image", "video", "live"], default="image"
+            MediaPipe running mode.
+        hand_model : Optional[str], default=None
+            Explicit path to a hand_landmarker.task file. If None, the model is
+            auto‑downloaded into `models_dir`.
+        models_dir : str, default=MODELS_DIR_DEFAULT
+            Local cache directory for downloaded models.
+        min_hand_confidence : float, default=0.5
+            Threshold for detection, presence, and tracking confidence.
         """
         super().__init__()
 
@@ -91,14 +110,18 @@ class MediaPipeHand(PartialLandmarkDetector):
 
     def detect(self, frame: PreparedFrame) -> Optional[PartialDetection2D]:
         """
-        parameters
-        ----------
-        frame : prepared camera frame (RGB + depth + K).
+        Run the detector on a prepared frame.
 
-        returns
+        Parameters
+        ----------
+        frame : PreparedFrame
+            Prepared camera frame (RGB + depth + intrinsics).
+
+        Returns
         -------
-        PartialDetection2D over slots 0..20, or None when no hand of the
-        requested handedness was detected (or LIVE result is not ready yet).
+        Optional[PartialDetection2D]
+            Detection over slots 0..20 if a hand of the requested handedness
+            is detected; otherwise None.
         """
         raw = self._runner.submit(frame.rgb, frame.timestamp_us)
         if raw is None or not raw.hand_landmarks:
@@ -106,12 +129,25 @@ class MediaPipeHand(PartialLandmarkDetector):
         return self._extract(raw, frame)
 
     def close(self) -> None:
-        """Release the underlying MediaPipe task."""
+        """Release the underlying MediaPipe task resources."""
         self._runner.close()
 
     def _extract(self, raw, frame: PreparedFrame) -> Optional[PartialDetection2D]:
         """
-        Build PartialDetection2D from a raw HandLandmarkerResult.
+        Extract pixel coordinates, z, and confidence from the raw MediaPipe result.
+
+        Parameters
+        ----------
+        raw : mediapipe.tasks.python.vision.HandLandmarkerResult
+            Raw result from the runner.
+        frame : PreparedFrame
+            The source frame (used for image size and metadata).
+
+        Returns
+        -------
+        Optional[PartialDetection2D]
+            Detection object with shape (21, 2) px, (21,) z, (21,) confidence,
+            or None if the requested handedness is not present.
         """
         # Iterate handedness to find the hand whose label matches our target.
         match_idx: Optional[int] = None

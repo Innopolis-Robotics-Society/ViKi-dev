@@ -1,3 +1,11 @@
+"""
+viki.server.robot_viz
+---------------------
+Stream generators for robot trajectory visualisation (MJPEG).
+
+Renders robot poses from a recorded HDF5 trajectory file using Pinocchio
+forward kinematics and matplotlib 3D plots.
+"""
 from __future__ import annotations
 
 import os
@@ -12,6 +20,19 @@ from viki.viz.mjpeg import mjpeg_chunk, placeholder
 
 
 def _load_robot(description: str):
+    """
+    Load a robot model from robot_descriptions using Pinocchio.
+
+    Parameters
+    ----------
+    description : str
+        Robot description name (e.g., "iiwa14_description").
+
+    Returns
+    -------
+    pin.RobotWrapper
+        Loaded robot model.
+    """
     os.environ.setdefault(
         "ROBOT_DESCRIPTIONS_CACHE",
         "/app/models/robot_descriptions",
@@ -21,6 +42,28 @@ def _load_robot(description: str):
 
 
 def _fk_positions(model, data, q_all: np.ndarray, ee_frame: str) -> tuple[np.ndarray, np.ndarray]:
+    """
+    Compute forward kinematics for a sequence of joint configurations.
+
+    Parameters
+    ----------
+    model : pin.Model
+        Pinocchio model.
+    data : pin.Data
+        Pinocchio data object.
+    q_all : np.ndarray
+        Array of joint positions, shape (n_frames, n_joints).
+    ee_frame : str
+        Name of the end‑effector frame.
+
+    Returns
+    -------
+    tuple
+        - all_positions : np.ndarray, shape (n_frames, n_links, 3)
+            Positions of all links (including end‑effector) at each frame.
+        - ee_positions : np.ndarray, shape (n_frames, 3)
+            Positions of the end‑effector only.
+    """
     import pinocchio as pin
     n_frames = q_all.shape[0]
     all_positions = []
@@ -46,6 +89,23 @@ def robot_trajectory_stream(
     q_key: str = "q_scene_raw",
     loop: bool = False,
 ) -> Iterator[bytes]:
+    """
+    Yield MJPEG frames showing a 3D robot trajectory from an HDF5 file.
+
+    Parameters
+    ----------
+    h5_path : Path
+        Path to the HDF5 file containing the trajectory.
+    q_key : str, default="q_scene_raw"
+        Key for the joint position dataset. Falls back to "q_scene_smooth" or "q_scene_raw".
+    loop : bool, default=False
+        If True, repeat the trajectory indefinitely.
+
+    Yields
+    ------
+    bytes
+        JPEG-encoded MJPEG chunk.
+    """
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt

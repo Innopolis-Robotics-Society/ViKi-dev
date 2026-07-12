@@ -1,3 +1,11 @@
+"""
+viki.skeleton.viz
+-----------------
+Visualisation helpers for debugging depth projection and skeleton processing.
+
+These functions generate plots (saved to disk) for inspecting how colour
+pixels map to depth and how background subtraction works.
+"""
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 from datetime import datetime
@@ -17,15 +25,22 @@ def visualize_color_depth_mapping(
     backend: KinectBackend
 ):
     """
-    Visualizes the mapping from a color pixel to its corresponding depth area.
-    
-    Args:
-        color_img: BGR or RGB image
-        depth_img: Depth map (H, W)
-        u: X coordinate of the sampled pixel
-        v: Y coordinate of the sampled pixel
-        K: Color intrinsic matrix
-        backend: Kinect backend providing SDK calibration
+    Visualize the mapping from a colour pixel to its corresponding depth area.
+
+    Saves a plot to `data/debug/skeleton_mapping_{timestamp}.png`.
+
+    Parameters
+    ----------
+    color_img : np.ndarray
+        BGR or RGB image.
+    depth_img : np.ndarray
+        Depth map (H, W) in metres.
+    u, v : float
+        Colour pixel coordinates.
+    K : np.ndarray
+        Color intrinsic matrix (3x3).
+    backend : KinectBackend
+        Kinect backend for SDK projection.
     """
     # Prepare the plot first so we can save it even if reprojection fails
     fig, axes = plt.subplots(1, 2, figsize=(12, 6))
@@ -132,18 +147,25 @@ def visualize_depth_subtraction(
 ):
     """
     Visualizes the depth subtraction process for multiple landmarks in a grid.
-    
-    Args:
-        base_depth: The background depth map.
-        current_depth: The current depth map.
-        landmark_data: List of dicts containing:
-            - name: Landmark name (str)
-            - u, v: Color pixel coords
-            - ud, vd: Depth pixel coords
-            - r: Sample radius
-            - v_start, v_end, u_start, u_end: ROI bounds
-            - diff_roi: The subtracted ROI image
-            - z_proj: The projected Z value
+
+    Saves a plot to `data/debug/depth_sub_multi_{timestamp}.png`.
+
+    Parameters
+    ----------
+    base_depth : Optional[np.ndarray]
+        Background depth map (metres), or None.
+    current_depth : np.ndarray
+        Current depth map (metres).
+    landmark_data : list[dict]
+        List of dicts containing:
+            - name : str (landmark name)
+            - u, v : float (colour pixel coords)
+            - ud, vd : float (depth pixel coords)
+            - r : int (sample radius)
+            - v_start, v_end, u_start, u_end : int (ROI bounds)
+            - diff_roi : np.ndarray (subtracted ROI image)
+            - z_proj : float (projected Z value)
+            - median_pixel : tuple[int, int] or None (pixel of median depth)
     """
     num_lms = len(landmark_data)
     if num_lms == 0:

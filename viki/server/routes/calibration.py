@@ -44,6 +44,14 @@ _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
 @router.post("/reset")
 async def reset(cal: CalibrationManager = Depends(get_calibrator)):
+    """
+    Stop all calibration workers.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+    """
     cal.stop_all()
     return {"status": "success"}
 
@@ -53,6 +61,18 @@ async def capture_base_depth(
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Capture and save undistorted base depth maps for all active cameras.
+
+    Uses the latest frame and current intrinsics; saves depth (in metres) as
+    `.npy` files in `SKELETON_DEPTH_BASE_DIR`.
+
+    Returns
+    -------
+    dict
+        {"status": "success", "captured": list[str]} – list of device IDs for which
+        depth was successfully saved.
+    """
     os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
 
     active_devices = mgr.active_device_ids()
@@ -97,6 +117,30 @@ async def sync(
     board_type: str,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Synchronise board parameters across all calibration workers.
+
+    This updates the board size, square size, and (for ChArUco) marker size
+    and dictionary for every active worker. Call this before starting calibration
+    if the physical board changes.
+
+    Parameters
+    ----------
+    params : ArucoBoardParametersData or BoardParametersData
+        Board parameters (fields depend on board_type).
+    board_type : str
+        "chess" or "aruco".
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+
+    Raises
+    ------
+    HTTPException 422
+        If `aruco_dict` is invalid.
+    """
     # Extract common params
     board_size = params.board_size
     square_size = params.square_size
@@ -121,6 +165,21 @@ async def capture(
     device_id: str,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Manually capture a calibration sample for a specific camera.
+
+    The sample is added to the worker's internal collection if the board is detected.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera device ID.
+
+    Returns
+    -------
+    dict
+        Always returns {"status": "success"} – check worker status for actual sample count.
+    """
     cal.capture(device_id)
 
 
@@ -128,6 +187,19 @@ async def capture(
 async def capture_all(
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Manually capture a calibration sample from all active workers.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+
+    Raises
+    ------
+    HTTPException 400
+        If no calibration workers are active (i.e., sync not called).
+    """
     if not cal._workers:
         raise HTTPException(
             400,
@@ -143,6 +215,23 @@ async def start_worker(
     params: BoardParametersData | None = None,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Start a chessboard calibration worker for the given device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+    mode : str, default="auto"
+        "auto" for background capture thread, "manual" for explicit captures.
+    params : BoardParametersData, optional
+        Board size and square size; defaults to (8,6) and 0.025 m.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+    """
     if not params:
         board_size = (8, 6)
         square_size = 0.025
@@ -159,6 +248,29 @@ async def start_aruco_worker(
     params: ArucoBoardParametersData | None = None,
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    Start a ChArUco board calibration worker for the given device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+    mode : str, default="auto"
+        "auto" or "manual".
+    params : ArucoBoardParametersData, optional
+        Board parameters; defaults to (10,8) board, square 0.05 m, marker 0.035 m,
+        and DICT_5X5_100.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+
+    Raises
+    ------
+    HTTPException 422
+        If `aruco_dict` string is invalid.
+    """
     if not params:
         board_size = (10, 8)
         square_size = 0.05
@@ -179,6 +291,19 @@ async def start_aruco_worker(
 
 @router.get("/status/{device_id}")
 async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    """
+    Get calibration status for a device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        {"samples_count": int, "started": bool}
+    """
     # logger.debug(f"calibration status for {device_id}: {cal.status(device_id)}")
     return cal.status(device_id)
 
@@ -187,6 +312,19 @@ async def status(device_id: str, cal: CalibrationManager = Depends(get_calibrato
 async def samples_count(
     device_id: str, cal: CalibrationManager = Depends(get_calibrator)
 ):
+    """
+    Get the number of collected samples for a device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        {"samples_count": int}
+    """
     return {"samples_count": cal.samples_count(device_id)}
 
 
@@ -194,11 +332,37 @@ async def samples_count(
 async def is_device_active(
     device_id: str, cal: CalibrationManager = Depends(get_calibrator)
 ):
+    """
+    Check if a calibration worker is active for the device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        {"is_device_active": bool}
+    """
     return {"is_device_active": cal.is_device_active(device_id)}
 
 
 @router.post("/clear/{device_id}")
 async def clear(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    """
+    Clear all collected calibration samples for a device.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        {"status": "cleared"}
+    """
     cal.clear(device_id)
     return {"status": "cleared"}
 
@@ -207,6 +371,27 @@ async def clear(device_id: str, cal: CalibrationManager = Depends(get_calibrator
 async def intrinsics_post(
     device_id: str, cal: CalibrationManager = Depends(get_calibrator)
 ):
+    """
+    Compute and save intrinsic parameters for a device (POST).
+
+    Uses the collected samples to run the calibration solve and persists the
+    result to the default intrinsics file.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    IntrinsicsResponse
+        Focal lengths, principal point, distortion coefficients.
+
+    Raises
+    ------
+    RuntimeError
+        If calibration fails (propagated as HTTP 500).
+    """
     intrinsics = cal.intrinsics_calibration(device_id, INTRINSICS_FILENAME)
     return IntrinsicsResponse(
         fx=intrinsics.fx,
@@ -219,6 +404,24 @@ async def intrinsics_post(
 
 @router.get("/intrinsics/{device_id}", response_model=IntrinsicsResponse)
 async def intrinsics(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    """
+    Retrieve previously computed intrinsic parameters (GET).
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    IntrinsicsResponse
+        Focal lengths, principal point, distortion coefficients.
+
+    Raises
+    ------
+    HTTPException 404
+        If intrinsics not found.
+    """
     intrinsics = cal.get_intrinsics(device_id)
     if not intrinsics:
         raise HTTPException(
@@ -238,6 +441,24 @@ async def extrinsics_post_all(
     cal: CalibrationManager = Depends(get_calibrator),
     mgr: CameraManager = Depends(get_manager),
 ):
+    """
+    Compute and save extrinsic parameters for all active devices.
+
+    First captures base depth maps for each device, then runs extrinsics
+    calibration (pose estimation) using the most recent sample.
+
+    Returns
+    -------
+    list[ExtrinsicsResponse]
+        List of extrinsics (rvec, tvec) for each successfully calibrated device.
+
+    Raises
+    ------
+    HTTPException 400
+        If no active cameras.
+    HTTPException 422
+        If calibration fails for all devices (e.g., insufficient samples).
+    """
     # 1. Capture base depth for all active devices before calibration
     os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
     active_devices = mgr.active_device_ids()
@@ -290,6 +511,24 @@ async def extrinsics_post_all(
 
 @router.get("/extrinsics/{device_id}", response_model=ExtrinsicsResponse)
 async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calibrator)):
+    """
+    Retrieve previously computed extrinsic parameters (GET).
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    ExtrinsicsResponse
+        Rotation vector and translation vector.
+
+    Raises
+    ------
+    HTTPException 404
+        If extrinsics not found.
+    """
     extrinsics = cal.get_extrinsics(device_id)
     if not extrinsics:
         raise HTTPException(
@@ -308,6 +547,22 @@ def marked_stream(
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    MJPEG stream of the camera with calibration board overlay.
+
+    If a calibration worker exists, the stream shows detected markers/corners.
+    Useful for checking board visibility during calibration.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    StreamingResponse
+        Multipart MJPEG stream.
+    """
     logging.info("marked_stream started" + "!" * 10)
     return StreamingResponse(
         marked_camera_stream(mgr, cal, device_id, "color"),

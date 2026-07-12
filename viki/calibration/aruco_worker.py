@@ -1,3 +1,12 @@
+"""
+viki.calibration.aurco_worker
+--------------------
+ChArUco board calibration worker.
+
+This module implements a calibration worker that uses a ChArUco board
+(combination of ArUco markers and chessboard corners) for robust detection.
+It supports intrinsic and extrinsic calibration using OpenCV's Charuco functions.
+"""
 import cv2
 import numpy as np
 from typing import List, Sequence
@@ -17,12 +26,40 @@ from viki.calibration.worker import _CalibrationWorker
 
 
 class ArucoWorker(_CalibrationWorker):
+    """
+    Calibration worker for ChArUco boards.
+
+    Detects both ArUco markers and chessboard corners to obtain sub‑pixel
+    accurate points. Collects `ArucoCalibrationSample` objects that contain
+    both marker and corner information.
+
+    Attributes
+    ----------
+    dictionary : cv2.aruco.Dictionary
+        OpenCV ArUco dictionary.
+    aruco_detector : cv2.aruco.ArucoDetector
+        Detector for ArUco markers (used for debugging).
+    board : cv2.aruco.CharucoBoard
+        The ChArUco board object (reused for all detections).
+    detector : cv2.aruco.CharucoDetector
+        The ChArUco detector.
+    """
     def __init__(
         self,
         mgr: CameraManager,
         device_id: str,
         aruco_board_params: ArucoBoardParameters,
     ):
+        """
+        Parameters
+        ----------
+        mgr : CameraManager
+            Camera manager.
+        device_id : str
+            Camera identifier.
+        aruco_board_params : ArucoBoardParameters
+            Parameters for the ChArUco board.
+        """
         super().__init__(mgr, device_id, aruco_board_params)
         self.device_id = device_id
 
@@ -41,6 +78,12 @@ class ArucoWorker(_CalibrationWorker):
         self.detector = cv2.aruco.CharucoDetector(self.board)
 
     def set_board_params(self, board_params: BoardParameters) -> None:
+        """
+        Override to update the ChArUco board and detector when board params change.
+
+        Note: This does not call super() because the base class only stores the
+        parameters; here we need to rebuild the OpenCV objects.
+        """
         # super().set_board_params(board_params)
         if not isinstance(board_params, ArucoBoardParameters):
             return
@@ -54,6 +97,14 @@ class ArucoWorker(_CalibrationWorker):
             self.detector = cv2.aruco.CharucoDetector(self.board)
 
     def add_sample(self, frame: Frame) -> None:
+        """
+        Detect the ChArUco board in the frame and store a sample if successful.
+
+        The sample includes both ArUco markers and chessboard corners, which
+        are required for accurate calibration.
+
+        Logs debug information about the number of markers and corners found.
+        """
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
 
         # Debug: detect markers separately to see what's actually visible
@@ -105,7 +156,28 @@ class ArucoWorker(_CalibrationWorker):
     def intrinsics_calibration(
         self, samples: List[CalibrationSample] | None = None
     ) -> CalibrationIntrinsics:
+        """
+        Calibrate intrinsic parameters using the collected ChArUco samples.
 
+        Uses `cv2.aruco.calibrateCameraCharuco` (fallback to `cv2.calibrateCamera`
+        if the Charuco function is unavailable). Requires at least 20 valid samples
+        with >8 corner points each, and all samples must have the same resolution.
+
+        Parameters
+        ----------
+        samples : Optional[List[CalibrationSample]]
+            List of samples; if None, uses internal list.
+
+        Returns
+        -------
+        CalibrationIntrinsics
+            Camera matrix and distortion coefficients.
+
+        Raises
+        ------
+        RuntimeError
+            If insufficient samples, resolution mismatch, or calibration fails.
+        """
         if samples is None:
             samples = self._samples
         count = len(samples)
@@ -189,6 +261,30 @@ class ArucoWorker(_CalibrationWorker):
         intrinsics: CalibrationIntrinsics,
         sample: CalibrationSample | None = None,
     ) -> CalibrationExtrinsics:
+        """
+        Compute the pose (rotation and translation) of the board relative to the camera.
+
+        Uses `cv2.aruco.estimatePoseCharucoBoard` (fallback to `cv2.solvePnP`).
+        If no sample is provided, the most recent collected sample is used.
+
+        Parameters
+        ----------
+        intrinsics : CalibrationIntrinsics
+            Known camera intrinsics.
+        sample : Optional[CalibrationSample]
+            Sample to use; if None, uses the last sample.
+
+        Returns
+        -------
+        CalibrationExtrinsics
+            Rotation vector and translation vector.
+
+        Raises
+        ------
+        RuntimeError
+            If no sample available, sample is not a CharUco sample,
+            or pose estimation fails.
+        """
         if not sample:
             if self.samples_count < 1:
                 msg = f"{self.device_id} extrinsics: no sample available"
@@ -237,6 +333,19 @@ class ArucoWorker(_CalibrationWorker):
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
 
     def mark_board(self, frame: Frame) -> np.ndarray:
+        """
+        Generate a debug image with detected ArUco markers and Charuco corners overlaid.
+
+        Parameters
+        ----------
+        frame : Frame
+            Input frame.
+
+        Returns
+        -------
+        np.ndarray
+            Annotated BGR image (original if no detection).
+        """
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)
         markers_raw, ids_raw, _ = self.aruco_detector.detectMarkers(gray)
         if ids_raw is None:

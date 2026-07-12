@@ -32,7 +32,21 @@ _viz_executor = ThreadPoolExecutor(max_workers=1)
 
 
 def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
-    """Compute the weighted median of a 1D array."""
+    """
+    Compute the weighted median of a 1D array.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        1D array of values.
+    weights : np.ndarray
+        1D array of non‑negative weights (same length).
+
+    Returns
+    -------
+    float
+        Weighted median; returns NaN if `values` is empty.
+    """
     if values.size == 0:
         return np.nan
     idx = np.argsort(values)
@@ -54,7 +68,23 @@ def _pixel_to_3d(
     cx: float,
     cy: float,
 ) -> np.ndarray:
-    """Deproject a single pixel into 3-D camera space. Returns (X, Y, Z) metres."""
+    """
+    Deproject a single pixel into 3‑D camera space.
+
+    Parameters
+    ----------
+    u, v : float
+        Pixel coordinates (colour image).
+    Z : float
+        Depth value in metres.
+    fx, fy, cx, cy : float
+        Intrinsic parameters.
+
+    Returns
+    -------
+    np.ndarray
+        (X, Y, Z) in metres, shape (3,).
+    """
     X = (u - cx) * Z / fx
     Y = (v - cy) * Z / fy
     return np.array([X, Y, Z], dtype=np.float32)
@@ -64,15 +94,51 @@ def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: A
     """
     Maps a pixel from the color camera to the depth camera coordinate space,
     validated against the SDK's estimation if available.
-    
-    Returns:
+
+    Parameters
+    ----------
+    u, v : float
+        Colour pixel coordinates.
+    Z : float
+        Estimated depth in metres.
+    K : np.ndarray
+        3x3 colour intrinsic matrix.
+    backend : Any
+        Camera backend (KinectBackend) with projection methods.
+    raw_depth : np.ndarray
+        Raw depth image (uint16 mm).
+    aligned_depth : Optional[np.ndarray], optional
+        SDK‑aligned depth (not used in current implementation).
+
+    Returns
+    -------
+    tuple[float, float, float] or None
         (u_depth, v_depth, final_z) or None if projection fails.
     """
     return backend.get_validated_depth(u, v, Z, raw_depth, aligned_depth)
 
 def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> Landmarks3D:
     """
-    Deproject all 23 pixel landmarks into 3-D camera space using converge/diverge priority.
+    Deproject all 23 pixel landmarks into 3‑D camera space using converge/diverge priority.
+
+    This function uses the depth map and (optionally) background subtraction
+    to estimate the 3D position of each landmark. It also uses `backend` methods
+    to project colour pixels to depth pixels with SDK calibration.
+
+    Parameters
+    ----------
+    detection : HandDetection
+        2D landmark detections (pixel coordinates) from MediaPipe.
+    frame : PreparedFrame
+        Prepared frame with depth_m (metres), K, and optional base_depth_m.
+    backend : Any
+        Camera backend (e.g., KinectBackend) that provides `get_validated_depth`
+        and `project_color_to_depth`.
+
+    Returns
+    -------
+    Landmarks3D
+        3D landmarks in camera coordinates.
     """
     global _last_depth_viz_time
     K = frame.K
@@ -264,18 +330,24 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> 
 
 
 def calculate_pitch(wrist_point, middle_finger_points):
-    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
-    vector of angle regarding to world-coordinates'''
+    """
+    Calculate pitch angle of the hand relative to world coordinates.
+    Placeholder – not implemented.
+    """
     pass
 
 def calculate_yaw(wrist_point, middle_finger_points):
-    '''Here we use wrist_point (x, y, z) and middle_finger_points (list(x,y,z)) to get approximate
-    vector of angle regarding to world-coordinates'''
+    """
+    Calculate yaw angle of the hand relative to world coordinates.
+    Placeholder – not implemented.
+    """
     pass
 
 def calculate_roll(wrist_point, thumbs_points):
-    '''Here we use wrist_point (x, y, z) and thumb_points (list(x,y,z) to get approximate
-    vector of angle regarding to world-coordinates'''
+    """
+    Calculate roll angle of the hand relative to world coordinates.
+    Placeholder – not implemented.
+    """
     pass
 
 '''flexion/extension — сгибание/разгибание

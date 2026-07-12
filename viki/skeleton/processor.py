@@ -2,6 +2,8 @@
 viki.skeleton.processor
 ----------------------
 Business logic for processing skeleton recording files.
+
+Handles listing, smoothing, and exporting of recorded skeleton data.
 """
 
 from __future__ import annotations
@@ -20,6 +22,13 @@ import viki.config as config
 class SkeletonProcessor:
     """
     Handles listing and smoothing of skeleton recording files.
+
+    Attributes
+    ----------
+    recs_dir : Path
+        Directory containing raw recordings (rec-*.npz).
+    smoothed_dir : Path
+        Directory for smoothed outputs (cln-*.npz).
     """
 
     def __init__(self) -> None:
@@ -32,6 +41,18 @@ class SkeletonProcessor:
     def list_recordings(self, page: int = 0, page_size: int = 10) -> List[str]:
         """
         List all NPZ recording files in the recordings directory with pagination.
+
+        Parameters
+        ----------
+        page : int, default=0
+            Page number (zero‑based).
+        page_size : int, default=10
+            Number of items per page.
+
+        Returns
+        -------
+        List[str]
+            List of filenames (e.g., "rec-123.npz").
         """
         files = sorted([f.name for f in self.recs_dir.glob("rec-*.npz")], reverse=True)
         start = page * page_size
@@ -45,9 +66,31 @@ class SkeletonProcessor:
         polyorder: int = 2
     ) -> tuple[str, np.ndarray]:
         """
-        Load a recording, smooth its landmarks, and compute end-effector poses.
-        Saves result to the smoothed directory.
-        Returns (path to the smoothed file, smoothed_points array of shape (T, L, 3)).
+        Load a recording, smooth its landmarks, and compute end‑effector poses.
+
+        The result is saved as a compressed NPZ in the smoothed directory with
+        prefix "cln-". If `SKELETON_SAVE_JSON_DEBUG` is True, a JSON version is also saved.
+
+        Parameters
+        ----------
+        filename : str
+            Name of the raw recording file (e.g., "rec-123.npz").
+        window_length : int, default=7
+            Savitzky‑Golay window length (must be odd > polyorder).
+        polyorder : int, default=2
+            Savitzky‑Golay polynomial order.
+
+        Returns
+        -------
+        tuple[str, np.ndarray]
+            (path_to_smoothed_file, smoothed_points) where smoothed_points has shape (T, L, 3).
+
+        Raises
+        ------
+        FileNotFoundError
+            If the input file does not exist.
+        ValueError
+            If the recording is empty.
         """
         input_path = self.recs_dir / filename
         if not input_path.exists():
