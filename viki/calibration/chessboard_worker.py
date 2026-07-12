@@ -73,7 +73,7 @@ class ChessboardWorker(_CalibrationWorker):
             objp = np.zeros((w * h, 3), np.float32)
             for i in range(h):
                 for j in range(w):
-                    objp[i * w + j] = [j * square_size, i * square_size, 0]
+                    objp[i * w + j] = [j * square_size, -i * square_size, 0]
  
             object_points.append(objp)
             image_points.append(sample.corners)
