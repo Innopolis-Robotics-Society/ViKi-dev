@@ -6,6 +6,7 @@ Data models for camera calibration.
 This module defines dataclasses that hold calibration parameters,
 samples, and results. These are used throughout the calibration pipeline.
 """
+
 from dataclasses import dataclass, field
 from cv2.typing import MatLike
 import numpy as np
@@ -26,6 +27,7 @@ class BoardParameters:
     square_size : float
         Length of one square side in real-world units (e.g., meters).
     """
+
     board_size: Tuple[int, int]
     square_size: float
 
@@ -42,6 +44,7 @@ class ArucoBoardParameters(BoardParameters):
     aruco_dict : int
         OpenCV predefined dictionary ID (e.g., cv2.aruco.DICT_6X6_250).
     """
+
     marker_size: float
     # aruco_dict: int = cv2.aruco.DICT_6X6_250
     aruco_dict: int
@@ -63,6 +66,7 @@ class CalibrationSample:
     board_params : BoardParameters
         Board parameters used for this detection.
     """
+
     frame: Frame
     corners: MatLike
     resolution: Tuple[int, int]
@@ -83,6 +87,7 @@ class ArucoCalibrationSample(CalibrationSample):
     m_ids : MatLike
         IDs of detected ArUco markers.
     """
+
     c_ids: MatLike
     markers: Sequence[MatLike]
     m_ids: MatLike
@@ -102,6 +107,7 @@ class CalibrationIntrinsics:
     dist_coeffs : np.ndarray
         Distortion coefficients (k1, k2, p1, p2, k3) as a 5‑element vector.
     """
+
     fx: float
     fy: float
     cx: float
@@ -133,6 +139,7 @@ class CalibrationExtrinsics:
     tvec : np.ndarray
         Translation vector (3 elements).
     """
+
     rvec: np.ndarray = field(default_factory=lambda: np.zeros(3))
     tvec: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
@@ -143,7 +150,7 @@ class CalibrationExtrinsics:
         return np.array(R)
 
     @property
-    def trasform_matrix(self) -> np.ndarray:
+    def transform_matrix(self) -> np.ndarray:
         """Return a 4x4 homogeneous transformation matrix from camera to board."""
         R = self.rotation_matrix
         T = np.eye(4)
