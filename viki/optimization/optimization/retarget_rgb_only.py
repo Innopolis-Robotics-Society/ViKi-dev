@@ -141,7 +141,7 @@ class RunConfig:
     joint_sg_polyorder: int
     limit_frames: int | None
     recenter_to_neutral: bool
-    trajectory_scale: float
+    wrist_scale: float
     align_initial_orientation: bool
 
 
@@ -639,7 +639,7 @@ def scale_landmarks_about_initial_wrist(
 ) -> tuple[np.ndarray, np.ndarray | None]:
     """Uniformly scale the motion around the first wrist position."""
     if scale <= 0.0:
-        raise ValueError("trajectory_scale must be positive.")
+        raise ValueError("wrist_scale must be positive.")
     wrist_idx = body_wrist_index(working_hand)
     anchor = body[0, wrist_idx].copy()
     scaled_hand = None if hand is None else anchor + (hand - anchor) * scale
@@ -729,6 +729,18 @@ def compute_tracking_error(pin: Any, robot: Any, ee_frame: str, q_traj: np.ndarr
     return pos_err, ori_err
 
 
+def estimate_max_reach(robot: Any) -> float:
+    """Estimate the robot's maximum reach by summing link lengths."""
+    reach_map = {
+        "ur10_official_description": 1.3,
+        "ur5_official_description": 0.85,
+        "iiwa14_description": 0.8,
+    }
+    for key, val in reach_map.items():
+        if key in robot.model.name or key in str(robot):
+            return val
+    return 1.5
+
 def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any]:
     """Run one retargeting job and save a compatible trajectory archive."""
     pin, _pink, Configuration, solve_ik, FrameTask, PostureTask, load_robot_description = require_ik_dependencies()
@@ -747,12 +759,12 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
         raise ValueError(f"End-effector frame '{cfg.robot.ee_frame}' not found in {cfg.robot.description}.")
 
-    if abs(cfg.trajectory_scale - 1.0) > 1e-12:
+    if abs(cfg.wrist_scale - 1.0) > 1e-12:
         body, hand = scale_landmarks_about_initial_wrist(
             body,
             hand,
             cfg.working_hand,
-            cfg.trajectory_scale,
+            cfg.wrist_scale,
         )
 
     recenter_offset = np.zeros(3, dtype=np.float64)
@@ -799,6 +811,13 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     else:
         raise ValueError(f"Unknown target_mode: {cfg.target_mode}")
     target_pos = np.vstack([target.translation for target in targets])
+    
+    # Workspace Validation
+    max_reach = estimate_max_reach(robot)
+    distances = np.linalg.norm(target_pos, axis=1)
+    if distances.max() > max_reach:
+        print(f"Warning: Targets exceed robot max reach ({distances.max():.2f}m > {max_reach:.2f}m). IK may be unstable.")
+    
     target_rot = np.stack([target.rotation for target in targets], axis=0) if cfg.target_mode == "hand_se3" else None
 
     q_approach = run_approach(
@@ -856,7 +875,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "ik_solver": cfg.ik_solver,
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset,
-        "trajectory_scale": float(cfg.trajectory_scale),
+        "wrist_scale": float(cfg.wrist_scale),
         "align_initial_orientation": bool(cfg.align_initial_orientation),
         "source_format": retarget_input.source_format,
         "source_npz": str(sample_path),
@@ -886,7 +905,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "joint_sg_window": int(cfg.joint_sg_window),
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset.tolist(),
-        "trajectory_scale": float(cfg.trajectory_scale),
+        "wrist_scale": float(cfg.wrist_scale),
         "align_initial_orientation": bool(cfg.align_initial_orientation),
         "source_format": retarget_input.source_format,
         "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
@@ -943,11 +962,11 @@ def retarget_from_poses(
         raise ValueError(f"End-effector frame '{cfg.robot.ee_frame}' not found in {cfg.robot.description}.")
 
     # Scaling (about initial wrist position)
-    if abs(cfg.trajectory_scale - 1.0) > 1e-12:
-        if cfg.trajectory_scale <= 0.0:
-            raise ValueError("trajectory_scale must be positive.")
+    if abs(cfg.wrist_scale - 1.0) > 1e-12:
+        if cfg.wrist_scale <= 0.0:
+            raise ValueError("wrist_scale must be positive.")
         anchor = positions[0].copy()
-        positions = anchor + (positions - anchor) * cfg.trajectory_scale
+        positions = anchor + (positions - anchor) * cfg.wrist_scale
 
     # Recenter so frame-0 wrist matches robot neutral EE position
     recenter_offset = np.zeros(3, dtype=np.float64)
@@ -988,6 +1007,13 @@ def retarget_from_poses(
         orientation_valid = None
 
     target_pos = np.vstack([t.translation for t in targets])
+    
+    # Workspace Validation
+    max_reach = estimate_max_reach(robot)
+    distances = np.linalg.norm(target_pos, axis=1)
+    if distances.max() > max_reach:
+        print(f"Warning: Targets exceed robot max reach ({distances.max():.2f}m > {max_reach:.2f}m). IK may be unstable.")
+
 
     q_approach = run_approach(
         pin,
@@ -1044,7 +1070,7 @@ def retarget_from_poses(
         "ik_solver": cfg.ik_solver,
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset,
-        "trajectory_scale": float(cfg.trajectory_scale),
+        "wrist_scale": float(cfg.wrist_scale),
         "source_cln": str(out_path),
     }
     if target_rot is not None:
@@ -1070,7 +1096,7 @@ def retarget_from_poses(
         "joint_sg_window": int(cfg.joint_sg_window),
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset.tolist(),
-        "trajectory_scale": float(cfg.trajectory_scale),
+        "wrist_scale": float(cfg.wrist_scale),
         "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
         "median_not_aligned_pos_error_mm": float(1000.0 * np.median(pos_err_smooth)),
         "mean_not_aligned_orientation_error_deg": float(np.mean(ori_err_smooth_deg)),
@@ -1214,7 +1240,7 @@ def build_run_config(
         joint_sg_polyorder=args.joint_sg_polyorder,
         limit_frames=args.limit_frames,
         recenter_to_neutral=args.recenter_to_neutral,
-        trajectory_scale=args.trajectory_scale,
+        wrist_scale=args.wrist_scale,
         align_initial_orientation=args.align_initial_orientation,
     )
 
@@ -1293,10 +1319,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Translate the input skeleton so frame-0 wrist starts at the robot neutral EE position.",
     )
     parser.add_argument(
-        "--trajectory-scale",
+        "--wrist-scale",
         type=float,
         default=1.0,
         help="Uniformly scale all landmark motion about the first wrist before retargeting.",
+    )
+    parser.add_argument(
+        "--trajectory-scale",
+        type=float,
+        dest="wrist_scale",
+        help="Deprecated: use --wrist-scale",
     )
     parser.add_argument("--evaluate", action="store_true", help="Run FK evaluator after writing each trajectory.")
     parser.add_argument("--eval-align", default="rigid", choices=["rigid", "none"], help="Evaluator alignment mode.")

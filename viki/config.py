@@ -9,6 +9,7 @@ import json
 import os
 import shutil
 from typing import Any
+import numpy as np
 
 DEFAULT_CONFIG_PATH = "data/default_configuration.json"
 USER_CONFIG_PATH = "data/user_configuration.json"
@@ -66,10 +67,52 @@ RETARGET_APPROACH_SEC: float
 RETARGET_JOINT_SG_WINDOW: int
 RETARGET_JOINT_SG_POLYORDER: int
 RETARGET_RECENTER_TO_NEUTRAL: bool
-RETARGET_BASE_ROTATION: list[list[float]]
+RETARGET_WRIST_SCALE: float
+RETARGET_BASE_EULER_ANGLES: list[float]
 RETARGET_BASE_TRANSLATION: list[float]
 MODELS_DIR: str
 
+
+
+def euler_to_rotation_matrix(euler_angles_deg: list[float], order: str = 'xyz') -> np.ndarray:
+    """Convert Euler angles (degrees) to a rotation matrix."""
+    assert len(euler_angles_deg) == 3, "Euler angles must be a list of 3 floats"
+    
+    roll, pitch, yaw = np.deg2rad(euler_angles_deg)
+
+    # Rotation matrix around X-axis
+    Rx = np.array([
+        [1, 0, 0],
+        [0, np.cos(roll), -np.sin(roll)],
+        [0, np.sin(roll), np.cos(roll)]
+    ])
+
+    # Rotation matrix around Y-axis
+    Ry = np.array([
+        [np.cos(pitch), 0, np.sin(pitch)],
+        [0, 1, 0],
+        [-np.sin(pitch), 0, np.cos(pitch)]
+    ])
+
+    # Rotation matrix around Z-axis
+    Rz = np.array([
+        [np.cos(yaw), -np.sin(yaw), 0],
+        [np.sin(yaw), np.cos(yaw), 0],
+        [0, 0, 1]
+    ])
+
+    # Combine rotations. Assuming XYZ intrinsic rotations (body-fixed).
+    # This means R = R_z(yaw) @ R_y(pitch) @ R_x(roll)
+    # If it was extrinsic (fixed-axis), it would be R = R_x(roll) @ R_y(pitch) @ R_z(yaw)
+    # The user asked for [X, Y, Z] as [roll, pitch, yaw], which is typically XYZ intrinsic.
+    if order.lower() == 'xyz':
+        R = Rz @ Ry @ Rx
+    elif order.lower() == 'zyx': # Common for aerospace, roll-pitch-yaw
+        R = Rx @ Ry @ Rz
+    else:
+        raise ValueError(f"Unsupported Euler angle order: {order}. Choose 'xyz' or 'zyx'.")
+
+    return R
 
 def _load_config():
     if not os.path.exists(USER_CONFIG_PATH):
@@ -87,6 +130,12 @@ _config = _load_config()
 
 # We assign these to globals so that 'from viki.config import CONSTANT' still works
 globals().update(_config)
+
+# Compute RETARGET_BASE_ROTATION from Euler angles
+if "RETARGET_BASE_EULER_ANGLES" in _config:
+    RETARGET_BASE_ROTATION = euler_to_rotation_matrix(_config["RETARGET_BASE_EULER_ANGLES"])
+    globals()["RETARGET_BASE_ROTATION"] = RETARGET_BASE_ROTATION
+
 
 # Keep a reference to the paths for the API
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH

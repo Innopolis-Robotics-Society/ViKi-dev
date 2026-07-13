@@ -18,6 +18,8 @@ from viki.optimization.optimization.retarget_rgb_only import (
     normalize_robot,
     retarget_from_poses,
     RunConfig,
+    transform_points,
+    transform_rotations_to_robot,
 )
 from viki.config import (
     RETARGET_DEFAULT_ROBOT,
@@ -31,7 +33,7 @@ from viki.config import (
     RETARGET_JOINT_SG_WINDOW,
     RETARGET_JOINT_SG_POLYORDER,
     RETARGET_RECENTER_TO_NEUTRAL,
-    RETARGET_TRAJECTORY_SCALE,
+    RETARGET_WRIST_SCALE,
     SKELETON_SMOOTHED_DIR,
 )
 from viki.server.robot_viz import robot_trajectory_stream
@@ -70,7 +72,7 @@ class OptimizeRequest(BaseModel):
     joint_sg_window: int | None = None
     joint_sg_polyorder: int | None = None
     recenter_to_neutral: bool | None = None
-    trajectory_scale: float | None = None
+    wrist_scale: float | None = None
     align_initial_orientation: bool | None = None
 
 
@@ -155,6 +157,10 @@ def _run_optimize(job_id: str, cln_path: Path, req: OptimizeRequest):
             validity = data["valid"]
             timestamps = data["timestamps"]
 
+        # Apply coordinate transform to robot frame before retargeting
+        positions = transform_points(positions)
+        rotations = transform_rotations_to_robot(rotations)
+
         fps = estimate_fps(timestamps)
         robot = normalize_robot(req.robot)
         cfg = RunConfig(
@@ -173,7 +179,7 @@ def _run_optimize(job_id: str, cln_path: Path, req: OptimizeRequest):
             joint_sg_polyorder=req.joint_sg_polyorder if req.joint_sg_polyorder is not None else RETARGET_JOINT_SG_POLYORDER,
             limit_frames=None,
             recenter_to_neutral=req.recenter_to_neutral if req.recenter_to_neutral is not None else RETARGET_RECENTER_TO_NEUTRAL,
-            trajectory_scale=float(req.trajectory_scale) if req.trajectory_scale is not None else float(RETARGET_TRAJECTORY_SCALE),
+            wrist_scale=float(req.wrist_scale) if req.wrist_scale is not None else float(RETARGET_WRIST_SCALE),
             align_initial_orientation=req.align_initial_orientation if req.align_initial_orientation is not None else True,
         )
 

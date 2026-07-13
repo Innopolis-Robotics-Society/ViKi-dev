@@ -110,6 +110,7 @@ class SkeletonProcessor:
             rpy=rpy,
             valid=valid,
             timestamps=timestamps,
+            coordinate_frame="viki_world_or_camera",
             raw_points=points.astype(np.float32),
             landmark_ids=landmark_ids,
         )
