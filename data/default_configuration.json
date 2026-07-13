@@ -69,6 +69,7 @@
   "SKELETON_COORDINATE_FRAME": "robot_base",
   "SKELETON_RECS_DIR": "data/skeleton_recs",
   "SKELETON_SMOOTHED_DIR": "data/skeleton_smoothed",
+  "SKELETON_COORDINATE_FRAME": "robot_base",
   "SKELETON_SAVE_JSON_DEBUG": false,
   "RETARGET_DEFAULT_ROBOT": "ur10",
   "RETARGET_LANDMARK_SG_WINDOW": 7,

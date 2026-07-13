@@ -1,0 +1,68 @@
+{
+  "align": "none",
+  "alignment_rotation": [
+    [
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      1.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "alignment_translation_m": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "ee_frame": "tool0",
+  "fps": 14.962556203101737,
+  "frames_under_50mm_pct": 94.84304932735425,
+  "human_path": "data\\skeleton_smoothed\\cln-17.20-12.07.2026.npz",
+  "ik_orientation_cost": 0.6,
+  "ik_position_cost": 5.0,
+  "ik_posture_cost": 0.001,
+  "ik_solver": "quadprog",
+  "ik_substeps": 20,
+  "joint_sg_polyorder": 3,
+  "joint_sg_window": 0,
+  "max_error_mm": 300.556997547685,
+  "max_orientation_error_deg": 171.10712491394878,
+  "mean_error_mm": 13.996123392334122,
+  "mean_orientation_error_deg": 32.81493775296327,
+  "median_error_mm": 5.249093009834485,
+  "median_orientation_error_deg": 20.732377059637386,
+  "num_frames": 446,
+  "orientation_available": true,
+  "p95_error_mm": 51.9095238785406,
+  "p95_orientation_error_deg": 117.81341351311889,
+  "q_key": "q_scene_smooth",
+  "recenter_offset": [
+    0.5912654345512389,
+    -0.4845065544450441,
+    -1.222746985869491
+  ],
+  "recenter_to_neutral": true,
+  "requested_q_key": "auto",
+  "requested_target_source": "auto",
+  "robot": "ur10_official_description",
+  "robot_traj_path": "data\\robot_out\\translatedbase_ur10_s1_traj.h5",
+  "sample": "cln-17.20-12.07.2026",
+  "sg_polyorder": 3,
+  "sg_window": 0,
+  "smooth_polyorder": 3,
+  "smooth_window": 15,
+  "smoothing": "none",
+  "target_orientation_key": "ee_target_rot",
+  "target_source": "ee_target_pos",
+  "threshold_mm": 50.0,
+  "trajectory_scale": 1.0,
+  "working_hand": "right"
+}
