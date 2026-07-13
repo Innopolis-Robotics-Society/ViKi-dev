@@ -25,7 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from viki.skeleton.hand_angles import compute_palm_rotation
-from viki.config import MODELS_DIR
+from viki.config import MODELS_DIR, RETARGET_BASE_ROTATION, RETARGET_BASE_TRANSLATION
 
 try:
     from archive_io import load_archive, write_hdf5_archive
@@ -60,15 +60,6 @@ SMOOTHED_TARGET_KEYS = {"positions", "rotations", "valid", "timestamps"}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
 # into the robot-facing convention used by the saved trajectory archives.
-R_DEFAULT = np.array(
-    [
-        [0.0, 0.0, 1.0],
-        [1.0, 0.0, 0.0],
-        [0.0, -1.0, 0.0],
-    ],
-    dtype=np.float64,
-)
-T_DEFAULT = np.zeros(3, dtype=np.float64)
 R_REFLECTION_FIX = np.diag([1.0, 1.0, -1.0])
 
 
@@ -261,7 +252,7 @@ def sweep_candidate_path(out_dir: Path, sample_path: Path, robot: RobotConfig, c
     return out_dir / name
 
 
-def transform_points(points: np.ndarray, rotation: np.ndarray = R_DEFAULT, translation: np.ndarray = T_DEFAULT) -> np.ndarray:
+def transform_points(points: np.ndarray, rotation: np.ndarray = RETARGET_BASE_ROTATION, translation: np.ndarray = RETARGET_BASE_TRANSLATION) -> np.ndarray:
     arr = np.asarray(points, dtype=np.float64)
     rot = np.asarray(rotation, dtype=np.float64)
     trans = np.asarray(translation, dtype=np.float64)
@@ -286,7 +277,7 @@ def transform_rotations_to_robot(rotations: np.ndarray) -> np.ndarray:
         raise ValueError(f"Expected rotations shape (T, 3, 3), got {arr.shape}.")
     out = np.full_like(arr, np.nan, dtype=np.float64)
     finite = np.isfinite(arr).all(axis=(1, 2))
-    out[finite] = np.einsum("ij,tjk,kl->til", R_DEFAULT, arr[finite], R_REFLECTION_FIX)
+    out[finite] = np.einsum("ij,tjk,kl->til", RETARGET_BASE_ROTATION, arr[finite], R_REFLECTION_FIX)
     return out
 
 

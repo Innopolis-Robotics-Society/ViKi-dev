@@ -8,10 +8,10 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+from viki.config import RETARGET_BASE_ROTATION
 
 from viki.optimization.optimization.retarget_rgb_only import (
     HAND_WRIST_CLUSTER,
-    R_DEFAULT,
     align_rotations_to_initial,
     build_direct_rotation_targets,
     build_targets,
@@ -433,8 +433,8 @@ class RetargetLogicTests(unittest.TestCase):
             ):
                 loaded_body, loaded_hand, _ = load_landmarks(path, "right", 3, 1, None)
 
-            np.testing.assert_allclose(loaded_body, transform_points(body, R_DEFAULT))
-            np.testing.assert_allclose(loaded_hand, transform_points(hand, R_DEFAULT))
+            np.testing.assert_allclose(loaded_body, transform_points(body, RETARGET_BASE_ROTATION))
+            np.testing.assert_allclose(loaded_hand, transform_points(hand, RETARGET_BASE_ROTATION))
 
     def test_zero_landmark_sg_window_skips_smoothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
