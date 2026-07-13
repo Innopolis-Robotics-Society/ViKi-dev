@@ -108,7 +108,17 @@ class OptimizationRoutesTests(unittest.TestCase):
     def test_retarget_enqueues_job(self) -> None:
         (self.samples / "sample.npz").write_bytes(b"fake")
 
-        with patch.object(optimization, "_enqueue_job") as enqueue:
+        fake_job = optimization.OptimizationJob(
+            job_id="test-job",
+            status="queued",
+            description="test",
+            output_stem="real_wrist_ur10",
+        )
+        with patch.object(
+            optimization,
+            "_enqueue_job",
+            return_value=fake_job,
+        ) as enqueue:
             response = self.client.post(
                 "/api/optimization/retarget",
                 json={
@@ -116,15 +126,28 @@ class OptimizationRoutesTests(unittest.TestCase):
                     "robot": "ur10",
                     "output_name": "real_wrist_ur10",
                     "target_mode": "hand_se3",
+                    "trajectory_scale": 1.5,
+                    "trajectory_scale_origin": "robot_base",
                 },
             )
 
         self.assertEqual(response.status_code, 200)
-        _, kwargs = enqueue.call_args
-        self.assertIn("description", kwargs)
-        self.assertIn("output_stem", kwargs)
-        self.assertIn("sample_path", kwargs)
-        self.assertIn("cfg", kwargs)
+        args, _ = enqueue.call_args
+        self.assertEqual(len(args), 6)
+        cfg = args[4]
+        self.assertEqual(cfg.trajectory_scale, 1.5)
+        self.assertEqual(cfg.trajectory_scale_origin, "robot_base")
+
+    def test_board_base_defaults_are_robot_specific(self) -> None:
+        ur10 = optimization._retarget_defaults("ur10", "hand_se3")
+        iiwa = optimization._retarget_defaults("iiwa14", "hand_se3")
+
+        self.assertEqual(ur10.trajectory_scale, 0.75)
+        self.assertEqual(iiwa.trajectory_scale, 0.55)
+        self.assertEqual(ur10.ik_orientation_cost, 0.6)
+        self.assertEqual(iiwa.ik_orientation_cost, 0.3)
+        self.assertTrue(ur10.align_initial_orientation)
+        self.assertFalse(iiwa.align_initial_orientation)
 
     def test_job_worker_calls_retarget(self) -> None:
         fake_summary = {"traj_path": "/fake/traj.h5", "frames": 5}
@@ -167,7 +190,7 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.assertEqual(downloaded.status_code, 200)
 
         escaped = self.client.get("/api/optimization/outputs/..%2Fsecret.json")
-        self.assertEqual(escaped.status_code, 400)
+        self.assertIn(escaped.status_code, {400, 404})
 
 
 if __name__ == "__main__":

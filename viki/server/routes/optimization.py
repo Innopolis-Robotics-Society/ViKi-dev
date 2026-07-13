@@ -57,8 +57,9 @@ class RetargetRequest(BaseModel):
     ik_solver: str | None = None
     joint_sg_window: int = 0
     sg_window: int = 0
-    recenter_to_neutral: bool = True
+    recenter_to_neutral: bool = False
     trajectory_scale: float | None = Field(default=None, gt=0.0)
+    trajectory_scale_origin: Literal["auto", "initial_wrist", "robot_base"] = "auto"
     align_initial_orientation: bool | None = None
     evaluate: bool = True
 
@@ -179,6 +180,7 @@ async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
             if req.align_initial_orientation is not None
             else defaults.align_initial_orientation
         ),
+        trajectory_scale_origin=req.trajectory_scale_origin,
     )
 
     do_evaluate = req.evaluate
@@ -221,6 +223,15 @@ async def list_outputs() -> dict[str, Any]:
 
 @router.get("/outputs/download")
 async def download_output(filename: str) -> FileResponse:
+    return _output_response(filename)
+
+
+@router.get("/outputs/{filename}")
+async def download_output_by_filename(filename: str) -> FileResponse:
+    return _output_response(filename)
+
+
+def _output_response(filename: str) -> FileResponse:
     name = _safe_filename(filename)
     path = OUTPUT_DIR / name
     if not path.exists() or not path.is_file():
@@ -296,7 +307,7 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_orientation_cost=0.0,
             ik_solver="quadprog",
             trajectory_scale=(
-                0.1 if robot_key in {"iiwa14", "iiwa14_description"} else 0.25
+                0.55 if robot_key in {"iiwa14", "iiwa14_description"} else 0.8
             ),
             align_initial_orientation=False,
         )
@@ -305,14 +316,14 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_position_cost=2.0,
             ik_orientation_cost=0.3,
             ik_solver="quadprog",
-            trajectory_scale=0.1,
+            trajectory_scale=0.55,
             align_initial_orientation=False,
         )
     return RobotRetargetDefaults(
         ik_position_cost=5.0,
-        ik_orientation_cost=0.3,
+        ik_orientation_cost=0.6,
         ik_solver="quadprog",
-        trajectory_scale=0.25,
+        trajectory_scale=0.75,
         align_initial_orientation=True,
     )
 

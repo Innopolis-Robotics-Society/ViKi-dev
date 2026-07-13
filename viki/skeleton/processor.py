@@ -17,6 +17,73 @@ from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import LM
 import viki.config as config
 
+
+_PALM_MIN_LENGTH_RATIO = 0.5
+_PALM_MAX_MIDDLE_LENGTH_RATIO = 1.75
+_PALM_MAX_THUMB_LENGTH_RATIO = 2.0
+_PALM_MIN_SINE_ANGLE = 0.25
+_PALM_MAX_STEP_DEG = 60.0
+
+
+def stable_palm_orientation_mask(
+    points: np.ndarray,
+    landmark_ids: np.ndarray,
+    rotations: np.ndarray,
+    pose_valid: np.ndarray,
+) -> np.ndarray:
+    """Reject palm frames with implausible hand geometry or temporal flips."""
+    ids = {int(landmark_id): idx for idx, landmark_id in enumerate(landmark_ids)}
+    required = (int(LM.WRIST), int(LM.THUMB_CMC), int(LM.MIDDLE_MCP))
+    if any(landmark_id not in ids for landmark_id in required):
+        return np.zeros(len(points), dtype=bool)
+
+    wrist = points[:, ids[int(LM.WRIST)]]
+    thumb = points[:, ids[int(LM.THUMB_CMC)]] - wrist
+    middle = points[:, ids[int(LM.MIDDLE_MCP)]] - wrist
+    thumb_length = np.linalg.norm(thumb, axis=1)
+    middle_length = np.linalg.norm(middle, axis=1)
+    cross_length = np.linalg.norm(np.cross(middle, thumb), axis=1)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sine_angle = cross_length / (middle_length * thumb_length)
+
+    finite_geometry = (
+        np.isfinite(thumb_length)
+        & np.isfinite(middle_length)
+        & np.isfinite(sine_angle)
+        & (thumb_length > 0.0)
+        & (middle_length > 0.0)
+    )
+    if not finite_geometry.any():
+        return np.zeros(len(points), dtype=bool)
+
+    median_thumb = float(np.median(thumb_length[finite_geometry]))
+    median_middle = float(np.median(middle_length[finite_geometry]))
+    valid = np.asarray(pose_valid, dtype=bool).copy()
+    valid &= finite_geometry
+    valid &= thumb_length >= _PALM_MIN_LENGTH_RATIO * median_thumb
+    valid &= thumb_length <= _PALM_MAX_THUMB_LENGTH_RATIO * median_thumb
+    valid &= middle_length >= _PALM_MIN_LENGTH_RATIO * median_middle
+    valid &= middle_length <= _PALM_MAX_MIDDLE_LENGTH_RATIO * median_middle
+    valid &= sine_angle >= _PALM_MIN_SINE_ANGLE
+    valid &= np.isfinite(rotations).all(axis=(1, 2))
+
+    if len(rotations) > 1:
+        relative = np.einsum(
+            "tji,tjk->tik",
+            rotations[:-1].astype(np.float64),
+            rotations[1:].astype(np.float64),
+        )
+        cosine = np.clip(
+            (np.trace(relative, axis1=1, axis2=2) - 1.0) / 2.0,
+            -1.0,
+            1.0,
+        )
+        jumps = np.degrees(np.arccos(cosine)) > _PALM_MAX_STEP_DEG
+        valid[:-1] &= ~jumps
+        valid[1:] &= ~jumps
+
+    return valid
+
 class SkeletonProcessor:
     """
     Handles listing and smoothing of skeleton recording files.
@@ -94,6 +161,13 @@ class SkeletonProcessor:
             rpy[t] = pose.rpy_deg
             valid[t] = pose.valid
 
+        valid = stable_palm_orientation_mask(
+            smoothed_points,
+            landmark_ids,
+            rotations,
+            valid,
+        )
+
         # 3. Save to smoothed directory as cln-*.npz
         output_filename = filename.replace("rec-", "cln-")
         output_path = self.smoothed_dir / output_filename
@@ -107,6 +181,11 @@ class SkeletonProcessor:
             timestamps=timestamps,
             raw_points=points.astype(np.float32),
             landmark_ids=landmark_ids,
+            coordinate_frame=getattr(
+                config,
+                "SKELETON_COORDINATE_FRAME",
+                "viki_world_or_camera",
+            ),
         )
 
         if getattr(config, 'SKELETON_SAVE_JSON_DEBUG', False):
