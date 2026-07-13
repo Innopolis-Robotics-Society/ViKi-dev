@@ -6,6 +6,8 @@ Image preparation for the camera streams:
 - ``DepthColorizer`` — turns a uint16 depth frame into a colour-mapped BGR
   image, with an EMA-smoothed display range and last-good-frame hold.
 - ``Undistorter`` — applies cached intrinsic undistortion to a colour image.
+- ``DepthStabilizer`` — applies temporal median and optional bilateral filtering
+  to reduce depth noise.
 
 Both hold per-stream state, so create one instance per stream.
 """
@@ -19,13 +21,42 @@ import numpy as np
 
 
 class DepthColorizer:
-    """Stateful uint16-depth → BGR turbo colour map for a single stream."""
+    """
+    Stateful uint16-depth → BGR turbo colour map for a single stream.
+
+    Maintains an exponential moving average (EMA) of the depth range (min/max)
+    and holds the last valid frame when a frame is mostly empty, preventing
+    the stream from flickering black.
+
+    Attributes
+    ----------
+    alpha : float
+        Smoothing factor for the EMA range update (0..1).
+    min_valid_fraction : float
+        Minimum fraction of valid pixels (depth > 0) required to update the
+        range and return a new frame; otherwise, the last good frame is reused.
+    d_min, d_max : float
+        Current EMA min and max depth values (in mm).
+    _ema_initialised : bool
+        Whether the EMA has been seeded.
+    _last_good : Optional[np.ndarray]
+        The last successfully colourised frame (BGR) to hold on empty frames.
+    """
 
     def __init__(
         self,
         alpha: float = 0.05,
         min_valid_fraction: float = 0.05,
     ) -> None:
+        """
+        Parameters
+        ----------
+        alpha : float, default=0.05
+            Smoothing factor for EMA range. Higher = more responsive to changes.
+        min_valid_fraction : float, default=0.05
+            Minimum fraction of valid pixels (depth > 0) to update the range
+            and generate a new frame. If below this, the last good frame is held.
+        """
         self.alpha = alpha
         self.min_valid_fraction = min_valid_fraction
         self.d_min: float = 0.0
@@ -35,11 +66,25 @@ class DepthColorizer:
 
     def colorize(self, depth: np.ndarray) -> Optional[np.ndarray]:
         """
-        Return a BGR colour-mapped depth image, or ``None`` if the frame should
-        be skipped (mostly-empty depth with no prior good frame to hold).
+        Convert a uint16 depth image to a colour-mapped BGR image.
 
-        Mostly-empty frames (SDK dropped the depth capture) hold the last good
-        image so the stream doesn't flash black.
+        If the fraction of valid pixels is below `min_valid_fraction`, returns
+        the last successfully colourised frame (or None if none exists) to avoid
+        black flickering.
+
+        The colourmap range is updated using an EMA of the 2nd and 98th percentiles
+        to ignore outliers.
+
+        Parameters
+        ----------
+        depth : np.ndarray
+            Depth image (HxW, uint16, values in millimetres).
+
+        Returns
+        -------
+        Optional[np.ndarray]
+            BGR colour-mapped image (HxWx3, uint8) or None if no frame is available
+            and the current frame is empty.
         """
         valid = depth[depth > 0]
         valid_fraction = valid.size / max(depth.size, 1)
@@ -67,15 +112,50 @@ class DepthColorizer:
 
 # ... existing code ...
 class Undistorter:
-    """Apply intrinsic undistortion to colour images, caching the remap tables."""
+    """
+    Apply intrinsic undistortion to colour images, caching the remap tables.
+
+    The remap tables are computed once for the given image size and reused for
+    subsequent frames, improving performance.
+
+    Attributes
+    ----------
+    mtx : np.ndarray
+        3x3 camera matrix (intrinsics).
+    dist : np.ndarray
+        Distortion coefficients (vector of length 4 or 5).
+    _map1, _map2 : Optional[np.ndarray]
+        Cached remap tables for the current image size.
+    """
 
     def __init__(self, mtx: np.ndarray, dist: np.ndarray) -> None:
+        """
+        Parameters
+        ----------
+        mtx : np.ndarray
+            3x3 camera matrix.
+        dist : np.ndarray
+            Distortion coefficients.
+        """
         self.mtx = mtx
         self.dist = dist
         self._map1: Optional[np.ndarray] = None
         self._map2: Optional[np.ndarray] = None
 
     def apply(self, img: np.ndarray) -> np.ndarray:
+        """
+        Undistort an input image using the cached remap tables.
+
+        Parameters
+        ----------
+        img : np.ndarray
+            Input BGR image (HxWx3, uint8).
+
+        Returns
+        -------
+        np.ndarray
+            Undistorted image (same shape and type).
+        """
         h, w = img.shape[:2]
         if self._map1 is None:
             # Precompute the mapping once for performance.
@@ -86,19 +166,52 @@ class Undistorter:
 
 
 class DepthStabilizer:
-    """Removes temporal jitter and noise from depth maps."""
+    """
+    Reduce temporal noise in depth maps using a sliding window median filter
+    and optional bilateral spatial filtering.
+
+    Attributes
+    ----------
+    window_size : int
+        Number of frames to keep in the buffer (temporal median window).
+    use_bilateral : bool
+        If True, apply a bilateral filter after the temporal median to smooth
+        spatial noise while preserving edges.
+    buffer : list[np.ndarray]
+        Ring buffer of recent depth frames.
+    """
 
     def __init__(
         self, 
         window_size: int = 5, 
         use_bilateral: bool = False
     ) -> None:
+        """
+        Parameters
+        ----------
+        window_size : int, default=5
+            Number of recent frames to use for the temporal median.
+        use_bilateral : bool, default=False
+            Whether to apply a bilateral filter after temporal smoothing.
+        """
         self.window_size = window_size
         self.use_bilateral = use_bilateral
         self.buffer: list[np.ndarray] = []
 
     def stabilize(self, depth: np.ndarray) -> np.ndarray:
-        """Apply temporal median and optional bilateral filtering."""
+        """
+        Apply temporal median filtering (and optional bilateral) to a depth frame.
+
+        Parameters
+        ----------
+        depth : np.ndarray
+            Depth image (HxW, uint16, values in mm).
+
+        Returns
+        -------
+        np.ndarray
+            Stabilised depth image (same shape and type).
+        """
         if self.buffer and depth.shape != self.buffer[0].shape:
             self.buffer.clear()
 

@@ -19,6 +19,14 @@ from viki.skeleton.models import PreparedFrame
 class UndistortCache:
     """
     Caches cv2.initUndistortRectifyMap results per device_id.
+
+    Recomputing remap tables for every frame is expensive; this cache stores
+    the tables once per camera and image size, so subsequent frames reuse them.
+
+    Attributes
+    ----------
+    _maps : dict[str, tuple[np.ndarray, np.ndarray]]
+        Maps device_id -> (map1, map2) remap tables.
     """
 
     def __init__(self) -> None:
@@ -31,6 +39,25 @@ class UndistortCache:
         dist: np.ndarray,
         shape: tuple[int, int],  # (width, height)
     ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Retrieve or compute the undistortion remap tables for a camera.
+
+        Parameters
+        ----------
+        device_id : str
+            Camera identifier.
+        K : np.ndarray
+            3x3 intrinsic matrix.
+        dist : np.ndarray
+            Distortion coefficients (length 4 or 5).
+        shape : tuple[int, int]
+            Image size as (width, height).
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            (map1, map2) as required by cv2.remap.
+        """
         if device_id not in self._maps:
             w, h = shape
             # единожды вычисляем карту выпрямления и кэшируем её для повторного использования
@@ -41,6 +68,15 @@ class UndistortCache:
         return self._maps[device_id]
 
     def invalidate(self, device_id: str | None = None) -> None:
+        """
+        Clear cached maps.
+
+        Parameters
+        ----------
+        device_id : str, optional
+            If provided, remove only the cache for that device.
+            If None, clear all caches.
+        """
         """Clear cached maps. Pass device_id to clear one camera, None to clear all."""
         if device_id is None:
             self._maps.clear()
@@ -56,6 +92,10 @@ def prepare_frame(
 ) -> PreparedFrame:
     """
     Convert a raw Frame into a PreparedFrame.
+
+    The colour image is undistorted and converted to RGB.
+    The depth image is undistorted, converted to metres, and invalid zeros
+    are set to NaN.
 
     Parameters
     ----------

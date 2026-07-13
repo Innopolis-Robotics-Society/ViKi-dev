@@ -28,15 +28,19 @@ def ensure_model(
     """
     Download a MediaPipe .task file once and cache it locally.
 
-    parameters
+    Parameters
     ----------
-    filename   : target file name under `models_dir`.
-    url        : remote source URL.
-    models_dir : local cache directory.
+    filename : str
+        Target file name under `models_dir`.
+    url : str
+        Remote source URL.
+    models_dir : str, default=MODELS_DIR_DEFAULT
+        Local cache directory.
 
-    returns
+    Returns
     -------
-    Absolute filesystem path to the local model file.
+    str
+        Absolute filesystem path to the local model file.
     """
     path = Path(models_dir) / filename
     if not path.exists():
@@ -48,7 +52,27 @@ def ensure_model(
 
 
 class MediaPipeTaskRunner:
-    """Mode-aware wrapper around one MediaPipe Tasks vision model."""
+    """
+    Mode‑aware wrapper around one MediaPipe Tasks vision model.
+
+    Handles the differences between IMAGE, VIDEO, and LIVE_STREAM modes,
+    including timestamp management and result caching for LIVE mode.
+
+    Attributes
+    ----------
+    _mode : str
+        Running mode.
+    _task : Any
+        The MediaPipe task instance.
+    _lock : threading.Lock
+        Protects live result access.
+    _live_last_result : Any
+        Cached result for LIVE mode.
+    _live_last_returned_ts_ms : int
+        Timestamp of the last returned result.
+    _last_submitted_ts_ms : int
+        Timestamp of the last submitted frame.
+    """
 
     def __init__(
         self,
@@ -57,13 +81,16 @@ class MediaPipeTaskRunner:
         mode: Literal["image", "video", "live"] = "image",
     ) -> None:
         """
-        parameters
+        Parameters
         ----------
-        task_factory : (base_options, running_mode, result_callback_or_None) -> task.
-        model_path   : path to the .task model file.
-        mode         : "image", "video", "live".
+        task_factory : Callable
+            Factory function that takes (base_options, running_mode, result_callback)
+            and returns a MediaPipe task instance.
+        model_path : str
+            Path to the .task model file.
+        mode : Literal["image", "video", "live"], default="image"
+            Running mode.
         """
-
         from mediapipe.tasks import python
         from mediapipe.tasks.python import vision
 
@@ -87,6 +114,21 @@ class MediaPipeTaskRunner:
 
     @staticmethod
     def _map_mode(mode: str, vision) -> Any:
+        """
+        Map string mode to MediaPipe RunningMode enum.
+
+        Parameters
+        ----------
+        mode : str
+            "image", "video", or "live".
+        vision : module
+            mediapipe.tasks.python.vision
+
+        Returns
+        -------
+        RunningMode
+            The corresponding MediaPipe RunningMode.
+        """
         if mode == "video":
             return vision.RunningMode.VIDEO
         if mode == "live":
@@ -97,16 +139,19 @@ class MediaPipeTaskRunner:
         """
         Submit one frame to the underlying MediaPipe task.
 
-        parameters
+        Parameters
         ----------
-        rgb          : (H, W, 3) uint8 RGB image.
-        timestamp_us : frame timestamp in microseconds.
+        rgb : np.ndarray
+            (H, W, 3) uint8 RGB image.
+        timestamp_us : int
+            Frame timestamp in microseconds.
 
-        returns
+        Returns
         -------
-        Raw MediaPipe result object (task-specific type), or None when no
-        result is available yet — first frames in LIVE mode, or stale
-        cached result for the same timestamp.
+        Optional[Any]
+            Raw MediaPipe result object (task‑specific type), or None when no
+            result is available yet (first frames in LIVE mode), or a stale
+            cached result for the same timestamp is detected.
         """
         # Lazy: avoid module-level mediapipe import cost.
         import mediapipe as mp

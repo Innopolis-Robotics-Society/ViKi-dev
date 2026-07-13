@@ -58,6 +58,19 @@ class SmoothRequest(BaseModel):
 async def toggle_estimation(
     req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
 ):
+    """
+    Enable or disable skeleton estimation.
+
+    Parameters
+    ----------
+    req : ToggleRequest
+        `enabled` boolean.
+
+    Returns
+    -------
+    dict
+        {"status": "updated", "enabled": bool}
+    """
     worker.set_enabled(req.enabled)
     return {"status": "updated", "enabled": worker.is_enabled}
 
@@ -66,12 +79,33 @@ async def toggle_estimation(
 async def toggle_recording(
     req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
 ):
+    """
+    Enable or disable recording of skeleton data to disk.
+
+    Parameters
+    ----------
+    req : ToggleRequest
+        `enabled` boolean.
+
+    Returns
+    -------
+    dict
+        {"status": "updated", "recording": bool}
+    """
     worker.set_recording(req.enabled)
     return {"status": "updated", "recording": worker.is_recording}
 
 
 @router.get("/status")
 async def get_status(worker: SkeletonWorker = Depends(get_worker)):
+    """
+    Get current skeleton estimation and recording status.
+
+    Returns
+    -------
+    dict
+        {"enabled": bool, "recording": bool}
+    """
     return {
         "enabled": worker.is_enabled,
         "recording": worker.is_recording,
@@ -83,6 +117,21 @@ async def list_recordings(
     limit: int = 10, 
     processor: SkeletonProcessor = Depends(get_processor)
 ):
+    """
+    List recorded skeleton data files (paginated).
+
+    Parameters
+    ----------
+    page : int, default=0
+        Page number.
+    limit : int, default=10
+        Items per page.
+
+    Returns
+    -------
+    dict
+        {"recordings": list[str]} – list of filenames.
+    """
     return {"recordings": processor.list_recordings(page=page, page_size=limit)}
 
 
@@ -91,6 +140,28 @@ async def smooth_recording(
     req: SmoothRequest,
     processor: SkeletonProcessor = Depends(get_processor)
 ):
+    """
+    Apply Savitzky-Golay smoothing to a recorded skeleton file.
+
+    Parameters
+    ----------
+    req : SmoothRequest
+        Filename, window length, and polynomial order.
+
+    Returns
+    -------
+    dict
+        {"status": "success", "path": str} – path to smoothed file.
+
+    Raises
+    ------
+    HTTPException 404
+        If file not found.
+    HTTPException 400
+        If smoothing parameters are invalid.
+    HTTPException 500
+        If an internal error occurs.
+    """
     try:
         path, _ = processor.smooth_recording(
             req.filename,
@@ -109,6 +180,24 @@ async def smooth_recording(
 
 @router.get("/smooth-plot")
 async def smooth_plot(filename: str):
+    """
+    Return a PNG image comparing raw and smoothed wrist trajectories.
+
+    Parameters
+    ----------
+    filename : str
+        Smoothed .npz file name.
+
+    Returns
+    -------
+    Response
+        PNG image.
+
+    Raises
+    ------
+    HTTPException 404
+        If file not found.
+    """
     """Return a PNG comparison of raw vs smoothed wrist trajectory."""
     smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
     npz_path = smoothed_dir / filename
@@ -153,8 +242,13 @@ async def smooth_plot(filename: str):
 
 
 @router.websocket("/stream")
-
 async def skeleton_stream(websocket: WebSocket):
+    """
+    WebSocket endpoint that streams the latest skeleton frame.
+
+    Sends JSON data with landmarks, end‑effector pose, and per‑camera detections.
+    Updates at approximately 20 Hz.
+    """
     await websocket.accept()
     # logger.debug("ROUTES/SKELETON: stream endpoint engaged")
     worker: SkeletonWorker = websocket.app.state.skeleton_worker

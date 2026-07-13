@@ -1,3 +1,10 @@
+"""
+viki.server.routes.dataset
+--------------------------
+Dataset handling and optimisation endpoints: listing recorded skeleton data,
+triggering retargeting optimisation, and streaming robot trajectories.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -33,6 +40,21 @@ _dataset_jobs_lock = threading.Lock()
 
 @router.get("/recordings")
 async def list_smoothed_recordings(page: int = 0, limit: int = 10):
+    """
+    List smoothed skeleton recordings (cln-*.npz files) with pagination.
+
+    Parameters
+    ----------
+    page : int, default=0
+        Page number (zero-based).
+    limit : int, default=10
+        Number of recordings per page.
+
+    Returns
+    -------
+    dict
+        {"recordings": list[str]} – list of filenames.
+    """
     smoothed_dir = Path(SKELETON_SMOOTHED_DIR)
     smoothed_dir.mkdir(parents=True, exist_ok=True)
     files = sorted([f.name for f in smoothed_dir.glob("cln-*.npz")], reverse=True)
@@ -50,6 +72,24 @@ class OptimizeRequest(BaseModel):
 async def optimize_recording(
     req: OptimizeRequest,
 ):
+    """
+    Start a background optimisation job for a smoothed recording.
+
+    Parameters
+    ----------
+    req : OptimizeRequest
+        Filename (cln-*.npz) and robot name.
+
+    Returns
+    -------
+    dict
+        {"job_id": str, "status": "queued"}
+
+    Raises
+    ------
+    HTTPException 404
+        If the recording file does not exist.
+    """
     smoothed_dir = Path(SKELETON_SMOOTHED_DIR)
     cln_path = smoothed_dir / req.filename
     if not cln_path.exists():
@@ -78,6 +118,24 @@ async def optimize_recording(
 
 @router.get("/optimize/status/{job_id}")
 async def optimize_status(job_id: str):
+    """
+    Get the status of an optimisation job.
+
+    Parameters
+    ----------
+    job_id : str
+        Job identifier returned by `/optimize`.
+
+    Returns
+    -------
+    dict
+        Job details.
+
+    Raises
+    ------
+    HTTPException 404
+        If job not found.
+    """
     with _dataset_jobs_lock:
         job = _dataset_jobs.get(job_id)
         if job is None:
@@ -87,6 +145,14 @@ async def optimize_status(job_id: str):
 
 @router.get("/outputs")
 async def list_outputs():
+    """
+    List all generated robot trajectory output files (.h5).
+
+    Returns
+    -------
+    dict
+        {"outputs": list[str]} – filenames.
+    """
     ROBOT_OUT_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(
         [f.name for f in ROBOT_OUT_DIR.glob("*.h5") if f.is_file()],
@@ -97,6 +163,26 @@ async def list_outputs():
 
 @router.get("/viz-stream")
 async def robot_viz_stream(filename: str, loop: bool = True):
+    """
+    MJPEG stream visualising a robot trajectory from an HDF5 file.
+
+    Parameters
+    ----------
+    filename : str
+        Output filename (.h5).
+    loop : bool, default=True
+        Repeat the trajectory indefinitely.
+
+    Returns
+    -------
+    StreamingResponse
+        MJPEG stream of the 3D robot visualisation.
+
+    Raises
+    ------
+    HTTPException 404
+        If the file does not exist.
+    """
     h5_path = ROBOT_OUT_DIR / filename
     if not h5_path.exists():
         raise HTTPException(status_code=404, detail=f"Output not found: {filename}")
@@ -109,6 +195,14 @@ async def robot_viz_stream(filename: str, loop: bool = True):
 
 @router.get("/optimize/jobs")
 async def list_optimize_jobs():
+    """
+    List all optimisation jobs (history).
+
+    Returns
+    -------
+    dict
+        {"jobs": list[dict]} – each job details, sorted by creation time descending.
+    """
     with _dataset_jobs_lock:
         jobs = sorted(
             _dataset_jobs.values(), key=lambda j: j["created_at"], reverse=True
@@ -117,6 +211,20 @@ async def list_optimize_jobs():
 
 
 def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
+    """
+    Background task: run the retargeting optimisation and update job status.
+
+    Parameters
+    ----------
+    job_id : str
+        Unique job ID.
+    cln_path : Path
+        Path to the smoothed .npz file.
+    robot_name : str
+        Robot description name.
+    filename : str
+        Original filename (used for output naming).
+    """
     with _dataset_jobs_lock:
         _dataset_jobs[job_id]["status"] = "running"
         _dataset_jobs[job_id]["started_at"] = time.time()

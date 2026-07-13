@@ -44,15 +44,22 @@ import viki.config
 
 class SkeletonPipeline:
     """
-    End-to-end skeleton detection from SyncedFrameGroup to SkeletonFrame.
+    End‑to‑end skeleton detection from SyncedFrameGroup to SkeletonFrame.
+
+    This pipeline:
+        1. Prepares each camera frame (undistort, depth clean).
+        2. Runs hand detection (MediaPipe) on each camera in parallel.
+        3. Lifts 2D detections to 3D using depth maps.
+        4. Fuses per‑camera 3D landmarks into a single world‑frame skeleton.
 
     Parameters
     ----------
     calibrator : CalibrationManager
-        Provides per-device intrinsics and extrinsics for prep, lift, fusion.
-    detector : optional CompositeLandmarkDetector.
-    hand : {"right", "left"}
-        Which arm/hand to track for the default detector.
+        Provides per‑device intrinsics and extrinsics.
+    manager : CameraManager
+        Provides access to camera backends (for depth projection).
+    hand : Literal["right", "left"]
+        Which hand to track. Default from config.
     """
 
     def __init__(
@@ -87,6 +94,7 @@ class SkeletonPipeline:
         Returns
         -------
         PipelineResult
+            Contains fused SkeletonFrame and per‑camera detections.
         """
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
@@ -183,7 +191,10 @@ class SkeletonPipeline:
     def _detect_camera(
         self, dev_id: str, group: SyncedFrameGroup
     ) -> tuple[str, Optional[HandDetection], Optional[PreparedFrame]]:
-        """Helper for parallel detection."""
+        """
+        Helper for parallel detection.
+        Returns a tuple (device_id, detection, prepared_frame).
+        """
         prepared = self._prepare_camera(dev_id, group)
         if prepared is None:
             return dev_id, None, None
@@ -215,7 +226,21 @@ class SkeletonPipeline:
     def _prepare_camera(
         self, device_id: str, group: SyncedFrameGroup
     ) -> Optional[PreparedFrame]:
-        """Stage 1: prepare frame for detection."""
+        """
+        Stage 1: prepare frame for detection.
+
+        Parameters
+        ----------
+        device_id : str
+            Camera ID.
+        group : SyncedFrameGroup
+            The sync group containing the frame.
+
+        Returns
+        -------
+        PreparedFrame or None
+            Prepared frame, or None if the frame is missing or intrinsics not available.
+        """
         frame = group.frames.get(device_id)
         if frame is None:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
@@ -254,7 +279,25 @@ class SkeletonPipeline:
         detection: Optional[HandDetection],
         prepared: Optional[PreparedFrame] = None,
     ) -> Optional[Landmarks3D]:
-        """Stage 3: lift 2D detection to 3D."""
+        """
+        Stage 3: lift 2D detection to 3D.
+
+        Parameters
+        ----------
+        device_id : str
+            Camera ID.
+        group : SyncedFrameGroup
+            The sync group (used to re‑prepare if needed).
+        detection : Optional[HandDetection]
+            2D detection (None if no hand).
+        prepared : Optional[PreparedFrame]
+            Prepared frame (if already available).
+
+        Returns
+        -------
+        Landmarks3D or None
+            3D landmarks in camera coordinates, or None if detection absent or backend not Kinect.
+        """
         if detection is None:
             return None
 

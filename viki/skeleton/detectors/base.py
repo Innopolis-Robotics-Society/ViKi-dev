@@ -20,13 +20,40 @@ from viki.skeleton.models import LM, PreparedFrame
 
 
 class FusionMode(str, Enum):
+    """
+    Strategy for combining partial detector results in CompositeLandmarkDetector.
+
+    Attributes
+    ----------
+    ANY : str
+        At least one partial detector must succeed.
+    ALL : str
+        Every partial detector must succeed.
+    """
     ANY = "any"  # at least one partial detector must succeed
     ALL = "all"  # every partial detector must succeed
 
 
 @dataclass
 class PartialDetection2D:
-    """A single partial detector's pixel-space contribution."""
+    """
+    A single partial detector's pixel‑space contribution.
+
+    Attributes
+    ----------
+    indices : tuple[int, ...]
+        Global layout slots this detector writes (length k).
+    px : np.ndarray
+        (k, 2) float32 pixel coordinates (NaN allowed for missing landmarks).
+    lm_z_rel : np.ndarray
+        (k,) float32 MediaPipe‑style relative z (arbitrary units).
+    per_index_confidence : np.ndarray
+        (k,) float32 confidence per landmark (0..1).
+    device_id : str
+        Camera identifier.
+    timestamp_us : int
+        Capture timestamp in microseconds.
+    """
 
     indices: tuple[int, ...]  # global layout slots this detector writes (length k).
     px: np.ndarray  # (k, 2) float32 pixel coords (NaN allowed).
@@ -38,8 +65,19 @@ class PartialDetection2D:
 
 class PartialLandmarkDetector(ABC):
     """
-    Abstract partial detector. Each implementation owns a fixed subset of
-    the global skeleton layout described by class-level attributes.
+    Abstract base class for a partial landmark detector.
+
+    Each detector owns a fixed subset of the global skeleton layout described
+    by class‑level attributes `name`, `indices`, and `priority`.
+
+    Attributes
+    ----------
+    name : str
+        Unique detector name.
+    indices : tuple[int, ...]
+        Global slot indices this detector writes.
+    priority : int
+        Lower values have higher priority when conflicts occur.
     """
 
     name: str
@@ -51,17 +89,22 @@ class PartialLandmarkDetector(ABC):
         """
         Run detection on one frame.
 
-        parameters
+        Parameters
         ----------
-        frame : prepared camera frame (RGB + depth + K).
+        frame : PreparedFrame
+            Prepared camera frame (RGB + depth + intrinsics).
 
-        returns
+        Returns
         -------
-        PartialDetection2D on success, None when this detector failed
-        on this frame.
+        Optional[PartialDetection2D]
+            Detection on success, None when this detector failed on this frame.
         """
         ...
 
     def close(self) -> None:
-        """Release detector-owned resources. No-op by default."""
+        """
+        Release detector‑owned resources.
+
+        This default implementation does nothing; override if needed.
+        """
         return None

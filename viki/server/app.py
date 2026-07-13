@@ -40,6 +40,17 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context manager.
+
+    Initialises and starts:
+        - CameraManager (all cameras)
+        - CalibrationManager (for intrinsics/extrinsics)
+        - MultiCameraSync (for software synchronisation)
+        - SkeletonPipeline, SkeletonRecorder, and SkeletonWorker (background thread)
+
+    On shutdown, stops the skeleton worker and all cameras.
+    """
     app.state.manager = CameraManager()
     app.state.calibrator = CalibrationManager(app.state.manager)
     # for device in range(app.state.manager.active_device_ids):
@@ -86,4 +97,5 @@ app.include_router(dataset.router)
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    """Serve the main frontend HTML page."""
     return (STATIC_DIR / "index.html").read_text()

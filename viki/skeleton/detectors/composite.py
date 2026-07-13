@@ -27,8 +27,19 @@ class CompositeLandmarkDetector:
     """
     Orchestrates a list of partial detectors into a single HandDetection.
 
-    The composite is layout-agnostic: pass `n_slots` to use it for setups
-    other than the default 23-slot skeleton.
+    The composite is layout‑agnostic: pass `n_slots` to use it for setups
+    other than the default 23‑slot skeleton.
+
+    Attributes
+    ----------
+    n_slots : int
+        Number of output slots.
+    mode : FusionMode
+        Fusion strategy (ANY or ALL).
+    _detectors : List[PartialLandmarkDetector]
+        List of constituent detectors.
+    _warned_shape : set[str]
+        Cache for shape warnings to avoid log spam.
     """
 
     def __init__(
@@ -38,13 +49,20 @@ class CompositeLandmarkDetector:
         n_slots: int = LM.N,
     ) -> None:
         """
-        parameters
+        Parameters
         ----------
-        detectors : partial detectors to merge.
-        mode      : ANY
-                    ALL
-        n_slots   : size of the output layout; every detector's indices
-                    must lie in [0, n_slots).
+        detectors : List[PartialLandmarkDetector]
+            Partial detectors to merge.
+        mode : FusionMode, default=FusionMode.ANY
+            Fusion strategy.
+        n_slots : int, default=LM.N
+            Size of the output layout; every detector's indices must lie in [0, n_slots).
+
+        Raises
+        ------
+        ValueError
+            If `n_slots < 1`, if any detector index is out of range,
+            or if two detectors share the same name.
         """
         if n_slots < 1:
             raise ValueError(f"n_slots must be >= 1, got {n_slots}")
@@ -77,23 +95,28 @@ class CompositeLandmarkDetector:
 
     @property
     def n_slots(self) -> int:
+        """Number of output slots."""
         return self._n
 
     @property
     def mode(self) -> FusionMode:
+        """Fusion mode."""
         return self._mode
 
     def detect(self, frame: PreparedFrame) -> Optional[HandDetection]:
         """
         Run every partial detector and merge their outputs.
 
-        parameters
+        Parameters
         ----------
-        frame : prepared camera frame.
+        frame : PreparedFrame
+            Prepared camera frame.
 
-        returns
+        Returns
         -------
-        HandDetection in the n_slots layout, or None
+        Optional[HandDetection]
+            HandDetection in the n_slots layout, or None if the fusion policy
+            is not satisfied or no landmarks were produced.
         """
         if not self._detectors:
             return None
@@ -170,7 +193,7 @@ class CompositeLandmarkDetector:
         )
 
     def close(self) -> None:
-        """Close every contained partial detector (isolate exceptions)."""
+        """Close every contained partial detector, isolating exceptions."""
         for d in self._detectors:
             try:
                 d.close()
