@@ -154,6 +154,7 @@ class SkeletonProcessor:
             valid=valid,
             timestamps=timestamps,
             raw_points=points.astype(np.float32),
+            smoothed_points=smoothed_points.astype(np.float32),
             landmark_ids=landmark_ids,
         )
 

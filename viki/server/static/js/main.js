@@ -35,6 +35,7 @@ const CLICK_ACTIONS = {
   toggleSkelView: () => skeleton.toggleSkelView(),
   toggleEstimation: el => skeleton.toggleEstimation(el.dataset.enable === 'true'),
   toggleRecording: el => skeleton.toggleRecording(el.dataset.enable === 'true'),
+  toggleCalibOverlay: () => skeleton.toggleCalibOverlay(),
   // process
   toggleProcess: () => process.toggleProcess(),
   setProcessMode: el => process.setProcessMode(el.dataset.mode),
@@ -55,6 +56,7 @@ const CHANGE_ACTIONS = {
   toggleBoardFields: () => calibration.toggleBoardFields(),
   syncBoardParameters: () => calibration.syncBoardParameters(),
   updateSkelVizCam: () => skeleton.updateSkelVizCam(),
+  toggleFollowEE: () => skeleton.toggleFollowEE(),
 };
 
 document.addEventListener('click', e => {

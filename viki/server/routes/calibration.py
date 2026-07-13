@@ -523,6 +523,46 @@ async def extrinsics(device_id: str, cal: CalibrationManager = Depends(get_calib
     )
 
 
+@router.get("/viz")
+async def extrinsics_viz(
+    cal: CalibrationManager = Depends(get_calibrator),
+    mgr: CameraManager = Depends(get_manager),
+):
+    """
+    Return extrinsics, intrinsics and board info for the 3D skeleton panel.
+    """
+    active = mgr.active_device_ids()
+    cameras = []
+    for dev_id in active:
+        extr = cal.get_extrinsics(dev_id)
+        if not extr:
+            continue
+        intr = cal.get_intrinsics(dev_id)
+        info = mgr.get_info(dev_id)
+        cam = {
+            "device_id": dev_id,
+            "rvec": extr.rvec.flatten().tolist(),
+            "tvec": extr.tvec.flatten().tolist(),
+        }
+        if intr is not None:
+            cam.update(fx=float(intr.fx), fy=float(intr.fy), cx=float(intr.cx), cy=float(intr.cy))
+        if info:
+            shape = info.get("color_shape")
+            if shape and len(shape) >= 2:
+                cam["color_width"] = int(shape[1])
+                cam["color_height"] = int(shape[0])
+            elif info.get("color_intrinsics"):
+                di = info["color_intrinsics"]
+                cam["color_width"] = int(di.get("width", 0))
+                cam["color_height"] = int(di.get("height", 0))
+        cameras.append(cam)
+
+    bp = cal.get_board_params()
+    board = {"board_size": list(bp.board_size), "square_size": bp.square_size} if bp else None
+
+    return {"board": board, "cameras": cameras}
+
+
 @router.get("/{device_id}/stream")
 def marked_stream(
     device_id: str,

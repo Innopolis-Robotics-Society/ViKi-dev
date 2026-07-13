@@ -171,12 +171,24 @@
             style="font-size: 11px; padding: 4px 8px; cursor: pointer;">View: Projections</button>
         </div>
         <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
+          <label for="skel-follow-ee">Follow</label>
+          <select id="skel-follow-ee" data-change="toggleFollowEE">
+            <option value="off" selected>Static (origin)</option>
+            <option value="ee">End effector</option>
+          </select>
+        </div>
+        <div class="field-row" style="display:flex; flex-direction:column; gap:4px; margin-bottom:10px;">
           <label for="skel-viz-cam">Visualize Camera</label>
           <select id="skel-viz-cam" data-change="updateSkelVizCam"></select>
         </div>
         <button id="btn-skel-start" class="primary" data-action="toggleEstimation" data-enable="true">▶ Start Estimation</button>
         <button id="btn-skel-stop" class="danger" data-action="toggleEstimation" data-enable="false" disabled>■ Stop Estimation</button>
         <div class="sep"></div>
+        <div class="sep"></div>
+        <label style="font-size:11px;display:flex;align-items:center;gap:6px;cursor:pointer;">
+          <input type="checkbox" id="btn-skel-calib-overlay" checked data-action="toggleCalibOverlay">
+          Show calib (board + cameras)
+        </label>
         <div class="sep"></div>
         <button id="btn-skel-rec-start" data-action="toggleRecording" data-enable="true">🔴 Record</button>
         <button id="btn-skel-rec-stop" class="danger" data-action="toggleRecording" data-enable="false" disabled>⏹ Stop

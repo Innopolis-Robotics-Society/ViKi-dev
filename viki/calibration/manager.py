@@ -8,6 +8,7 @@ for multiple cameras. It handles starting/stopping workers, collecting samples,
 computing intrinsics/extrinsics, and persisting results to JSON files.
 """
 import cv2
+import json
 import logging
 from typing import Dict, List
 from viki.capture.manager import CameraManager
@@ -390,6 +391,32 @@ class CalibrationManager:
             return
         self._extrinsics[device_id] = extrinsics
 
+    def load_all_extrinsics(self, path: str = EXTRINSICS_FILENAME) -> None:
+        """Load ALL extrinsics entries from file into the internal cache."""
+        try:
+            with open(path) as f:
+                data = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self._logger.info("No extrinsics file at %s, skipping", path)
+            return
+
+        if not isinstance(data, list):
+            return
+
+        count = 0
+        from viki.calibration.file import read_device_extrinsics
+        for entry in data:
+            dev_id = entry.get("device_id") if isinstance(entry, dict) else None
+            if dev_id:
+                self.load_extrinsics(dev_id, path)
+                count += 1
+
+        if count:
+            self._logger.info(
+                "Loaded extrinsics for %d device(s): %s",
+                count, [e.get("device_id") for e in data if isinstance(e, dict)],
+            )
+
     def set_extrinsics(
         self, device_id: str, extrinsics: CalibrationExtrinsics, path: str = ""
     ) -> None:
@@ -470,6 +497,12 @@ class CalibrationManager:
             )
             return 0
         return worker.samples_count
+
+    def get_board_params(self):
+        """Return board parameters from the first active worker, or None."""
+        for w in self._workers.values():
+            return w.board_params
+        return None
 
     def status(self, device_id: str) -> dict:
         """

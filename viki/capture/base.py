@@ -136,6 +136,11 @@ class CameraBackend(ABC):
     ) -> tuple[float, float] | None:
         return None
 
+    def deproject_2d_to_3d(
+        self, u: float, v: float, z: float
+    ) -> tuple[float, float, float] | None:
+        return None
+
     # ------------------------------------------------------------------
     # Context manager — implemented here, no need to override
     # ------------------------------------------------------------------
