@@ -96,6 +96,9 @@ class SkeletonRecorder:
         if self._current_file is None:
             return None
 
+        # Sort frames by timestamp to ensure monotonic time series
+        self._frames.sort(key=lambda f: f.timestamp_us)
+
         all_ids = list(range(LM.N))
         landmark_ids = np.array(all_ids, dtype=np.int32)
         nan3 = np.full(3, np.nan, dtype=np.float32)

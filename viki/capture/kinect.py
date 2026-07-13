@@ -174,6 +174,28 @@ _lib.k4a_calibration_3d_to_3d.argtypes = [
     ctypes.POINTER(K4AFloat3),
 ]
 
+_lib.k4a_calibration_2d_to_2d.restype = ctypes.c_int
+_lib.k4a_calibration_2d_to_2d.argtypes = [
+    K4ACalibration,
+    ctypes.POINTER(K4AFloat2),
+    ctypes.c_float,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(K4AFloat2),
+    ctypes.POINTER(ctypes.c_int),
+]
+
+_lib.k4a_calibration_2d_to_3d.restype = ctypes.c_int
+_lib.k4a_calibration_2d_to_3d.argtypes = [
+    K4ACalibration,
+    ctypes.POINTER(K4AFloat2),
+    ctypes.c_float,
+    ctypes.c_int,
+    ctypes.c_int,
+    ctypes.POINTER(K4AFloat3),
+    ctypes.POINTER(ctypes.c_int),
+]
+
 
 # Calibration & transformation
 # K4ACalibration = ctypes.c_void_p
@@ -264,7 +286,7 @@ class KinectBackend(CameraBackend):
         align_depth_to_color: bool = False,  # bugged
         wired_sync_mode: int = K4A_WIRED_SYNC_MODE_STANDALONE,
         subordinate_delay_us: int = 0,
-        synchronized_images_only: bool = False,
+        synchronized_images_only: bool = True,
     ) -> None:
         if color_resolution not in _COLOR_RES_MAP:
             raise ValueError(
@@ -299,6 +321,9 @@ class KinectBackend(CameraBackend):
         self._handle: K4ADevice = K4ADevice(None)
         self._transform: K4ATransformation = K4ATransformation(None)
         self._calibration: K4ACalibration = K4ACalibration(None)
+        self._calibration_buf: ctypes.Array[ctypes.c_char] | None = None
+        self._color_intrinsics: CameraIntrinsics | None = None
+        self._depth_intrinsics: CameraIntrinsics | None = None
         self._serial_str: str = f"kinect_{device_index}"
         self._running = False
 
@@ -356,9 +381,18 @@ class KinectBackend(CameraBackend):
                 "WFOV_2X2BINNED": (512, 512),
             }.get(self._depth_mode, (640, 576))
             self._calibration = ctypes.cast(cal_buf, K4ACalibration)
+            self._calibration_buf = cal_buf  # keep buffer alive
+            # Cache intrinsics once at startup
+            self._color_intrinsics = self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR)
+            self._depth_intrinsics = self._get_intrinsics(K4A_CALIBRATION_TYPE_DEPTH)
+            if self._color_intrinsics.fx == 0 or self._depth_intrinsics.fx == 0:
+                _lib.k4a_device_close(self._handle)
+                raise RuntimeError(
+                    f"[{self._serial_str}] Failed to extract valid intrinsics from calibration."
+                )
         else:
-            logger.error(f"[{self._serial_str}] Failed to get calibration.")
-            self._align_depth = False
+            _lib.k4a_device_close(self._handle)
+            raise RuntimeError(f"[{self._serial_str}] Failed to get calibration.")
 
         self._running = True
 
@@ -405,6 +439,10 @@ class KinectBackend(CameraBackend):
             elif depth_img:
                 raw_depth = self._image_to_numpy_depth(depth_img)
                 aligned_depth = None
+                if np.all(raw_depth == 0):
+                    _lib.k4a_image_release(color_img)
+                    _lib.k4a_image_release(depth_img)
+                    raise TimeoutError("Depth frame is all zeros — dropped.")
             else:
                 # depth image missing in this capture — return zeros
                 h, w = self._depth_resolution[1], self._depth_resolution[0]
@@ -424,8 +462,8 @@ class KinectBackend(CameraBackend):
             aligned_depth=aligned_depth,
             timestamp_us=ts,
             device_id=self._serial_str,
-            color_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR),
-            depth_intrinsics=self._get_intrinsics(K4A_CALIBRATION_TYPE_DEPTH),
+            color_intrinsics=self._color_intrinsics,
+            depth_intrinsics=self._depth_intrinsics,
         )
 
     def get_validated_depth(
@@ -446,18 +484,51 @@ class KinectBackend(CameraBackend):
             return None
         return ud, vd, float(raw_depth[vi, ui])
 
-    def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
-        """Project a color pixel and depth into a depth image pixel."""
-        # Fallback using intrinsics and transform
-        ci = self._get_intrinsics(K4A_CALIBRATION_TYPE_COLOR)
-        x = (u - ci.cx) * z / ci.fx
-        y = (v - ci.cy) * z / ci.fy
-        
-        p_depth = self.transform_3d_to_3d(x, y, z, K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH)
-        if p_depth is None:
+    def deproject_2d_to_3d(self, u: float, v: float, z: float) -> tuple[float, float, float] | None:
+        """
+        Deproject a depth pixel (u, v) with depth z (metres) to 3D in depth camera space.
+        Uses SDK calibration (handles distortion).
+        """
+        if not self._calibration:
             return None
-            
-        return self.project_3d_to_2d(*p_depth, K4A_CALIBRATION_TYPE_DEPTH)
+
+        src = K4AFloat2(u, v)
+        dst = K4AFloat3()
+        valid = ctypes.c_int()
+
+        res = _lib.k4a_calibration_2d_to_3d(
+            self._calibration, ctypes.byref(src), z * 1000.0,
+            K4A_CALIBRATION_TYPE_DEPTH, K4A_CALIBRATION_TYPE_DEPTH,
+            ctypes.byref(dst), ctypes.byref(valid),
+        )
+
+        if res == K4A_RESULT_SUCCEEDED and valid.value:
+            return dst.x / 1000.0, dst.y / 1000.0, dst.z / 1000.0
+
+        return None
+
+    def project_color_to_depth(self, u: float, v: float, z: float) -> tuple[float, float] | None:
+        """Project a color pixel to a depth pixel using SDK calibration (distortion + extrinsics)."""
+        if not self._calibration:
+            logger.error(f"[{self._serial_str}] project_color_to_depth failed: no calibration handle")
+            return None
+
+        src = K4AFloat2(u, v)
+        dst = K4AFloat2()
+        valid = ctypes.c_int()
+
+        # SDK expects depth in millimetres
+        res = _lib.k4a_calibration_2d_to_2d(
+            self._calibration, ctypes.byref(src), z * 1000.0,
+            K4A_CALIBRATION_TYPE_COLOR, K4A_CALIBRATION_TYPE_DEPTH,
+            ctypes.byref(dst), ctypes.byref(valid),
+        )
+
+        if res == K4A_RESULT_SUCCEEDED and valid.value:
+            return dst.x, dst.y
+
+        logger.debug(f"[{self._serial_str}] SDK 2d_to_2d result={res}, valid={valid.value} for UV=({u}, {v})")
+        return None
 
     def project_3d_to_2d(self, x: float, y: float, z: float, cam_type: int) -> tuple[float, float] | None:
         """Project a 3D point in camera space to a 2D pixel. Coordinates in metres."""

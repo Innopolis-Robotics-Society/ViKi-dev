@@ -6,13 +6,33 @@ let skeletonWs = null;
 let skelPoints = []; // Current 3D points for the selected camera
 let selectedSkelCam = null;
 let smoothedCenter = null;
-let fixedSkelCenter = null; // Fixed center for camera projection
+let skelFollowEE = false; // Whether the 3D view follows the end effector
 let skelViewMode = 'projections'; // 'projections', 'isometric', or 'camera'
 let cameraExtrinsics = {}; // deviceId -> { rvec, tvec }
+let calibBoard = null; // { board_size, square_size } or null
+let calibCameras = null; // [{ device_id, rvec, tvec, fx, fy, cx, cy, ... }]
+let calibOverlayVisible = true;
 
 // Set by the calibration module after extrinsics calibration.
 export function setCameraExtrinsics(extrinsics) {
   cameraExtrinsics = extrinsics;
+}
+
+export function setCalibBoard(board) {
+  calibBoard = board;
+}
+
+export function setCalibCameras(cameras) {
+  calibCameras = cameras;
+}
+
+export function toggleCalibOverlay() {
+  calibOverlayVisible = !calibOverlayVisible;
+  drawSkeleton3D([], null);
+}
+
+function _calibVisible() {
+  return calibOverlayVisible && calibCameras && calibCameras.length > 0;
 }
 
 const SKEL_NAMES = ['Wrist', 'Thumb CMC', 'Thumb MCP', 'Thumb IP', 'Thumb Tip', 'Index MCP', 'Index PIP', 'Index DIP', 'Index Tip', 'Middle MCP', 'Middle PIP', 'Middle DIP', 'Middle Tip', 'Ring MCP', 'Ring PIP', 'Ring DIP', 'Ring Tip', 'Pinky MCP', 'Pinky PIP', 'Pinky DIP', 'Pinky Tip', 'Elbow', 'Shoulder'];
@@ -53,6 +73,13 @@ function populateSkelVizCams() {
   updateSkelVizCam();
 }
 
+export function toggleFollowEE() {
+  const select = document.getElementById('skel-follow-ee');
+  skelFollowEE = select?.value !== 'off';
+  smoothedCenter = null;
+  drawSkeleton3D([], null);
+}
+
 export function updateSkelVizCam() {
   selectedSkelCam = document.getElementById('skel-viz-cam')?.value;
   // Clear current viz if changing camera
@@ -78,8 +105,10 @@ function rodrigues(rvec) {
 
 function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
   if (!ee || !ee.valid) return;
-  const pos = ee.position;
+  // Skip axes when rotation is identity (fallback centroid — no meaningful orientation).
   const R = ee.R_world_palm;
+  if (!R || (R[0][1] === 0 && R[0][2] === 0 && R[1][0] === 0 && R[1][2] === 0 && R[2][0] === 0 && R[2][1] === 0)) return;
+  const pos = ee.position;
   const len = 0.05;
   const colors = ['#ff4444', '#44ff44', '#4488ff'];
   const labels = ['X', 'Y', 'Z'];
@@ -105,6 +134,46 @@ function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
   }
 }
 
+function _drawBoard(ctx, proj, cx, cy, scale) {
+  if (!calibOverlayVisible || !calibBoard) return;
+  const bs = calibBoard.board_size, ss = calibBoard.square_size;
+  if (!bs || bs.length < 2 || !ss) return;
+  const bw = bs[0] * ss, bh = bs[1] * ss;
+  const corners = [
+    [-bw / 2, -bh / 2, 0], [bw / 2, -bh / 2, 0],
+    [bw / 2, bh / 2, 0], [-bw / 2, bh / 2, 0],
+  ];
+  const pts = corners.map(p => proj(p));
+  if (pts.some(p => !p)) return;
+  ctx.strokeStyle = 'rgba(255,255,100,0.5)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(cx + pts[0].x * scale, cy - pts[0].y * scale);
+  for (let i = 1; i < 4; i++)
+    ctx.lineTo(cx + pts[i].x * scale, cy - pts[i].y * scale);
+  ctx.closePath();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,100,0.08)';
+  ctx.fill();
+}
+
+function _drawCameras(ctx, proj, cx, cy, scale) {
+  if (!_calibVisible()) return;
+  const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
+  calibCameras.forEach((cam, i) => {
+    const p = proj(cam.tvec);
+    if (!p) return;
+    const col = colors[i % colors.length];
+    const px = cx + p.x * scale, py = cy - p.y * scale;
+    ctx.fillStyle = col;
+    ctx.beginPath();
+    ctx.arc(px, py, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.font = '9px SF Mono';
+    ctx.fillText(cam.device_id, px + 5, py + 3);
+  });
+}
+
 function drawSkeleton3D(landmarks, endEffector) {
   const canvas = document.getElementById('skel-canvas-3d');
   if (!canvas) return;
@@ -119,20 +188,22 @@ function drawSkeleton3D(landmarks, endEffector) {
   const scale = canvas.width / 5;
   let projCenter = { x: 0, y: 0, z: 0 };
 
-  if (endEffector && endEffector.valid) {
-    projCenter = {
-      x: endEffector.position[0],
-      y: endEffector.position[1],
-      z: endEffector.position[2],
-    };
-  } else if (landmarks && landmarks.length > 0) {
-    const valid = landmarks.map((p, i) => (p && !isNaN(p[0]) && !isNaN(p[1]) && !isNaN(p[2]) && p[2] > 0.1) ? i : -1).filter(i => i >= 0);
-    if (valid.length > 0) {
+  if (skelFollowEE) {
+    if (endEffector && endEffector.valid) {
       projCenter = {
-        x: valid.reduce((s, i) => s + landmarks[i][0], 0) / valid.length,
-        y: valid.reduce((s, i) => s + landmarks[i][1], 0) / valid.length,
-        z: valid.reduce((s, i) => s + landmarks[i][2], 0) / valid.length,
+        x: endEffector.position[0],
+        y: endEffector.position[1],
+        z: endEffector.position[2],
       };
+    } else if (landmarks && landmarks.length > 0) {
+      const valid = landmarks.map((p, i) => (p && !isNaN(p[0]) && !isNaN(p[1]) && !isNaN(p[2]) && p[2] > 0.1) ? i : -1).filter(i => i >= 0);
+      if (valid.length > 0) {
+        projCenter = {
+          x: valid.reduce((s, i) => s + landmarks[i][0], 0) / valid.length,
+          y: valid.reduce((s, i) => s + landmarks[i][1], 0) / valid.length,
+          z: valid.reduce((s, i) => s + landmarks[i][2], 0) / valid.length,
+        };
+      }
     }
   }
 
@@ -168,6 +239,8 @@ function drawSkeleton3D(landmarks, endEffector) {
         ctx.fill();
       }
       drawWristAxes(ctx, endEffector, view.proj, cx, cy, scale);
+      _drawBoard(ctx, view.proj, cx, cy, scale);
+      _drawCameras(ctx, view.proj, cx, cy, scale);
     });
   } else if (skelViewMode === 'isometric') {
     const cx = canvas.width / 2, cy = canvas.height / 2;
@@ -194,6 +267,8 @@ function drawSkeleton3D(landmarks, endEffector) {
       ctx.fill();
     }
     drawWristAxes(ctx, endEffector, projectIso, cx, cy, scale);
+    _drawBoard(ctx, projectIso, cx, cy, scale);
+    _drawCameras(ctx, projectIso, cx, cy, scale);
   } else if (skelViewMode === 'camera') {
     const extrins = cameraExtrinsics[selectedSkelCam];
     if (!extrins) {
@@ -214,6 +289,26 @@ function drawSkeleton3D(landmarks, endEffector) {
       if (wp) { ctx.beginPath(); ctx.arc(cx + wp.x * scale, cy - wp.y * scale, 4, 0, Math.PI * 2); ctx.fill(); }
     }
     drawWristAxes(ctx, endEffector, projectCam, cx, cy, scale);
+    if (calibOverlayVisible) {
+      _drawBoard(ctx, projectCam, cx, cy, scale);
+    }
+    if (calibOverlayVisible && calibCameras && calibCameras.length > 0) {
+      const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
+      calibCameras.forEach((cam, i) => {
+        const p = projectCam(cam.tvec);
+        if (!p) return;
+        const col = colors[i % colors.length];
+        const px = cx + p.x * scale, py = cy - p.y * scale;
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(px, py, 5, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.font = '9px SF Mono';
+        ctx.fillStyle = col;
+        ctx.fillText(cam.device_id, px + 6, py + 3);
+      });
+    }
   }
 }
 
@@ -249,6 +344,12 @@ export function toggleSkeleton() {
   if (!isVisible) {
     populateSkelVizCams();
     updateSkelStatus();
+    if (!calibCameras) {
+      api('GET', '/api/calibration/viz').then(viz => {
+        if (viz.board) setCalibBoard(viz.board);
+        if (viz.cameras && viz.cameras.length > 0) setCalibCameras(viz.cameras);
+      }).catch(() => {});
+    }
   }
 }
 
@@ -328,7 +429,8 @@ function startSkelStream() {
     const detEl = document.getElementById('skeleton-detections');
     if (detEl) {
       const statusHtml = Object.keys(state).map(id => {
-        const detected = !!detections[id];
+        const det = detections[id];
+        const detected = det && Object.keys(det).length > 0;
         return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
       }).join('');
       detEl.innerHTML = statusHtml;

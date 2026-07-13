@@ -180,8 +180,8 @@ def read_device_extrinsics(
 
     for entry in data:
         if entry.get("device_id") == device_id:
-            rvec = np.array(entry.get("rvec", [0.0] * 3))
-            tvec = np.array(entry.get("tvec", [0.0] * 3))
+            rvec = np.array(entry.get("rvec", [0.0] * 3)).flatten()
+            tvec = np.array(entry.get("tvec", [0.0] * 3)).flatten()
 
             return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
 

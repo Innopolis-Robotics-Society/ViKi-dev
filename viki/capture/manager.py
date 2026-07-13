@@ -8,11 +8,14 @@ available for non-blocking reads by the MJPEG streamer.
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 import numpy as np
 from collections import deque
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 from concurrent.futures import ThreadPoolExecutor
 
 from viki.capture.base import Frame, CameraBackend
@@ -74,7 +77,10 @@ class _CameraWorker:
                     with self._lock:
                         self._buffer.append(frame)
                 except TimeoutError:
-                    pass  # short timeout, check stop_event and retry
+                    logger.warning(
+                        "[%s] get_frame timed out — frame dropped",
+                        self.backend.device_id,
+                    )
                 except Exception as exc:
                     print(f"[worker:{self.backend.device_id}] error: {exc}")
                     time.sleep(0.1)

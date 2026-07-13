@@ -1,6 +1,6 @@
 // Camera calibration: board params, per-device streams, capture, extrinsics.
 import { api, log, state, FRONTEND_CONFIG } from './core.js';
-import { setCameraExtrinsics } from './skeleton.js';
+import { setCameraExtrinsics, setCalibBoard, setCalibCameras } from './skeleton.js';
 
 const ARUCO_DICTS = [
   'DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
@@ -223,6 +223,14 @@ export async function extrinsicsCalibration() {
       extrinsics[extr.device_id] = { rvec: extr.rvec, tvec: extr.tvec };
     });
     setCameraExtrinsics(extrinsics);
+
+    // Fetch viz data for the 3D skeleton panel (board + camera frames)
+    try {
+      const viz = await api('GET', '/api/calibration/viz');
+      setCalibBoard(viz.board);
+      setCalibCameras(viz.cameras);
+    } catch { /* non-critical */ }
+
     log('Extrinsics calibration successful', 'ok');
   } catch (e) {
     log(`Extrinsics calibration failed: ${e}`, 'error');

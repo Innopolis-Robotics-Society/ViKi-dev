@@ -14,7 +14,7 @@
   "DEFAULT_SYNCHRONIZED_IMAGES_ONLY": false,
   "FRAME_BUFFER_SIZE": 12,
   "RECORD_DEPTH": false,
-  "DEPTH_PROJECTION_DEBUG": true,
+  "DEPTH_PROJECTION_DEBUG": false,
   "SKELETON_DEPTH_SAMP_RADIUS": 15,
   "SKELETON_DEPTH_BASE_DIR": "data/depth_bases/",
   "SKELETON_ENABLE_DEPTH_VALIDATION": true,
@@ -83,5 +83,27 @@
   "RETARGET_JOINT_SG_POLYORDER": 3,
   "RETARGET_RECENTER_TO_NEUTRAL": true,
   "RETARGET_TRAJECTORY_SCALE": 0.25,
+  "RETARGET_BASE_TRANSLATION": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "RETARGET_BASE_ROTATION": [
+    [
+      0.0,
+      0.0,
+      1.0
+    ],
+    [
+      1.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      -1.0,
+      0.0
+    ]
+  ],
   "MODELS_DIR": "models/"
 }

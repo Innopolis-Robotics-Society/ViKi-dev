@@ -101,6 +101,11 @@ class SkeletonProcessor:
             points = data["points"]
             landmark_ids = data["landmark_ids"]
 
+        # Sort by timestamp to ensure monotonic time series for smoothing and plotting
+        sort_idx = np.argsort(timestamps)
+        timestamps = timestamps[sort_idx]
+        points = points[sort_idx]
+
         if points.size == 0:
             raise ValueError("Recording file is empty.")
 
@@ -149,6 +154,7 @@ class SkeletonProcessor:
             valid=valid,
             timestamps=timestamps,
             raw_points=points.astype(np.float32),
+            smoothed_points=smoothed_points.astype(np.float32),
             landmark_ids=landmark_ids,
         )
 
