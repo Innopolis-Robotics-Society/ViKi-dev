@@ -30,6 +30,8 @@ from viki.server.routes import (
     skeleton,
     recording,
     system,
+    optimization,
+    dataset,
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -79,15 +81,8 @@ app.include_router(calibration.router)
 app.include_router(skeleton.router)
 app.include_router(system.router)
 app.include_router(recording.router)
-
-# ponytail: optimization/dataset pull optional heavy deps (h5py, pinocchio, ...) that
-# may be absent from the image. Load them gracefully so a missing optional dep doesn't
-# kill the whole server — install the deps to re-enable these routers.
-for _name in ("optimization", "dataset"):
-    try:
-        app.include_router(import_module(f"viki.server.routes.{_name}").router)
-    except Exception as exc:
-        logging.getLogger(__name__).warning("Optional router %r disabled: %s", _name, exc)
+app.include_router(optimization.router)
+app.include_router(dataset.router)
 
 
 @app.get("/", response_class=HTMLResponse)
