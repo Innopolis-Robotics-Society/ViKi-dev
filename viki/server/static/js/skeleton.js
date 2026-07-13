@@ -78,8 +78,10 @@ function rodrigues(rvec) {
 
 function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
   if (!ee || !ee.valid) return;
-  const pos = ee.position;
+  // Skip axes when rotation is identity (fallback centroid — no meaningful orientation).
   const R = ee.R_world_palm;
+  if (!R || (R[0][1] === 0 && R[0][2] === 0 && R[1][0] === 0 && R[1][2] === 0 && R[2][0] === 0 && R[2][1] === 0)) return;
+  const pos = ee.position;
   const len = 0.05;
   const colors = ['#ff4444', '#44ff44', '#4488ff'];
   const labels = ['X', 'Y', 'Z'];
@@ -328,7 +330,8 @@ function startSkelStream() {
     const detEl = document.getElementById('skeleton-detections');
     if (detEl) {
       const statusHtml = Object.keys(state).map(id => {
-        const detected = !!detections[id];
+        const det = detections[id];
+        const detected = det && Object.keys(det).length > 0;
         return `<div style="color: ${detected ? 'var(--green)' : 'var(--red)'}">${id}: ${detected ? 'Detected' : 'Not Detected'}</div>`;
       }).join('');
       detEl.innerHTML = statusHtml;

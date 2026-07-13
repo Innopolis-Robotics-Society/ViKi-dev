@@ -11,52 +11,22 @@ relative z coordinate.
 
 from __future__ import annotations
 from typing import Any, Optional
-from time import sleep, time
-import random
-from concurrent.futures import ThreadPoolExecutor
+from time import time
 
 import numpy as np
 import logging
-import os
 
-from viki.config import SKELETON_DEPTH_SAMP_RADIUS, SKELETON_ENABLE_DEPTH_VALIDATION, DEPTH_PROJECTION_DEBUG, SKELETON_DEPTH_SUBTRACT_THRESHOLD # type: ignore
+from viki.config import (
+    SKELETON_DEPTH_SAMP_RADIUS,
+    SKELETON_DEPTH_SUBTRACT_THRESHOLD,
+    DEPTH_PROJECTION_DEBUG,
+)
+
 logger = logging.getLogger(__name__)
-
 
 from viki.skeleton.models import HandDetection, Landmarks3D, LM, PreparedFrame
 
-
 _last_depth_viz_time = 0.0
-_last_known_z = {LM(i): 1.0 for i in range(LM.N)}
-_viz_executor = ThreadPoolExecutor(max_workers=1)
-
-
-def weighted_median(values: np.ndarray, weights: np.ndarray) -> float:
-    """
-    Compute the weighted median of a 1D array.
-
-    Parameters
-    ----------
-    values : np.ndarray
-        1D array of values.
-    weights : np.ndarray
-        1D array of non‑negative weights (same length).
-
-    Returns
-    -------
-    float
-        Weighted median; returns NaN if `values` is empty.
-    """
-    if values.size == 0:
-        return np.nan
-    idx = np.argsort(values)
-    sorted_vals = values[idx]
-    sorted_weights = weights[idx]
-    cum_weights = np.cumsum(sorted_weights)
-    total_weight = cum_weights[-1]
-    if total_weight <= 0:
-        return float(np.median(values))
-    return float(sorted_vals[np.searchsorted(cum_weights, total_weight / 2)])
 
 
 def _pixel_to_3d(
@@ -74,11 +44,11 @@ def _pixel_to_3d(
     Parameters
     ----------
     u, v : float
-        Pixel coordinates (colour image).
+        Pixel coordinates (depth image).
     Z : float
         Depth value in metres.
     fx, fy, cx, cy : float
-        Intrinsic parameters.
+        Intrinsic parameters (depth camera).
 
     Returns
     -------
@@ -90,50 +60,28 @@ def _pixel_to_3d(
     return np.array([X, Y, Z], dtype=np.float32)
 
 
-def color_to_depth_pixel(u: float, v: float, Z: float, K: np.ndarray, backend: Any, raw_depth: np.ndarray, aligned_depth: Optional[np.ndarray] = None) -> tuple[float, float, float] | None:
+def lift_to_3d(
+    detection: HandDetection, frame: PreparedFrame, backend: Any
+) -> Landmarks3D:
     """
-    Maps a pixel from the color camera to the depth camera coordinate space,
-    validated against the SDK's estimation if available.
+    Deproject all pixel landmarks into 3‑D camera space.
 
-    Parameters
-    ----------
-    u, v : float
-        Colour pixel coordinates.
-    Z : float
-        Estimated depth in metres.
-    K : np.ndarray
-        3x3 colour intrinsic matrix.
-    backend : Any
-        Camera backend (KinectBackend) with projection methods.
-    raw_depth : np.ndarray
-        Raw depth image (uint16 mm).
-    aligned_depth : Optional[np.ndarray], optional
-        SDK‑aligned depth (not used in current implementation).
-
-    Returns
-    -------
-    tuple[float, float, float] or None
-        (u_depth, v_depth, final_z) or None if projection fails.
-    """
-    return backend.get_validated_depth(u, v, Z, raw_depth, aligned_depth)
-
-def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> Landmarks3D:
-    """
-    Deproject all 23 pixel landmarks into 3‑D camera space using converge/diverge priority.
-
-    This function uses the depth map and (optionally) background subtraction
-    to estimate the 3D position of each landmark. It also uses `backend` methods
-    to project colour pixels to depth pixels with SDK calibration.
+    For each landmark:
+      1. Project the color pixel (u, v) to depth-camera space via the
+         SDK's built-in calibration (handles parallax).
+      2. Sample a circular ROI at the projected location in the depth map,
+         with optional background‑subtraction filtering.
+      3. Take the median of valid depths → Z.
+      4. Deproject (u_depth, v_depth, Z) with *depth* intrinsics → (X, Y, Z).
 
     Parameters
     ----------
     detection : HandDetection
         2D landmark detections (pixel coordinates) from MediaPipe.
     frame : PreparedFrame
-        Prepared frame with depth_m (metres), K, and optional base_depth_m.
+        Prepared frame with depth_m (metres), depth_K, and optional base_depth_m.
     backend : Any
-        Camera backend (e.g., KinectBackend) that provides `get_validated_depth`
-        and `project_color_to_depth`.
+        Camera backend providing ``project_color_to_depth``.
 
     Returns
     -------
@@ -141,185 +89,107 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> 
         3D landmarks in camera coordinates.
     """
     global _last_depth_viz_time
-    K = frame.K
+
+    # Depth intrinsics (fall back to colour if not available)
+    K = frame.depth_K if frame.depth_K is not None else frame.K
     fx, fy = K[0, 0], K[1, 1]
     cx, cy = K[0, 2], K[1, 2]
+
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
 
-    # Determine if we should visualize this frame (once per second)
+    # Viz throttle: one debug frame per second
     now = time()
-    should_viz_this_frame = False
-    if DEPTH_PROJECTION_DEBUG and (now - _last_depth_viz_time > 1.0):
-        should_viz_this_frame = True
+    should_viz = DEPTH_PROJECTION_DEBUG and (now - _last_depth_viz_time > 1.0)
+    if should_viz:
         _last_depth_viz_time = now
 
-    # 1. Calculate MediaPipe Z scale (Z_est)
     points = {LM(idx): np.full(3, np.nan, dtype=np.float32) for idx in range(LM.N)}
-    
     viz_data = []
-    arm_chain = (LM.SHOULDER, LM.ELBOW, LM.WRIST)
+    r = SKELETON_DEPTH_SAMP_RADIUS
 
     for i in range(LM.N):
         u, v = detection.points[LM(i)][0], detection.points[LM(i)][1]
         if np.isnan(u) or np.isnan(v):
             continue
 
-        # --- Source 1: Deterministic Projection (Z_proj) ---
         Z_proj = np.nan
-        z_guess = 1.0 
-        if SKELETON_ENABLE_DEPTH_VALIDATION:
-            r = SKELETON_DEPTH_SAMP_RADIUS
-            
-            # 1. Project color (u, v) to depth (ud, vd)
-            proj_res = backend.project_color_to_depth(u, v, z_guess)
-            
-            if proj_res is None:
-                logger.debug(f"LM {i}: Projection failed for ({u}, {v})")
-                continue
-                
-            ud, vd = proj_res
-            ru, rv = int(round(ud)), int(round(vd))
-            v_start, v_end = max(0, rv - r), max(0, min(h, rv + r + 1))
-            u_start, u_end = max(0, ru - r), max(0, min(w, ru + r + 1))
-            
-            current_roi = depth_m[v_start:v_end, u_start:u_end]
-            if frame.base_depth_m is not None:
-                base_roi = frame.base_depth_m[v_start:v_end, u_start:u_end]
-                if base_roi.shape == current_roi.shape:
-                    diff_roi = np.maximum(0, base_roi - current_roi)
-                else:
-                    logger.warning(f"LM {i}: base_roi shape {base_roi.shape} != current_roi shape {current_roi.shape}. Using current_roi.")
-                    diff_roi = current_roi
+        z_guess = 1.0
+
+        # 1. Project color pixel to depth-camera space
+        proj_res = backend.project_color_to_depth(u, v, z_guess)
+        if proj_res is None:
+            logger.debug(f"LM {i}: projection failed for ({u}, {v})")
+            continue
+
+        ud, vd = proj_res
+        ru, rv = int(round(ud)), int(round(vd))
+
+        # 2. Circular ROI around the projected depth pixel
+        v_start, v_end = max(0, rv - r), min(h, rv + r + 1)
+        u_start, u_end = max(0, ru - r), min(w, ru + r + 1)
+        roi = depth_m[v_start:v_end, u_start:u_end]
+
+        if roi.size == 0:
+            continue
+
+        # 3. Background subtraction (if a base depth map exists)
+        if frame.base_depth_m is not None:
+            base_roi = frame.base_depth_m[v_start:v_end, u_start:u_end]
+            if base_roi.shape == roi.shape:
+                diff = np.maximum(0, base_roi - roi)
             else:
-                diff_roi = current_roi
+                diff = roi
+        else:
+            diff = roi
 
-            if diff_roi.size == 0:
-                logger.debug(f"LM {i}: ROI empty at ({ru}, {rv}) - skipping")
-                continue
+        # Circular mask
+        roi_h, roi_w = diff.shape
+        vv, uu = np.meshgrid(np.arange(roi_h), np.arange(roi_w), indexing="ij")
+        circ = (vv + v_start - rv) ** 2 + (uu + u_start - ru) ** 2 <= r ** 2
 
-            roi_h, roi_w = diff_roi.shape
-            vv_rel, uu_rel = np.meshgrid(np.arange(roi_h), np.arange(roi_w), indexing='ij')
-            
-            # Calculate distances using absolute coordinates derived from relative grid + offsets
-            mask = (vv_rel + v_start - rv)**2 + (uu_rel + u_start - ru)**2 <= r**2
-            
-            # Sample absolute depth from current_roi where diff_roi is positive (object present)
-            # and it's within the circular mask.
-            valid_mask = mask & ~np.isnan(current_roi) & (diff_roi > SKELETON_DEPTH_SUBTRACT_THRESHOLD)
-            valid_vals = current_roi[valid_mask]
-            
-            if valid_vals.size > 0:
-                # Use a hard threshold based on the difference intensity to isolate the object.
-                # We take the max and min of the differences in the ROI and discard points below the average.
-                valid_diffs = diff_roi[valid_mask]
-                avg_diff = (np.max(valid_diffs) + np.min(valid_diffs)) / 2
-                
-                # Only keep points that are 'bright' enough (significantly closer than background)
-                object_mask_flat = valid_diffs >= avg_diff
-                filtered_depths = valid_vals[object_mask_flat]
-                
-                if filtered_depths.size > 0:
-                    Z_proj = np.median(filtered_depths)
-                    # Create a full-ROI mask for the filtered pixels
-                    final_mask = np.zeros_like(valid_mask, dtype=bool)
-                    # valid_mask is a 1D array of coordinates? No, it's the boolean mask.
-                    # We need to map object_mask_flat back to the ROI shape.
-                    # valid_mask is the mask used to get valid_vals.
-                    # So we can just use it to index.
-                    # But we need a boolean mask of the same shape as current_roi.
-                    
-                    # Reconstruct the mask for current_roi
-                    full_object_mask = np.zeros_like(current_roi, dtype=bool)
-                    # valid_mask.nonzero() gives indices of True values.
-                    # object_mask_flat indices correspond to valid_mask's True values.
-                    valid_indices = np.where(valid_mask)
-                    object_indices = np.where(object_mask_flat)[0]
-                    
-                    # Map object_indices back to original ROI indices
-                    target_v = valid_indices[0][object_indices]
-                    target_u = valid_indices[1][object_indices]
-                    full_object_mask[target_v, target_u] = True
-                    search_mask = full_object_mask
-                else:
-                    # Fallback to original median if filtering removes everything
-                    Z_proj = np.median(valid_vals)
-                    search_mask = valid_mask
-                
-                _last_known_z[LM(i)] = float(Z_proj)
+        # Valid: inside circle, not NaN, and above subtraction threshold
+        valid = circ & ~np.isnan(roi) & (diff > SKELETON_DEPTH_SUBTRACT_THRESHOLD)
+        vals = roi[valid]
 
-                # Find the pixel that provided the median for visualization
-                median_pixel = None
-                if not np.isnan(Z_proj):
-                    diff_to_med = np.abs(current_roi - Z_proj)
-                    diff_to_med[~search_mask] = np.inf
-                    idx = np.argmin(diff_to_med)
-                    median_pixel = np.unravel_index(idx, current_roi.shape)
+        if vals.size > 0:
+            # Filter to foreground — keep values above avg difference
+            diffs = diff[valid]
+            threshold = (np.max(diffs) + np.min(diffs)) / 2
+            foreground = diffs >= threshold
+            filtered = vals[foreground]
+
+            if filtered.size > 0:
+                Z_proj = float(np.median(filtered))
             else:
-                logger.debug(f"LM {i}: No valid depth in masked ROI at ({ru}, {rv})")
-                Z_proj = np.nan
-                median_pixel = None
+                Z_proj = float(np.median(vals))
 
+        if not np.isnan(Z_proj):
+            points[LM(i)] = _pixel_to_3d(ud, vd, Z_proj, fx, fy, cx, cy)
 
-            if DEPTH_PROJECTION_DEBUG and should_viz_this_frame and LM(i) in arm_chain:
-                status = "SUCCESS" if valid_vals.size > 0 else "NO_VALID_DEPTH"
-                
-                # Final guess projection for the yellow dot
-                final_ud, final_vd = ud, vd
-                z_for_dot = Z_proj if not np.isnan(Z_proj) else _last_known_z[LM(i)]
-                res_final = backend.project_color_to_depth(u, v, float(z_for_dot))
-                if res_final:
-                    final_ud, final_vd = res_final
-                
-                viz_data.append({
+        # Debug viz (arm landmarks only, once per second)
+        if should_viz and LM(i) in (LM.SHOULDER, LM.ELBOW, LM.WRIST):
+            status = "OK" if vals.size > 0 else "NO_DEPTH"
+            z_dot = Z_proj if not np.isnan(Z_proj) else 1.0
+            final = backend.project_color_to_depth(u, v, z_dot)
+            fud, fvd = final if final else (ud, vd)
+            viz_data.append(
+                {
                     "name": f"{LM(i).name}_{status}",
-                    "u": u, "v": v, "ud": final_ud, "vd": final_vd, "r": r,
+                    "u": u, "v": v, "ud": fud, "vd": fvd, "r": r,
                     "v_start": v_start, "v_end": v_end,
                     "u_start": u_start, "u_end": u_end,
-                    "diff_roi": diff_roi,
+                    "diff_roi": diff,
                     "z_proj": Z_proj,
-                    "median_pixel": median_pixel,
-                })
+                }
+            )
 
-        else:
-            for _ in range(3):
-                res = color_to_depth_pixel(u, v, z_guess, K, backend, depth_m, frame.aligned_depth)
-                if res is None:
-                    break
-                
-                ud, vd, z_val = res
-                ui, vi = int(round(ud)), int(round(vd))
-                
-                if not (0 <= vi < h and 0 <= ui < w):
-                    break
-                    
-                # Sample depth in a 3x3 window for refinement
-                v_start, v_end = max(0, vi - 1), min(h, vi + 2)
-                u_start, u_end = max(0, ui - 1), min(w, ui + 2)
-                window = depth_m[v_start:v_end, u_start:u_end]
-                valid_window = window[~np.isnan(window)]
-                
-                if valid_window.size > 0:
-                    Z_proj = np.median(valid_window)
-                    z_guess = float(Z_proj)
-                else:
-                    Z_proj = np.nan
-                    break
-        
-        Z_final = Z_proj
-
-        if not np.isnan(Z_final):
-            points[LM(i)] = _pixel_to_3d(u, v, float(Z_final), fx, fy, cx, cy)
-
-    # Save multi-joint visualization if data was collected
     if viz_data:
         from viki.skeleton.viz import visualize_depth_subtraction
-        # Offload plotting to background thread to prevent pipeline freezes
-        _viz_executor.submit(
-            visualize_depth_subtraction,
+        visualize_depth_subtraction(
             base_depth=frame.base_depth_m,
             current_depth=depth_m,
-            landmark_data=viz_data
+            landmark_data=viz_data,
         )
 
     return Landmarks3D(
@@ -327,30 +197,3 @@ def lift_to_3d(detection: HandDetection, frame: PreparedFrame, backend: Any) -> 
         device_id=detection.device_id,
         timestamp_us=detection.timestamp_us,
     )
-
-
-def calculate_pitch(wrist_point, middle_finger_points):
-    """
-    Calculate pitch angle of the hand relative to world coordinates.
-    Placeholder – not implemented.
-    """
-    pass
-
-def calculate_yaw(wrist_point, middle_finger_points):
-    """
-    Calculate yaw angle of the hand relative to world coordinates.
-    Placeholder – not implemented.
-    """
-    pass
-
-def calculate_roll(wrist_point, thumbs_points):
-    """
-    Calculate roll angle of the hand relative to world coordinates.
-    Placeholder – not implemented.
-    """
-    pass
-
-'''flexion/extension — сгибание/разгибание
-radial/ulnar deviation — отведение в стороны
-pronation/supination — ключевой поворот кисти'''
-

@@ -9,6 +9,7 @@ x-common: &common
     - /dev:/dev
     - /run/udev:/run/udev:ro
     - /tmp/.X11-unix:/tmp/.X11-unix
+    - ./tests:/app/tests
     - ./data:/app/data
     - ./viki:/app/viki
     - ./scripts:/app/scripts
