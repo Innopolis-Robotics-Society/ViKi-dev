@@ -8,14 +8,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 import numpy as np
+from viki.config import RETARGET_BASE_ROTATION
 
 from viki.optimization.optimization.retarget_rgb_only import (
-    R_DEFAULT,
+    HAND_WRIST_CLUSTER,
     align_rotations_to_initial,
     build_direct_rotation_targets,
     build_targets,
     build_parser,
     build_run_config,
+    compute_hand_center_position,
     effective_orientation_cost,
     fill_invalid_rotations,
     load_landmarks,
@@ -104,16 +106,27 @@ class RetargetLogicTests(unittest.TestCase):
 
     def test_hand_se3_targets_use_palm_frame_orientation(self) -> None:
         body = np.zeros((1, 33, 3), dtype=np.float64)
-        body[0, 16] = [1.0, 2.0, 3.0]
+        body[0, 16] = [99.0, 99.0, 99.0]
         hand = np.zeros((1, 21, 3), dtype=np.float64)
         hand[0, 0] = [1.0, 2.0, 3.0]
         hand[0, 1] = [1.0, 3.0, 3.0]
+        hand[0, 5] = [1.0, 2.0, 3.0]
         hand[0, 9] = [2.0, 2.0, 3.0]
+        hand[0, 13] = [1.0, 2.0, 3.0]
+        hand[0, 17] = [1.0, 2.0, 3.0]
 
         targets, valid = build_targets(FakePin, body, hand, "right")
 
+        expected_pos = np.mean([
+            [1.0, 2.0, 3.0],
+            [1.0, 3.0, 3.0],
+            [1.0, 2.0, 3.0],
+            [2.0, 2.0, 3.0],
+            [1.0, 2.0, 3.0],
+            [1.0, 2.0, 3.0],
+        ], axis=0)
         self.assertTrue(bool(valid[0]))
-        np.testing.assert_allclose(targets[0].translation, [1.0, 2.0, 3.0])
+        np.testing.assert_allclose(targets[0].translation, expected_pos)
         np.testing.assert_allclose(targets[0].rotation[:, 0], [1.0, 0.0, 0.0])
         np.testing.assert_allclose(targets[0].rotation[:, 1], [0.0, 1.0, 0.0])
         np.testing.assert_allclose(targets[0].rotation[:, 2], [0.0, 0.0, 1.0])
@@ -126,6 +139,44 @@ class RetargetLogicTests(unittest.TestCase):
         np.testing.assert_allclose(filled[1], valid_rotation)
         np.testing.assert_allclose(filled[2], valid_rotation)
         np.testing.assert_array_equal(valid, [False, True, False])
+
+    def test_compute_hand_center_position_averages_cluster(self) -> None:
+        hand = np.zeros((1, 21, 3), dtype=np.float64)
+        hand[0, 0] = [0.0, 0.0, 0.0]
+        hand[0, 1] = [2.0, 0.0, 0.0]
+        hand[0, 5] = [0.0, 2.0, 0.0]
+        hand[0, 9] = [0.0, 0.0, 2.0]
+        hand[0, 13] = [2.0, 2.0, 0.0]
+        hand[0, 17] = [0.0, 2.0, 2.0]
+
+        center = compute_hand_center_position(hand[0])
+        expected = np.mean([[0, 0, 0], [2, 0, 0], [0, 2, 0], [0, 0, 2], [2, 2, 0], [0, 2, 2]], axis=0)
+        np.testing.assert_allclose(center, expected)
+
+    def test_compute_hand_center_position_skips_nan_landmarks(self) -> None:
+        hand = np.zeros((1, 21, 3), dtype=np.float64)
+        hand[0, 0] = [1.0, 2.0, 3.0]
+        hand[0, 1] = [np.nan, np.nan, np.nan]
+        hand[0, 5] = [1.0, 2.0, 3.0]
+        hand[0, 9] = [1.0, 2.0, 3.0]
+        hand[0, 13] = [1.0, 2.0, 3.0]
+        hand[0, 17] = [1.0, 2.0, 3.0]
+
+        center = compute_hand_center_position(hand[0])
+        np.testing.assert_allclose(center, [1.0, 2.0, 3.0])
+
+    def test_build_targets_ignores_body_wrist(self) -> None:
+        body = np.zeros((1, 33, 3), dtype=np.float64)
+        body[0, 16] = [99.0, 99.0, 99.0]
+        hand = np.zeros((1, 21, 3), dtype=np.float64)
+        for idx in HAND_WRIST_CLUSTER:
+            hand[0, idx] = [1.0, 2.0, 3.0]
+        hand[0, 1] = [1.0, 3.0, 3.0]
+        hand[0, 9] = [2.0, 2.0, 3.0]
+
+        targets, valid = build_targets(FakePin, body, hand, "right")
+
+        self.assertFalse(np.allclose(targets[0].translation, [99.0, 99.0, 99.0]))
 
     def test_hand_se3_targets_respect_orientation_valid_hint(self) -> None:
         body = np.zeros((2, 33, 3), dtype=np.float64)
@@ -382,8 +433,8 @@ class RetargetLogicTests(unittest.TestCase):
             ):
                 loaded_body, loaded_hand, _ = load_landmarks(path, "right", 3, 1, None)
 
-            np.testing.assert_allclose(loaded_body, transform_points(body, R_DEFAULT))
-            np.testing.assert_allclose(loaded_hand, transform_points(hand, R_DEFAULT))
+            np.testing.assert_allclose(loaded_body, transform_points(body, RETARGET_BASE_ROTATION))
+            np.testing.assert_allclose(loaded_hand, transform_points(hand, RETARGET_BASE_ROTATION))
 
     def test_zero_landmark_sg_window_skips_smoothing(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
