@@ -25,6 +25,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from viki.skeleton.hand_angles import compute_palm_rotation
+import viki.config as viki_config
 from viki.config import MODELS_DIR
 
 try:
@@ -69,6 +70,12 @@ R_DEFAULT = np.array(
 )
 T_DEFAULT = np.zeros(3, dtype=np.float64)
 R_REFLECTION_FIX = np.diag([1.0, 1.0, -1.0])
+ROBOT_BASE_OFFSET = np.array(
+    getattr(viki_config, "ROBOT_BASE_OFFSET", [0.0, 0.0, 0.0]), dtype=np.float64,
+)
+TARGET_OFFSET = np.array(
+    getattr(viki_config, "TARGET_OFFSET", [0.0, 0.0, 0.0]), dtype=np.float64,
+)
 
 
 @dataclass(frozen=True)
@@ -359,8 +366,8 @@ def load_landmarks(
         body_robot = transform_points(body)
         hand_robot = transform_points(hand)
     else:
-        body_robot = body.copy()
-        hand_robot = hand.copy()
+        body_robot = body + TARGET_OFFSET - ROBOT_BASE_OFFSET
+        hand_robot = hand + TARGET_OFFSET - ROBOT_BASE_OFFSET
     if landmark_sg_window <= 0:
         return body_robot.copy(), hand_robot.copy(), fps
 
@@ -460,6 +467,8 @@ def load_smoothed_targets(
     if should_apply_legacy_transform(coordinate_frame):
         positions = transform_points(positions)
         rotations = transform_rotations_to_robot(rotations)
+    else:
+        positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
     wrist_idx = body_wrist_index(working_hand)
     body = np.broadcast_to(positions[:, None, :], (len(positions), 33, 3)).copy()
     body[:, wrist_idx, :] = positions
@@ -992,6 +1001,8 @@ def retarget_from_poses(
         rotations = np.asarray(rotations, dtype=np.float64)
         if rotations.shape != (T, 3, 3):
             raise ValueError(f"Expected rotations shape ({T}, 3, 3), got {rotations.shape}.")
+
+    positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
 
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):

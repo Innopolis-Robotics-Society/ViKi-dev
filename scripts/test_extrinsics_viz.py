@@ -10,9 +10,9 @@ from pathlib import Path
 # Import retargeting config
 try:
     from viki.config import (
-        RETARGET_BASE_ROTATION, 
-        RETARGET_BASE_TRANSLATION, 
-        RETARGET_WRIST_SCALE, 
+        ROBOT_BASE_OFFSET,
+        TARGET_OFFSET,
+        RETARGET_TRAJECTORY_SCALE,
         RETARGET_RECENTER_TO_NEUTRAL,
         RETARGET_DEFAULT_ROBOT,
         MODELS_DIR
@@ -21,13 +21,13 @@ except ImportError:
     import sys
     sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
     from viki.config import (
-        RETARGET_BASE_ROTATION, 
-        RETARGET_BASE_TRANSLATION, 
-        RETARGET_WRIST_SCALE, 
+        ROBOT_BASE_OFFSET,
+        TARGET_OFFSET,
+        RETARGET_TRAJECTORY_SCALE,
         RETARGET_RECENTER_TO_NEUTRAL,
         RETARGET_DEFAULT_ROBOT,
         MODELS_DIR
-    )
+    )   
 
 
 # Try to import robotics for neutral position
@@ -43,10 +43,9 @@ EXTRINSICS_FILE = "data/extrinsics_calibration.json"
 SQUARE_SIZE_MULTIPLIER = 1.0 
 
 def get_robot_world_pos(p_robot):
-    """Transform robot frame point back to board world frame."""
-    R = np.array(RETARGET_BASE_ROTATION, dtype=np.float64)
-    T = np.array(RETARGET_BASE_TRANSLATION, dtype=np.float64)
-    return R.T @ (p_robot - T)
+    """Transform robot frame point to world frame (robot base position in world)."""
+    base_offset = np.array(ROBOT_BASE_OFFSET, dtype=np.float64)
+    return p_robot + base_offset
 
 def get_neutral_ee_pos(robot_alias):
     if not HAS_ROBOTICS:
@@ -174,13 +173,19 @@ def main():
                 start_f = max(0, min(start_f, frame_count - 1))
                 end_f = max(start_f + 1, min(end_f, frame_count))
                 
-                R_base = np.array(RETARGET_BASE_ROTATION, dtype=np.float64)
-                T_base = np.array(RETARGET_BASE_TRANSLATION, dtype=np.float64)
+                base_offset = np.array(ROBOT_BASE_OFFSET, dtype=np.float64)
+                target_nudge = np.array(TARGET_OFFSET, dtype=np.float64)
+                wrist_scale = float(RETARGET_TRAJECTORY_SCALE)
+                
+                print(f"[Debug] ROBOT_BASE_OFFSET = {ROBOT_BASE_OFFSET}")
+                print(f"[Debug] TARGET_OFFSET      = {TARGET_OFFSET}")
+                print(f"[Debug] TRAJECTORY_SCALE   = {RETARGET_TRAJECTORY_SCALE}")
+                print(f"[Debug] RECENTER_TO_NEUTRAL = {RETARGET_RECENTER_TO_NEUTRAL}")
                 
                 WRIST_0 = wrist_positions[0]
                 
-                # Visualization points in Board World
-                robot_base_board = get_robot_world_pos(np.zeros(3))
+                # Robot base position in world frame
+                robot_base_board = np.array(base_offset)
                 ax.scatter(robot_base_board[0], robot_base_board[1], robot_base_board[2], c='black', marker='s', s=200, label='Robot Base (Board)')
                 
                 # Neutral EE marker
@@ -191,32 +196,26 @@ def main():
                 # Workspace Sphere (Approximate)
                 reach = 1.3 if "ur10" in args.robot else 0.8
                 u, v = np.mgrid[0:2*np.pi:20j, 0:np.pi:10j]
-                xs = reach * np.cos(u) * np.sin(v) + robot_base_board[0]
-                ys = reach * np.sin(u) * np.sin(v) + robot_base_board[1]
-                zs = reach * np.cos(v) + robot_base_board[2]
+                xs = reach * np.cos(u) * np.sin(v) + base_offset[0]
+                ys = reach * np.sin(u) * np.sin(v) + base_offset[1]
+                zs = reach * np.cos(v) + base_offset[2]
                 ax.plot_wireframe(xs, ys, zs, color='gray', alpha=0.1, linewidth=0.5)
+
+                def to_robot_frame(p_world):
+                    p = p_world + target_nudge - base_offset
+                    if RETARGET_RECENTER_TO_NEUTRAL:
+                        p_0 = WRIST_0 + target_nudge - base_offset
+                        p = p + (p_neutral_robot - p_0)
+                    if abs(wrist_scale - 1.0) > 1e-12:
+                        p_start = WRIST_0 + target_nudge - base_offset
+                        if RETARGET_RECENTER_TO_NEUTRAL:
+                            p_start = p_neutral_robot
+                        p = p_start + (p - p_start) * wrist_scale
+                    return p
 
                 # Plot trajectory segment
                 p_board_traj = wrist_positions[start_f:end_f]
-                
-                # Compute robot path for this segment
-                p_robot_traj = []
-                for p_board in p_board_traj:
-                    p_robot_raw = R_base @ p_board + T_base
-                    p_robot = p_robot_raw.copy()
-                    if RETARGET_RECENTER_TO_NEUTRAL:
-                        p_robot_0 = R_base @ WRIST_0 + T_base
-                        p_robot = p_robot + (p_neutral_robot - p_robot_0)
-                    
-                    if RETARGET_WRIST_SCALE != 1.0:
-                        p_robot_start = R_base @ WRIST_0 + T_base
-                        if RETARGET_RECENTER_TO_NEUTRAL:
-                            p_robot_start = p_neutral_robot
-                        p_robot = p_robot_start + (p_robot - p_robot_start) * RETARGET_WRIST_SCALE
-                    
-                    p_robot_traj.append(get_robot_world_pos(p_robot))
-                
-                p_robot_traj = np.array(p_robot_traj)
+                p_robot_traj = np.array([get_robot_world_pos(to_robot_frame(p)) for p in p_board_traj])
                 
                 ax.plot(p_board_traj[:, 0], p_board_traj[:, 1], p_board_traj[:, 2], c='magenta', label='Human Wrist Path')
                 ax.plot(p_robot_traj[:, 0], p_robot_traj[:, 1], p_robot_traj[:, 2], c='cyan', label='Robot EE Path')
@@ -224,18 +223,7 @@ def main():
                 # Highlight current frame
                 frame_idx = min(args.frame, len(wrist_positions) - 1)
                 p_board = wrist_positions[frame_idx]
-                # For current frame robot EE, we re-calculate scaled/recentered pos
-                p_robot_curr = R_base @ p_board + T_base
-                if RETARGET_RECENTER_TO_NEUTRAL:
-                    p_robot_0 = R_base @ WRIST_0 + T_base
-                    p_robot_curr = p_robot_curr + (p_neutral_robot - p_robot_0)
-                if RETARGET_WRIST_SCALE != 1.0:
-                    p_robot_start = R_base @ WRIST_0 + T_base
-                    if RETARGET_RECENTER_TO_NEUTRAL:
-                        p_robot_start = p_neutral_robot
-                    p_robot_curr = p_robot_start + (p_robot_curr - p_robot_start) * RETARGET_WRIST_SCALE
-                
-                robot_ee_board = get_robot_world_pos(p_robot_curr)
+                robot_ee_board = get_robot_world_pos(to_robot_frame(p_board))
                 
                 ax.scatter(p_board[0], p_board[1], p_board[2], c='magenta', marker='o', s=100, label='Human Wrist (Current)')
                 ax.scatter(robot_ee_board[0], robot_ee_board[1], robot_ee_board[2], c='cyan', marker='X', s=100, label='Robot EE (Current)')

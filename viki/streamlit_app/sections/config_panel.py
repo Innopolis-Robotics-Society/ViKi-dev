@@ -71,6 +71,8 @@ HELP_ITEMS: list[tuple[str, str]] = [
     ("RETARGET_JOINT_SG_POLYORDER", "Savitzky-Golay polynomial order for joint smoothing"),
     ("RETARGET_RECENTER_TO_NEUTRAL", "Offset trajectory so frame-0 wrist matches robot neutral EE position"),
     ("RETARGET_TRAJECTORY_SCALE", "Scale human wrist motion by this factor (0.25 = human 1m -> robot 0.25m)"),
+    ("ROBOT_BASE_OFFSET", "Robot base [x, y, z] position in world frame (metres)"),
+    ("TARGET_OFFSET", "World-frame EE position nudge [x, y, z] (metres) — set same as ROBOT_BASE_OFFSET to keep EE fixed when base moves"),
 ]
 
 
