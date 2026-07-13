@@ -13,16 +13,12 @@ import os
 from typing import Optional
 
 import numpy as np
-from viki.capture.base import SyncedFrameGroup
-from viki.capture.kinect import KinectBackend
 from viki.skeleton.models import SkeletonFrame, HandDetection
 from viki.skeleton.pipeline import SkeletonPipeline, PipelineResult
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.capture.sync import MultiCameraSync
 from viki.capture.manager import CameraManager
 from viki.capture.recorder import RGBDRecorder
-from viki.skeleton.viz import visualize_color_depth_mapping
-from viki.config import DEPTH_PROJECTION_DEBUG
 
 
 class SkeletonWorker:

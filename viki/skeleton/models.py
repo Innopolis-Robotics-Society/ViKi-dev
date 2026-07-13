@@ -23,20 +23,21 @@ class PreparedFrame:
     A single camera frame ready for model inference.
 
     Produced by camera_prep from a raw Frame:
-      - color is undistorted and converted BGR to RGB
+      - color is converted BGR to RGB (no undistort)
       - depth is float32 metres with 0 replaced by nan
 
     Carries K so that downstream geometry code doesn't need to reach
     back into CameraManager.
     """
 
-    rgb: np.ndarray  # (H, W, 3) uint8, RGB, undistorted
+    rgb: np.ndarray  # (H, W, 3) uint8, RGB
     depth_m: np.ndarray  # (H, W)    float32, metres
-    K: np.ndarray  # (3, 3)    intrinsic matrix for this frame
+    K: np.ndarray  # (3, 3)    color intrinsic matrix (dummy identity, not used for 3D)
     device_id: str
     timestamp_us: int
     aligned_depth: Optional[np.ndarray] = None  # (H, W) uint16, SDK estimated
     base_depth_m: Optional[np.ndarray] = None  # (H, W)    float32, background depth
+    depth_K: Optional[np.ndarray] = None  # (3, 3)    depth intrinsic matrix
 
 
 #

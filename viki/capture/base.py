@@ -32,7 +32,7 @@ class CameraIntrinsics:
 class Frame:
     """
     A single synchronised frame from one camera.
-    
+
     Fields
     ------
     color             : np.ndarray  HxWx3, uint8, BGR (OpenCV convention)
@@ -129,6 +129,12 @@ class CameraBackend(ABC):
     @abstractmethod
     def is_running(self) -> bool:
         """True if the stream is active."""
+
+    @abstractmethod
+    def project_color_to_depth(
+        self, u: float, v: float, z: float
+    ) -> tuple[float, float] | None:
+        return None
 
     # ------------------------------------------------------------------
     # Context manager — implemented here, no need to override

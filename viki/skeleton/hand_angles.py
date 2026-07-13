@@ -278,15 +278,43 @@ def _invalid_pose(timestamp_us: int) -> EndEffectorPose:
     )
 
 
+_PALM_LM: tuple[LM, ...] = (
+    LM.WRIST,
+    LM.THUMB_CMC,
+    LM.INDEX_MCP,
+    LM.MIDDLE_MCP,
+    LM.RING_MCP,
+    LM.PINKY_MCP,
+)
+
+
+def _landmark_centroid(points: Mapping[LM, np.ndarray]) -> np.ndarray | None:
+    """Compute the centroid of all finite landmark positions.
+
+    Returns (3,) float64 or None if no finite landmarks exist.
+    """
+    valid = [
+        p for p in (points.get(lm) for lm in _PALM_LM)
+        if p is not None and np.all(np.isfinite(p))
+    ]
+    if not valid:
+        return None
+    return np.mean(valid, axis=0).astype(np.float64)
+
+
 def compute_end_effector_pose(
     points: Mapping[LM, np.ndarray],
     timestamp_us: int,
 ) -> EndEffectorPose:
     """
-    Compute the world‑frame pose of the wrist end‑effector from a fused skeleton.
+    Compute the world‑frame pose of the hand from a fused skeleton.
 
-    The pose consists of the wrist position (3‑D) and a rotation matrix that
-    defines the palm frame orientation in the world.
+    The primary pose uses the wrist position and palm frame orientation
+    (requires WRIST, THUMB_CMC, MIDDLE_MCP).
+
+    **Fallback**: if the wrist is not available (NaN), the centroid of all
+    available palm landmarks (WRIST, THUMB_CMC, INDEX_MCP, MIDDLE_MCP,
+    RING_MCP, PINKY_MCP) is used as the position, with identity rotation.
 
     Parameters
     ----------
@@ -298,40 +326,48 @@ def compute_end_effector_pose(
     Returns
     -------
     EndEffectorPose
-        Valid pose if WRIST, THUMB_CMC, and MIDDLE_MCP are all finite and
-        non‑degenerate; otherwise invalid with NaNs.
+        Valid pose if at least one palm landmark is finite; otherwise
+        invalid with NaNs.
     """
     coords: dict[LM, np.ndarray] = {}
     for lm in _EE_REQUIRED_LM:
         p = points.get(lm)
         if p is None or not np.all(np.isfinite(p)):
-            return _invalid_pose(timestamp_us)
+            break
         coords[lm] = np.asarray(p, dtype=np.float64)
+    else:
+        # All three required landmarks are valid → full pose with rotation.
+        wrist = coords[LM.WRIST]
+        to_middle = coords[LM.MIDDLE_MCP] - wrist
+        to_thumb = coords[LM.THUMB_CMC] - wrist
 
-    wrist = coords[LM.WRIST]
-    to_middle = coords[LM.MIDDLE_MCP] - wrist
-    to_thumb = coords[LM.THUMB_CMC] - wrist
+        x_palm = _normalise(to_middle)
+        z_palm = _normalise(np.cross(to_middle, to_thumb))
+        if x_palm is not None and z_palm is not None:
+            y_palm = np.cross(z_palm, x_palm)
+            y_norm = float(np.linalg.norm(y_palm))
+            if y_norm >= _MIN_LEN:
+                y_palm = y_palm / y_norm
+                R = np.column_stack([x_palm, y_palm, z_palm]).astype(np.float32)
+                rpy_rad = _rot_to_rpy_extrinsic_xyz(R.astype(np.float64))
+                rpy_deg = np.degrees(rpy_rad).astype(np.float32)
+                return EndEffectorPose(
+                    position=wrist.astype(np.float32),
+                    R_world_palm=R,
+                    rpy_deg=rpy_deg,
+                    valid=True,
+                    timestamp_us=timestamp_us,
+                )
 
-    x_palm = _normalise(to_middle)
-    z_palm = _normalise(np.cross(to_middle, to_thumb))
-    if x_palm is None or z_palm is None:
-        return _invalid_pose(timestamp_us)
+    # Fallback: centroid of available palm landmarks.
+    centroid = _landmark_centroid(points)
+    if centroid is not None:
+        return EndEffectorPose(
+            position=centroid.astype(np.float32),
+            R_world_palm=np.eye(3, dtype=np.float32),
+            rpy_deg=np.zeros(3, dtype=np.float32),
+            valid=True,
+            timestamp_us=timestamp_us,
+        )
 
-    # Re-orthogonalise y against x and z, in case the three landmarks are not perfectly coplanar.
-    y_palm = np.cross(z_palm, x_palm)
-    y_norm = float(np.linalg.norm(y_palm))
-    if y_norm < _MIN_LEN:
-        return _invalid_pose(timestamp_us)
-    y_palm = y_palm / y_norm
-
-    R = np.column_stack([x_palm, y_palm, z_palm]).astype(np.float32)
-    rpy_rad = _rot_to_rpy_extrinsic_xyz(R.astype(np.float64))
-    rpy_deg = np.degrees(rpy_rad).astype(np.float32)
-
-    return EndEffectorPose(
-        position=wrist.astype(np.float32),
-        R_world_palm=R,
-        rpy_deg=rpy_deg,
-        valid=True,
-        timestamp_us=timestamp_us,
-    )
+    return _invalid_pose(timestamp_us)

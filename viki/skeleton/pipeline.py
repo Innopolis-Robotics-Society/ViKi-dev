@@ -13,7 +13,6 @@ from typing import Dict, Optional, Literal
 import logging
 
 from viki.calibration.models import CalibrationExtrinsics
-from viki.capture.kinect import KinectBackend
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +22,7 @@ from viki.capture.base import SyncedFrameGroup
 
 from viki.capture.manager import CameraManager
 from viki.calibration.manager import CalibrationManager
-from viki.skeleton.camera_prep import UndistortCache, prepare_frame
+from viki.skeleton.camera_prep import prepare_frame
 from viki.skeleton.fusion import fuse
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.detectors import (
@@ -71,7 +70,6 @@ class SkeletonPipeline:
         self._hand = hand
         self._calibrator = calibrator
         self._manager = manager
-        self._cache = UndistortCache()
         self._detectors: dict[str, CompositeLandmarkDetector] = {}
         self._hand_type = hand
         self._executor = ThreadPoolExecutor(max_workers=4)
@@ -239,26 +237,14 @@ class SkeletonPipeline:
         Returns
         -------
         PreparedFrame or None
-            Prepared frame, or None if the frame is missing or intrinsics not available.
+            Prepared frame, or None if the frame is missing.
         """
         frame = group.frames.get(device_id)
         if frame is None:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
 
-        intrinsics = self._calibrator.get_intrinsics(device_id)
-        if intrinsics is None:
-            # Fallback to identity-like intrinsics so we can still get 2D detections
-            # This will result in slightly inaccurate 3D lifting but allows 2D viz
-            K = np.eye(3, dtype=np.float32)
-            dist = np.zeros(5, dtype=np.float32)
-        else:
-            K = intrinsics.camera_matrix
-            dist = intrinsics.dist_coeffs
-
-        prepared = prepare_frame(frame, K, dist, self._cache)
-        if prepared is None:
-            return None
+        prepared = prepare_frame(frame)
 
         # Load base depth map for this camera
         base_path = os.path.join(
@@ -309,6 +295,6 @@ class SkeletonPipeline:
             return None
 
         backend = self._manager.get_backend(device_id)
-        if backend is None or not isinstance(backend, KinectBackend):
+        if backend is None:
             return None
         return lift_to_3d(detection, prepared, backend)
