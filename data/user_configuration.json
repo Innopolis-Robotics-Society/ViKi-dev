@@ -86,7 +86,7 @@
   "RETARGET_BASE_TRANSLATION": [
     0,
     0,
-    0
+    -1
   ],
   "RETARGET_BASE_ROTATION": [
     [
