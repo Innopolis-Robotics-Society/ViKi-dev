@@ -25,10 +25,6 @@ backend = [
     "typing_extensions>=4.12",
     "xacrodoc",
 ]
-frontend = [
-    "streamlit>=1.37",
-    "pandas<2.3",
-]
 dev = [
     "pytest",
 ]

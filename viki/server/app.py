@@ -22,13 +22,15 @@ from viki.capture.sync import MultiCameraSync
 from viki.skeleton.pipeline import SkeletonPipeline
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
+from importlib import import_module
+
 from viki.server.routes import (
     calibration,
     cameras,
-    optimization,
     skeleton,
     recording,
     system,
+    optimization,
     dataset,
 )
 
@@ -89,9 +91,8 @@ app.include_router(cameras.router)
 app.include_router(calibration.router)
 app.include_router(skeleton.router)
 app.include_router(system.router)
-app.include_router(optimization.router)
-
 app.include_router(recording.router)
+app.include_router(optimization.router)
 app.include_router(dataset.router)
 
 
