@@ -139,7 +139,7 @@ async def capture_all(
 @router.post("/start/{device_id}")
 async def start_worker(
     device_id: str,
-    mode: str = "manual",
+    mode: str = "auto",
     params: BoardParametersData | None = None,
     cal: CalibrationManager = Depends(get_calibrator),
 ):

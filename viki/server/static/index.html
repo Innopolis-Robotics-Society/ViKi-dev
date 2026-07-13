@@ -823,45 +823,6 @@
             <option value="iiwa14">KUKA iiwa14</option>
           </select>
         </div>
-        <details id="process-dataset-advanced" style="display: none; font-size: 11px; border: 1px solid var(--border); border-radius: 4px; padding: 6px;">
-          <summary style="cursor: pointer; color: var(--accent);">Advanced Retargeting</summary>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px 8px; margin-top: 6px;">
-            <label>Target Mode:</label>
-            <select id="process-target-mode" style="background: var(--bg); border: 1px solid var(--border); color: var(--text); border-radius: 4px;">
-              <option value="hand_se3">hand_se3</option>
-              <option value="wrist_position">wrist_position</option>
-            </select>
-            <label>Position Cost:</label>
-            <input type="number" id="process-ik-pos-cost" value="" step="0.1" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Orientation Cost:</label>
-            <input type="number" id="process-ik-ori-cost" value="" step="0.1" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Posture Cost:</label>
-            <input type="number" id="process-ik-posture-cost" value="" step="0.001" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>IK Substeps:</label>
-            <input type="number" id="process-ik-substeps" value="" min="1" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Approach (sec):</label>
-            <input type="number" id="process-approach-sec" value="" step="0.5" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Trajectory Scale:</label>
-            <input type="number" id="process-trajectory-scale" value="" step="0.01" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Joint SG Window:</label>
-            <input type="number" id="process-joint-sg-window" value="" min="0" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label>Joint SG Polyorder:</label>
-            <input type="number" id="process-joint-sg-poly" value="" min="1" placeholder="default"
-              style="width: 100%; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px;">
-            <label></label>
-            <div style="display: flex; gap: 12px; align-items: center;">
-              <label style="font-size: 11px;"><input type="checkbox" id="process-recenter" checked> Recenter to Neutral</label>
-              <label style="font-size: 11px;"><input type="checkbox" id="process-align-ori" checked> Align Initial Orientation</label>
-            </div>
-          </div>
-        </details>
         <div style="display: flex; gap: 8px; align-items: center;">
           <label for="process-win-len" style="font-size: 11px;">Window:</label>
           <input type="number" id="process-win-len" value="7" min="3" max="31" step="2"
@@ -1934,14 +1895,12 @@
       document.getElementById('btn-process-mode-smooth').className = mode === 'smooth' ? 'primary' : '';
       document.getElementById('btn-process-mode-dataset').className = mode === 'dataset' ? 'primary' : '';
       const robotRow = document.getElementById('process-robot-row');
-      const advSection = document.getElementById('process-dataset-advanced');
       const winLabel = document.querySelector('label[for="process-win-len"]');
       const winInput = document.getElementById('process-win-len');
       const polyLabel = document.querySelector('label[for="process-poly"]');
       const polyInput = document.getElementById('process-poly');
       if (mode === 'dataset') {
         robotRow.style.display = 'flex';
-        advSection.style.display = '';
         winLabel.style.display = 'none';
         winInput.style.display = 'none';
         polyLabel.style.display = 'none';
@@ -1949,7 +1908,6 @@
         document.getElementById('btn-process-smooth').textContent = 'Convert to Robot Dataset';
       } else {
         robotRow.style.display = 'none';
-        advSection.style.display = 'none';
         winLabel.style.display = '';
         winInput.style.display = '';
         polyLabel.style.display = '';
@@ -2048,23 +2006,9 @@
 
       if (processMode === 'dataset') {
         const robot = document.getElementById('process-robot').value;
-        const body = {filename: processSelectedRec, robot};
-        const f = id => document.getElementById(id).value || null;
-        const c = id => document.getElementById(id).checked;
-        body.target_mode = document.getElementById('process-target-mode').value;
-        body.ik_position_cost = f('process-ik-pos-cost') ? parseFloat(f('process-ik-pos-cost')) : null;
-        body.ik_orientation_cost = f('process-ik-ori-cost') ? parseFloat(f('process-ik-ori-cost')) : null;
-        body.ik_posture_cost = f('process-ik-posture-cost') ? parseFloat(f('process-ik-posture-cost')) : null;
-        body.ik_substeps = f('process-ik-substeps') ? parseInt(f('process-ik-substeps')) : null;
-        body.approach_sec = f('process-approach-sec') ? parseFloat(f('process-approach-sec')) : null;
-        body.trajectory_scale = f('process-trajectory-scale') ? parseFloat(f('process-trajectory-scale')) : null;
-        body.joint_sg_window = f('process-joint-sg-window') ? parseInt(f('process-joint-sg-window')) : null;
-        body.joint_sg_polyorder = f('process-joint-sg-poly') ? parseInt(f('process-joint-sg-poly')) : null;
-        body.recenter_to_neutral = c('process-recenter');
-        body.align_initial_orientation = c('process-align-ori');
         statusEl.textContent = `Queueing ${processSelectedRec} for robot ${robot}...`;
         try {
-          const res = await api('POST', '/api/dataset/optimize', body);
+          const res = await api('POST', '/api/dataset/optimize', {filename: processSelectedRec, robot});
           log(`Dataset conversion queued: ${processSelectedRec} -> ${robot} (job: ${res.job_id})`, 'ok');
           statusEl.innerHTML = `⏳ Job queued — <span id="job-status-${res.job_id}" style="color:var(--yellow);">pending</span>`;
           processJobs[res.job_id] = {job_id: res.job_id, filename: processSelectedRec, robot, status: 'queued'};
@@ -2111,7 +2055,7 @@
         log(`Smoothed: ${res.path}`, 'ok');
         const plotContainer = document.getElementById('process-smooth-plot');
         const plotName = res.path.split('/').pop() || res.path.split('\\').pop();
-        plotContainer.innerHTML = `<img src="/api/skeleton/smooth-plot?filename=${encodeURIComponent(plotName)}&t=${Date.now()}" style="width:100%;height:100%;object-fit:contain;">`;
+        plotContainer.innerHTML = `<img src="/api/skeleton/smooth-plot?filename=${encodeURIComponent(plotName)}" style="width:100%;height:100%;object-fit:contain;">`;
         plotContainer.style.display = 'flex';
       } catch (e) {
         statusEl.textContent = `❌ ${e}`;

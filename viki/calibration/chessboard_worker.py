@@ -69,12 +69,11 @@ class ChessboardWorker(_CalibrationWorker):
         for sample in samples:
             square_size = sample.board_params.square_size
             w, h = sample.board_params.board_size
- 
+
             objp = np.zeros((w * h, 3), np.float32)
-            for i in range(h):
-                for j in range(w):
-                    objp[i * w + j] = [j * square_size, -i * square_size, 0]
- 
+            objp[:, :2] = np.mgrid[0:w, 0:h].T.reshape(-1, 2)
+            objp *= square_size
+
             object_points.append(objp)
             image_points.append(sample.corners)
 
@@ -111,12 +110,11 @@ class ChessboardWorker(_CalibrationWorker):
  
         square_size = sample.board_params.square_size
         w, h = sample.board_params.board_size
- 
+
         objp = np.zeros((w * h, 3), np.float32)
-        for i in range(h):
-            for j in range(w):
-                objp[i * w + j] = [j * square_size, i * square_size, 0]
- 
+        objp[:, :2] = np.mgrid[0:w, 0:h].T.reshape(-1, 2)
+        objp *= square_size
+
         camera_matrix = intrinsics.camera_matrix
         dist_coeffs = intrinsics.dist_coeffs
         ret, rvec, tvec = cv2.solvePnP(objp, sample.corners, camera_matrix, dist_coeffs)

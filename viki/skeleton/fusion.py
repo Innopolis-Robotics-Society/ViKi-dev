@@ -32,18 +32,16 @@ def fuse(
         if not extr:
             continue
         T = extr.trasnform_matrix
-        # Invert the World-to-Camera transform to get Camera-to-World
-        T_inv = np.linalg.inv(T)
 
         ps = lm.points
         world_points: dict[LM, np.ndarray] = {}
         for index, vec in ps.items():
             if len(vec.flatten()) != 3 or np.isnan(vec).any():
                 vec = np.full(3, np.nan, dtype=np.float32)
- 
+
             pos_mtx = np.eye(4)
             pos_mtx[:3, 3] = vec
-            world_vec = (T_inv @ pos_mtx)[:3, 3].flatten()
+            world_vec = (T @ pos_mtx)[:3, 3].flatten()
             world_points[index] = world_vec
 
         for index, vec in world_points.items():

@@ -233,19 +233,8 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
-        # Transform from OpenCV world (Y-down, Z-down) to real world (Y-up, Z-up)
-        # This is a 180-degree rotation around the X-axis
-        R, _ = cv2.Rodrigues(rvec)
-        rx180 = np.array([
-            [1, 0, 0],
-            [0, -1, 0],
-            [0, 0, -1]
-        ], dtype=np.float32)
-        R_world = R @ rx180
-        rvec_world, _ = cv2.Rodrigues(R_world)
-
         self._logger.debug(f"{self.device_id} extrinsics: success")
-        return CalibrationExtrinsics(rvec=rvec_world, tvec=tvec)
+        return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
 
     def mark_board(self, frame: Frame) -> np.ndarray:
         gray = cv2.cvtColor(frame.color, cv2.COLOR_BGR2GRAY)

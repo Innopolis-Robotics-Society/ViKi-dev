@@ -70,7 +70,7 @@ HELP_ITEMS: list[tuple[str, str]] = [
     ("RETARGET_JOINT_SG_WINDOW", "Savitzky-Golay window size for joint trajectory smoothing (0 = disabled)"),
     ("RETARGET_JOINT_SG_POLYORDER", "Savitzky-Golay polynomial order for joint smoothing"),
     ("RETARGET_RECENTER_TO_NEUTRAL", "Offset trajectory so frame-0 wrist matches robot neutral EE position"),
-    ("RETARGET_WRIST_SCALE", "Scale human wrist motion by this factor (0.25 = human 1m -> robot 0.25m)"),
+    ("RETARGET_TRAJECTORY_SCALE", "Scale human wrist motion by this factor (0.25 = human 1m -> robot 0.25m)"),
 ]
 
 
