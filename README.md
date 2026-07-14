@@ -56,9 +56,9 @@ by the FastAPI capture server at `http://localhost:8000/`.
 |---|---|---|
 | 1 — Capture | ✅ Done | Multi-view RGB-D capture server, per-camera controls, depth streaming |
 | 2 — Skeleton | ✅ Done | MediaPipe pose estimation, depth-fused 3D keypoints, multi-view fusion |
-| 3 — Smoothing | 🔧 in progress | One Euro Filter, outlier rejection, smoothness metrics |
-| 4 — Retargeting | ⬜ planned | URDF IK via PINK/Pinocchio, object-relative cost, gripper inference |
-| 5 — Dataset | ⬜ planned | LeRobot HDF5 writer, RGB + depth + joints + actions packaging |
+| 3 — Smoothing | ✅ Done | One Euro Filter, outlier rejection, smoothness metrics |
+| 4 — Retargeting | ✅ Done | URDF IK via PINK/Pinocchio, object-relative cost, gripper inference |
+| 5 — Dataset | ✅ Done | LeRobot HDF5 writer, RGB + depth + joints + actions packaging |
 | 6 — Evaluation | ⬜ planned | ACT and Diffusion Policy on UR3, naive vs ViKi success rate comparison |
 
 ---

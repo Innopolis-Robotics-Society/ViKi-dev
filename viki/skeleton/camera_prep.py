@@ -42,23 +42,16 @@ def prepare_frame(frame: Frame) -> PreparedFrame:
 
     # Build depth intrinsics matrix (3x3) from frame data
     depth_K: np.ndarray | None = None
-    dist_coeffs: np.ndarray | None = None
     if frame.depth_intrinsics is not None:
         di = frame.depth_intrinsics
         depth_K = np.array(
             [[di.fx, 0, di.cx], [0, di.fy, di.cy], [0, 0, 1]], dtype=np.float32
         )
-        dist_coeffs = di.dist_coeffs.copy()
-    elif frame.color_intrinsics is not None:
-        dist_coeffs = frame.color_intrinsics.dist_coeffs.copy()
 
     return PreparedFrame(
         rgb=rgb,
         depth_m=depth,
-        K=np.eye(3, dtype=np.float32),  # dummy — real K not needed for this path
         depth_K=depth_K,
-        dist_coeffs=dist_coeffs,
         device_id=frame.device_id,
         timestamp_us=frame.timestamp_us,
-        aligned_depth=frame.aligned_depth,
     )

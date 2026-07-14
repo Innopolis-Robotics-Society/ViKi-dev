@@ -1,25 +1,11 @@
 """
 viki.skeleton.hand_angles
 -------------------------
-Hand orientation from a 3-D skeleton frame
+World-frame hand pose from a 3-D skeleton frame.
 
-compute_hand_angles is deprecated and used for live-demo usage only
-Angles expressed in a *forearm-local* right-handed basis, so they
-are invariant to overall arm/body rotation in the world
-
-Required landmarks:
-    WRIST, ELBOW, SHOULDER, THUMB_CMC, MIDDLE_MCP
-
-Angles (all in degrees, sign consistent with the applied rotation):
-    flexion_deg    : angle of ``to_middle`` in the (x, y) plane,
-    deviation_deg  : angle of ``to_middle`` in the (x, z) plane,
-    roll_deg       : angle of ``palm_normal`` in the (y, z) plane,
-
-compute_end_effector_pose is world-frame
-
-Returns the full world-frame pose of the wrist end-effector: 3-D position
-plus a proper rotation matrix ``R_world_palm ∈ SO(3)`` from a palm-attached
-frame to the world
+compute_end_effector_pose returns the full world-frame pose of the wrist
+end-effector: 3-D position plus a proper rotation matrix
+``R_world_palm ∈ SO(3)`` from a palm-attached frame to the world.
 
 Required landmarks:
     WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP  (MCP spread replaces thumb).
@@ -30,56 +16,15 @@ optimization module.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from typing import Mapping
 
 import numpy as np
 
 from viki.skeleton.models import LM, EndEffectorPose
 
-# Landmarks that must be present and finite for a valid computation.
-REQUIRED_LM: tuple[LM, ...] = (
-    LM.WRIST,
-    LM.ELBOW,
-    LM.SHOULDER,
-    LM.THUMB_CMC,
-    LM.MIDDLE_MCP,
-)
-
 _MIN_LEN = 1e-6  # zero-length vector threshold
-_MIN_UP_REF_ORTHO = 0.05
 
 _NAN_VEC3 = np.full(3, np.nan, dtype=np.float32)
-
-
-@dataclass
-class HandAngles:
-    """
-    Hand orientation summary in the forearm-local frame.
-
-    Attributes
-    ----------
-    flexion_deg : float
-        Palmar/dorsi flexion angle in degrees. (угол сгибания / разгибания кисти)
-    deviation_deg : float
-        Radial/ulnar deviation angle in degrees. (угол отведения в сторону большого пальца)
-    roll_deg : float
-        Palm rotation around the forearm axis in degrees. (ротация вокруг оси предплечья)
-    palm_normal : np.ndarray
-        (3,) float32 world-frame palm normal for visualisation.
-    forearm_axis : np.ndarray
-        (3,) float32 world-frame forearm axis.
-    valid : bool
-        True when every required landmark was present and the forearm-local frame
-        could be resolved.
-    """
-
-    flexion_deg: float
-    deviation_deg: float
-    roll_deg: float
-    palm_normal: np.ndarray = field(default_factory=lambda: _NAN_VEC3.copy())
-    forearm_axis: np.ndarray = field(default_factory=lambda: _NAN_VEC3.copy())
-    valid: bool = False
 
 
 def _normalise(v: np.ndarray) -> np.ndarray | None:
@@ -100,94 +45,6 @@ def _normalise(v: np.ndarray) -> np.ndarray | None:
     if n < _MIN_LEN:
         return None
     return v / n
-
-
-def _invalid() -> HandAngles:
-    """Return a fully-NaN HandAngles with valid=False."""
-    return HandAngles(
-        flexion_deg=float("nan"),
-        deviation_deg=float("nan"),
-        roll_deg=float("nan"),
-        palm_normal=_NAN_VEC3.copy(),
-        forearm_axis=_NAN_VEC3.copy(),
-        valid=False,
-    )
-
-
-def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
-    """
-    Compute forearm-local flexion / deviation / roll from a landmark dict.
-
-    **Note**: Arm landmarks (ELBOW, SHOULDER) are never detected by the pipeline
-    (MediaPipeArm is disabled), so this function will always return invalid
-    at runtime. Kept for schema compatibility.
-
-    Parameters
-    ----------
-    points : Mapping[LM, np.ndarray]
-        Mapping from LM enum to world‑frame position in metres.
-
-    Returns
-    -------
-    HandAngles
-        On success `.valid == True` and every scalar/vector is finite.
-        On failure the result is fully NaN with `.valid == False`.
-    """
-    coords: dict[LM, np.ndarray] = {}
-    for lm in REQUIRED_LM:
-        p = points.get(lm)
-        if p is None or not np.all(np.isfinite(p)):
-            return _invalid()
-        coords[lm] = np.asarray(p, dtype=np.float64)
-
-    wrist = coords[LM.WRIST]
-    elbow = coords[LM.ELBOW]
-    shoulder = coords[LM.SHOULDER]
-    thumb = coords[LM.THUMB_CMC]
-    middle = coords[LM.MIDDLE_MCP]
-
-    # 1. Local x: forearm direction, elbow to wrist.
-    x = _normalise(wrist - elbow)
-    if x is None:
-        return _invalid()
-
-    # 2. Local y: upper-arm direction, orthogonalised against x.
-    up_ref = shoulder - elbow
-    y_raw = up_ref - float(np.dot(up_ref, x)) * x
-    y_norm = float(np.linalg.norm(y_raw))
-    if y_norm < _MIN_UP_REF_ORTHO:
-        return _invalid()
-    y = y_raw / y_norm
-    z = np.cross(x, y)
-
-    # 3. Palm basis.
-    to_middle = _normalise(middle - wrist)
-    to_thumb = _normalise(thumb - wrist)
-    if to_middle is None or to_thumb is None:
-        return _invalid()
-    palm_normal = _normalise(np.cross(to_middle, to_thumb))
-    if palm_normal is None:
-        return _invalid()
-
-    # 4. Angles in the local frame.
-    tm_x = float(np.dot(to_middle, x))
-    tm_y = float(np.dot(to_middle, y))
-    tm_z = float(np.dot(to_middle, z))
-    pn_y = float(np.dot(palm_normal, y))
-    pn_z = float(np.dot(palm_normal, z))
-
-    flexion_deg = float(np.degrees(np.arctan2(tm_y, tm_x)))
-    deviation_deg = float(np.degrees(np.arctan2(-tm_z, tm_x)))
-    roll_deg = float(np.degrees(np.arctan2(pn_z, pn_y)))
-
-    return HandAngles(
-        flexion_deg=flexion_deg,
-        deviation_deg=deviation_deg,
-        roll_deg=roll_deg,
-        palm_normal=palm_normal.astype(np.float32),
-        forearm_axis=x.astype(np.float32),
-        valid=True,
-    )
 
 
 # Landmarks required to build the palm frame in the world.

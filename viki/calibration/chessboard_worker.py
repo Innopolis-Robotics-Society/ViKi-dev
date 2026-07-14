@@ -15,6 +15,7 @@ from viki.calibration.models import (
     CalibrationSample,
     CalibrationIntrinsics,
     CalibrationExtrinsics,
+    canonical_board_extrinsics,
 )
 from viki.calibration.worker import _CalibrationWorker
 
@@ -187,6 +188,10 @@ class ChessboardWorker(_CalibrationWorker):
             msg = f"{self.device_id} extrinsics calibration: cv2.solvePnP failed"
             self._logger.debug(msg)
             raise RuntimeError(msg)
+
+        rvec, tvec = canonical_board_extrinsics(
+            rvec, tvec, sample.board_params.board_size, sample.board_params.square_size
+        )
 
         self._logger.debug(f"{self.device_id} extrinsics calibration: success")
 

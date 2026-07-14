@@ -36,6 +36,7 @@ const CLICK_ACTIONS = {
   toggleEstimation: el => skeleton.toggleEstimation(el.dataset.enable === 'true'),
   toggleRecording: el => skeleton.toggleRecording(el.dataset.enable === 'true'),
   toggleCalibOverlay: () => skeleton.toggleCalibOverlay(),
+  toggleDepthDebug: () => skeleton.toggleDepthDebug(),
   // process
   toggleProcess: () => process.toggleProcess(),
   setProcessMode: el => process.setProcessMode(el.dataset.mode),

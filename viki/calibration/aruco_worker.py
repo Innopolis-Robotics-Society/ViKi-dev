@@ -9,7 +9,7 @@ It supports intrinsic and extrinsic calibration using OpenCV's Charuco functions
 """
 import cv2
 import numpy as np
-from typing import List, Sequence
+from typing import List
 
 from cv2.typing import MatLike
 from viki.capture.base import Frame
@@ -21,6 +21,7 @@ from viki.calibration.models import (
     CalibrationSample,
     CalibrationIntrinsics,
     CalibrationExtrinsics,
+    canonical_board_extrinsics,
 )
 from viki.calibration.worker import _CalibrationWorker
 
@@ -115,7 +116,7 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(f"{self.device_id} no markers visible at all")
 
         # 1. Detect ArUco markers
-        corners, c_ids, markers, m_ids = self.detector.detectBoard(gray)
+        corners, c_ids, _, m_ids = self.detector.detectBoard(gray)
 
         if m_ids is None or len(m_ids) == 0:
             self._logger.debug(
@@ -141,17 +142,13 @@ class ArucoWorker(_CalibrationWorker):
             corners=corners,
             resolution=(w, h),
             board_params=self.board_params,
-            markers=markers,
             c_ids=c_ids,
-            m_ids=m_ids,
         )
 
         with self._lock:
             self._samples.append(sample)
 
-        self._logger.debug(
-            f"{self.device_id} add_sample: success)"  # (ids: {corners, c_ids})"
-        )
+        self._logger.debug(f"{self.device_id} add_sample: success")
 
     def intrinsics_calibration(
         self, samples: List[CalibrationSample] | None = None
@@ -329,6 +326,10 @@ class ArucoWorker(_CalibrationWorker):
             self._logger.debug(msg)
             raise RuntimeError(msg)
 
+        rvec, tvec = canonical_board_extrinsics(
+            rvec, tvec, self.board_params.board_size, self.board_params.square_size
+        )
+
         self._logger.debug(f"{self.device_id} extrinsics: success")
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
 
@@ -363,6 +364,6 @@ class ArucoWorker(_CalibrationWorker):
             cv2.aruco.drawDetectedCornersCharuco(
                 debug_img, corners_pts, corner_ids, (0, 0, 255)
             )
-        except:
-            pass
+        except Exception as e:
+            self._logger.debug(f"{self.device_id} mark_board overlay failed: {e}")
         return debug_img

@@ -96,6 +96,27 @@ async def toggle_recording(
     return {"status": "updated", "recording": worker.is_recording}
 
 
+@router.post("/depth-debug")
+async def toggle_depth_debug(
+    req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
+):
+    """
+    Enable or disable depth-projection debug marks (red dots on the 3D panel).
+
+    Parameters
+    ----------
+    req : ToggleRequest
+        `enabled` boolean.
+
+    Returns
+    -------
+    dict
+        {"status": "updated", "depth_debug": bool}
+    """
+    worker.set_depth_debug(req.enabled)
+    return {"status": "updated", "depth_debug": req.enabled}
+
+
 @router.get("/status")
 async def get_status(worker: SkeletonWorker = Depends(get_worker)):
     """
@@ -258,6 +279,10 @@ async def skeleton_stream(websocket: WebSocket):
             detections = worker.get_latest_detections()
 
             if frame or detections:
+                result = worker.get_latest_result()
+                debug_marks = (
+                    result.debug_depth_marks if result is not None else None
+                )
                 # Serialize result to dict
                 data = {
                     "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
@@ -271,6 +296,13 @@ async def skeleton_stream(websocket: WebSocket):
                         dev_id: (sanitize_nan(det.points) if det else {})
                         for dev_id, det in detections.items()
                     },
+                    "debug_depth_marks": (
+                        {
+                            dev_id: {lm.value: sanitize_nan(vec.tolist()) for lm, vec in marks.items()}
+                            for dev_id, marks in debug_marks.items()
+                        }
+                        if debug_marks else {}
+                    ),
                 }
                 await websocket.send_json(data)
 

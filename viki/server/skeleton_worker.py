@@ -151,6 +151,15 @@ class SkeletonWorker:
         with self._lock:
             return self._latest_result.detections if self._latest_result else {}
 
+    def get_latest_result(self) -> Optional[PipelineResult]:
+        """Return the full most recent pipeline result (incl. debug marks)."""
+        with self._lock:
+            return self._latest_result
+
+    def set_depth_debug(self, enabled: bool) -> None:
+        """Enable/disable depth-projection debug marks on the running pipeline."""
+        self._pipeline.set_depth_debug(enabled)
+
     def _run(self) -> None:
         """
         Main loop of the worker thread.

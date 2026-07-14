@@ -13,7 +13,6 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from viki.skeleton import utils
 from viki.skeleton.smoothing import smooth_landmark_sequence, interpolate_nans
 from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import LM

@@ -17,7 +17,6 @@ from viki.calibration.models import CalibrationExtrinsics
 logger = logging.getLogger(__name__)
 
 import numpy as np
-import os
 from viki.capture.base import SyncedFrameGroup
 
 from viki.capture.manager import CameraManager
@@ -28,7 +27,6 @@ from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
-    MediaPipeArm,
     MediaPipeHand,
 )
 from viki.skeleton.models import (
@@ -39,6 +37,16 @@ from viki.skeleton.models import (
     LM,
 )
 import viki.config
+
+# Palm/knuckle landmarks used to pick a representative hand position.
+_PALM_LM_POS = (
+    LM.WRIST,
+    LM.THUMB_CMC,
+    LM.INDEX_MCP,
+    LM.MIDDLE_MCP,
+    LM.RING_MCP,
+    LM.PINKY_MCP,
+)
 
 
 class SkeletonPipeline:
@@ -66,6 +74,10 @@ class SkeletonPipeline:
         calibrator: CalibrationManager,
         manager: CameraManager,
         hand: Literal["right", "left"] = viki.config.HAND_TO_DETECT,
+        discard_outliers: bool = viki.config.DISCARD_OUTLIERS,
+        discard_outliers_max_portion: float = viki.config.DISCARD_OUTLIERS_MAX_PORTION,
+        position_from_wrist: bool = viki.config.POSITION_FROM_WRIST,
+        depth_debug: bool = viki.config.DEPTH_DEBUG,
     ) -> None:
         self._hand = hand
         self._calibrator = calibrator
@@ -74,9 +86,14 @@ class SkeletonPipeline:
         self._hand_type = hand
         self._executor = ThreadPoolExecutor(max_workers=4)
 
-        self._bone_emas: dict[tuple[LM, LM], float] = {}
-        self._ema_alpha = 0.1
-        self._tracked_bones: list[tuple[LM, LM]] = []
+        self._discard_outliers = discard_outliers
+        self._discard_outliers_max_portion = discard_outliers_max_portion
+        self._position_from_wrist = position_from_wrist
+        self._depth_debug = depth_debug
+
+        # Previous hand position per camera (camera frame) used for outlier
+        # rejection of the depth estimate.  None until the first valid hand.
+        self._prev_hand_pos: dict[str, np.ndarray] = {}
 
         self._ext_cache: dict[tuple[str, str], tuple[np.ndarray, np.ndarray]] = {}
 
@@ -96,6 +113,7 @@ class SkeletonPipeline:
         """
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
+        prepared_by_dev: dict[str, PreparedFrame | None] = {}
 
         # 1. Run detections in parallel across all cameras
         futures = {
@@ -106,6 +124,7 @@ class SkeletonPipeline:
         for future in futures:
             dev_id, det, prepared = future.result()
             detections[dev_id] = det
+            prepared_by_dev[dev_id] = prepared
             # 2. Lift to 3D (sequential, but fast)
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
 
@@ -121,28 +140,7 @@ class SkeletonPipeline:
         # Fusion logic:
 
         # Master camera is the first device in the group.
-
-        # Subordinate camera is the second device (if available).
         dev_ids = list(group.frames.keys())
-
-        # # Process all frames in the group
-        # for dev_id, frame in group.frames.items():
-        #     # logger.debug(f"got frame from {dev_id}")
-        #     prepared = self._prepare_camera(dev_id, group)
-        #     if prepared is None:
-        #         detections[dev_id] = None
-        #         lms_3d[dev_id] = None
-        #         continue
-
-        #     det = self._detector.detect(prepared)
-        #     detections[dev_id] = det
-        #     if det is None:
-        #         lms_3d[dev_id] = None
-        #     else:
-        #         lms_3d[dev_id] = lift_to_3d(det, prepared)
-        #     # logger.debug(f"result frame of {dev_id}: prepared: {prepared is not None}, detection: {det is not None}, lifted to 3D: {lms_3d[dev_id] is not None}")
-
-        # dev_ids = group.device_ids
         if not dev_ids:
             return PipelineResult(fused_frame=None, detections={})
 
@@ -160,31 +158,19 @@ class SkeletonPipeline:
             extrinsics,
             group.sync_timestamp_us,
             confidences=confidences,
-            bone_emas=self._bone_emas,
         )
 
-        if not np.isnan([x for _, x in fused.points.items()]).any():
-            # Update bone EMAs from the fused result
-            for parent, child in self._tracked_bones:
-                if parent in fused.points and child in fused.points:
-                    dist = np.linalg.norm(fused.points[parent] - fused.points[child])
+        debug_depth_marks = None
+        if self._depth_debug:
+            debug_depth_marks = self._compute_debug_depth_marks(
+                detections, prepared_by_dev, extrinsics
+            )
 
-                    # Outlier rejection: only update EMA if distance is plausible
-                    # (e.g., within 30% of current EMA or first measurement)
-                    if (parent, child) not in self._bone_emas:
-                        self._bone_emas[(parent, child)] = float(dist)
-                    else:
-                        current_ema = self._bone_emas[(parent, child)]
-                        if 0.7 * current_ema < dist < 1.3 * current_ema:
-                            self._bone_emas[(parent, child)] = (
-                                self._ema_alpha * dist
-                                + (1.0 - self._ema_alpha) * current_ema
-                            )
-                        else:
-                            # logger.debug(f"Rejected bone length outlier: {dist:.3f}m (EMA: {current_ema:.3f}m)")
-                            pass
-
-        return PipelineResult(fused_frame=fused, detections=detections)
+        return PipelineResult(
+            fused_frame=fused,
+            detections=detections,
+            debug_depth_marks=debug_depth_marks,
+        )
 
     def _detect_camera(
         self, dev_id: str, group: SyncedFrameGroup
@@ -244,19 +230,7 @@ class SkeletonPipeline:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
 
-        prepared = prepare_frame(frame)
-
-        # Load base depth map for this camera
-        base_path = os.path.join(
-            viki.config.SKELETON_DEPTH_BASE_DIR, f"{device_id}.npy"
-        )
-        if os.path.exists(base_path):
-            try:
-                prepared.base_depth_m = np.load(base_path)
-            except Exception as e:
-                logger.error(f"Failed to load base depth for {device_id}: {e}")
-
-        return prepared
+        return prepare_frame(frame)
 
     def _lift_camera(
         self,
@@ -285,6 +259,9 @@ class SkeletonPipeline:
             3D landmarks in camera coordinates, or None if detection absent or backend not Kinect.
         """
         if detection is None:
+            # No hand this frame — forget the previous position so the next
+            # detection is not compared against a stale one.
+            self._prev_hand_pos.pop(device_id, None)
             return None
 
         # Use the provided prepared frame, or re-prepare if missing
@@ -297,4 +274,111 @@ class SkeletonPipeline:
         backend = self._manager.get_backend(device_id)
         if backend is None:
             return None
-        return lift_to_3d(detection, prepared, backend)
+
+        landmarks = lift_to_3d(
+            detection,
+            prepared,
+            backend,
+            prev_position=self._prev_hand_pos.get(device_id),
+            discard_outliers=self._discard_outliers,
+            discard_outliers_max_portion=self._discard_outliers_max_portion,
+            position_from_wrist=self._position_from_wrist,
+        )
+        self._update_prev_hand_pos(device_id, landmarks)
+        return landmarks
+
+    @staticmethod
+    def _hand_position(landmarks: Optional[Landmarks3D]) -> np.ndarray | None:
+        """
+        Extract a single representative hand position (camera frame) from a set
+        of 3D landmarks: the wrist if finite, else the centroid of the finite
+        palm/knuckle landmarks.
+        """
+        if landmarks is None:
+            return None
+        wrist = landmarks.points.get(LM.WRIST)
+        if wrist is not None and np.all(np.isfinite(wrist)):
+            return wrist.astype(np.float64)
+        pts = [
+            p for lm, p in landmarks.points.items()
+            if lm in _PALM_LM_POS and p is not None and np.all(np.isfinite(p))
+        ]
+        if not pts:
+            return None
+        return np.mean(pts, axis=0).astype(np.float64)
+
+    def _update_prev_hand_pos(
+        self, device_id: str, landmarks: Optional[Landmarks3D]
+    ) -> None:
+        pos = self._hand_position(landmarks)
+        if pos is None:
+            self._prev_hand_pos.pop(device_id, None)
+        else:
+            self._prev_hand_pos[device_id] = pos
+
+    def set_depth_debug(self, enabled: bool) -> None:
+        """Enable/disable emission of raw depth-projection debug marks."""
+        self._depth_debug = enabled
+
+    def _compute_debug_depth_marks(
+        self,
+        detections: dict[str, HandDetection | None],
+        prepared_by_dev: dict[str, PreparedFrame | None],
+        extrinsics: dict[str, CalibrationExtrinsics],
+    ) -> dict[str, dict[LM, np.ndarray]]:
+        """
+        Build per-camera, per-landmark 3D points obtained *purely* from the
+        depth camera: each detected landmark is projected into depth space and
+        deprojected at its own measured depth. These are the raw depth estimates
+        that feed hand-position estimation, emitted for frontend visualisation.
+
+        The points are transformed into world frame with the same
+        ``transform_matrix`` used by fusion so they align with the skeleton.
+        """
+        out: dict[str, dict[LM, np.ndarray]] = {}
+        for dev_id, det in detections.items():
+            prepared = prepared_by_dev.get(dev_id)
+            if det is None or prepared is None:
+                continue
+
+            backend = self._manager.get_backend(dev_id)
+            if backend is None:
+                continue
+
+            depth_m = prepared.depth_m
+            h, w = depth_m.shape[:2]
+            K = prepared.depth_K
+            if K is None or K[0, 0] <= 0 or K[1, 1] <= 0 or h == 0 or w == 0:
+                continue
+            fx, fy = float(K[0, 0]), float(K[1, 1])
+            cx, cy = float(K[0, 2]), float(K[1, 2])
+
+            cam_marks: dict[LM, np.ndarray] = {}
+            for lm, uv in det.points.items():
+                if np.isnan(uv[0]) or np.isnan(uv[1]):
+                    continue
+                res = backend.project_color_to_depth(uv[0], uv[1], 1.0)
+                if res is None:
+                    res = (uv[0], uv[1])
+                ud, vd = res
+                ui, vi = int(round(ud)), int(round(vd))
+                if 0 <= vi < h and 0 <= ui < w:
+                    z = depth_m[vi, ui]
+                    if not np.isnan(z) and 0.01 < z <= 10.0:
+                        X = (ud - cx) * z / fx
+                        Y = (vd - cy) * z / fy
+                        cam_marks[lm] = np.array([X, Y, z], dtype=np.float32)
+
+            if not cam_marks:
+                continue
+
+            extr = extrinsics.get(dev_id)
+            T = extr.transform_matrix if extr else np.eye(4)
+            world_marks: dict[LM, np.ndarray] = {}
+            for lm, vec in cam_marks.items():
+                pos_mtx = np.eye(4)
+                pos_mtx[:3, 3] = vec
+                world_marks[lm] = (T @ pos_mtx)[:3, 3].flatten().astype(np.float32)
+            out[dev_id] = world_marks
+
+        return out

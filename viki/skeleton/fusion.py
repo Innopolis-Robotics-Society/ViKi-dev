@@ -11,7 +11,6 @@ averaging across cameras (weights can be confidence-based).
 from __future__ import annotations
 
 import numpy as np
-import viki.config
 
 from viki.calibration.models import CalibrationExtrinsics
 from viki.skeleton.hand_angles import compute_end_effector_pose
@@ -24,7 +23,6 @@ def fuse(
     extrinsics: dict[str, CalibrationExtrinsics],
     timestamp_us: int,
     confidences: dict[str, dict[LM, float]] | None = None,
-    bone_emas: dict[tuple[LM, LM], float] | None = None,
 ) -> SkeletonFrame:
     """
     Fuse per‑camera 3D landmarks into a single world‑frame skeleton.
@@ -46,8 +44,6 @@ def fuse(
         Timestamp (µs) of the fused frame.
     confidences : dict[str, dict[LM, float]], optional
         Per‑camera, per‑landmark confidence values (0..1). If omitted, all weights are 1.
-    bone_emas : dict[tuple[LM, LM], float], optional
-        Not used in this version; kept for API compatibility.
 
     Returns
     -------
@@ -73,7 +69,10 @@ def fuse(
         world_points: dict[LM, np.ndarray] = {}
         for index, vec in ps.items():
             if len(vec.flatten()) != 3 or np.isnan(vec).any():
-                vec = np.full(3, np.nan, dtype=np.float32)
+                # Skip landmarks with no valid 3D observation from this camera
+                # rather than polluting the per-landmark set with NaN, which
+                # would poison the weighted average below.
+                continue
 
             pos_mtx = np.eye(4)
             pos_mtx[:3, 3] = vec
@@ -101,6 +100,12 @@ def fuse(
         total_weight = 0.0
 
         for dev_id, vec in points.items():
+            # A camera with no valid observation for this landmark stored a NaN
+            # in `points` (kept above for clarity). Skip it so a single missing
+            # observation cannot poison the whole landmark via NaN propagation.
+            if np.isnan(vec).any():
+                continue
+
             # Get confidence for this joint from this camera
             weight = 1.0
             if confidences and dev_id in confidences:
@@ -112,12 +117,8 @@ def fuse(
         if total_weight > 1e-6:
             out_points[index] = weighted_sum / total_weight
         else:
-            # Fallback to simple mean if all weights are zero
-            n = len(points)
-            out_points[index] = np.zeros(3)
-            for dev_id, vec in points.items():
-                out_points[index] += vec
-            out_points[index] /= n
+            # All weights zero — leave as NaN rather than a fake world origin.
+            out_points[index] = np.full(3, np.nan, dtype=np.float32)
 
     return SkeletonFrame(
         points=out_points,

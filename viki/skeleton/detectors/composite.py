@@ -11,7 +11,6 @@ import logging
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
-from numpy._core import indices
 
 from viki.skeleton.detectors.base import (
     FusionMode,
