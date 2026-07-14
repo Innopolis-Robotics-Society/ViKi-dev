@@ -73,9 +73,9 @@ async def lifespan(app: FastAPI):
         app.state.skeleton_recorder,
     )
     app.state.skeleton_worker.start()
-    from viki.skeleton.processor import SkeletonProcessor
+    from viki.optimization.preparation.processor import PreparationPipeline
 
-    app.state.skeleton_processor = SkeletonProcessor()
+    app.state.skeleton_processor = PreparationPipeline()
 
     yield
     app.state.skeleton_worker.stop()

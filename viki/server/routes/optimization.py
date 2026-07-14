@@ -19,8 +19,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
-from viki.optimization.optimization.convert_viki23_json import convert
-from viki.optimization.optimization.retarget_rgb_only import (
+from viki.optimization.retarget.retarget_rgb_only import (
     RunConfig,
     evaluate_saved_traj,
     normalize_robot,
@@ -31,22 +30,10 @@ from viki.optimization.optimization.retarget_rgb_only import (
 router = APIRouter(prefix="/api/optimization", tags=["optimization"])
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
-OPTIMIZATION_DIR = PROJECT_ROOT / "viki" / "optimization" / "optimization"
 SMOOTHED_INPUT_DIR = PROJECT_ROOT / "data" / "skeleton_smoothed"
-LEGACY_SAMPLES_DIR = PROJECT_ROOT / "data" / "optimization_samples"
 OUTPUT_DIR = PROJECT_ROOT / "data" / "robot_out"
-RECORDING_DIRS = (PROJECT_ROOT, PROJECT_ROOT / "data" / "skeleton_recs")
 OUTPUT_SUFFIXES = {".h5", ".hdf5", ".json", ".png"}
 TAIL_CHARS = 12000
-
-
-class ConvertRequest(BaseModel):
-    """Request model for converting a raw recording to a .npz sample."""
-
-    recording: str
-    output_name: str
-    hand: Literal["right", "left"] = "right"
-    include_arm: bool | None = None
 
 
 class RetargetRequest(BaseModel):
@@ -100,59 +87,6 @@ _jobs: dict[str, OptimizationJob] = {}
 _jobs_lock = threading.Lock()
 _job_queue: queue.Queue[tuple[str, Path, Path, RunConfig, bool]] = queue.Queue()
 _worker_started = False
-
-
-@router.get("/recordings")
-async def list_recordings() -> dict[str, Any]:
-    """
-    List available raw recordings (JSON files) that can be converted.
-
-    Returns
-    -------
-    dict
-        {"recordings": list[file_info]}
-    """
-    return {"recordings": [_file_info(path) for path in _recording_paths()]}
-
-
-@router.post("/convert")
-async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
-    """
-    Convert a raw JSON recording to a .npz sample suitable for retargeting.
-
-    Parameters
-    ----------
-    req : ConvertRequest
-        Recording filename, output name, hand side, and arm inclusion.
-
-    Returns
-    -------
-    dict
-        Summary of the conversion: frames, fps, hand, orientation validity, etc.
-
-    Raises
-    ------
-    HTTPException 400
-        If conversion fails.
-    """
-    _ensure_dirs()
-    recording = _resolve_recording(req.recording)
-    output_name = _safe_filename(req.output_name, expected_suffix=".npz")
-    output_path = LEGACY_SAMPLES_DIR / output_name
-
-    try:
-        summary = convert(recording, output_path, req.hand)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    return {
-        "output_path": _relative_path(output_path),
-        "frames": summary["frames"],
-        "fps": summary["fps"],
-        "working_hand": summary["working_hand"],
-        "orientation_valid_frames": summary["orientation_valid_frames"],
-        "orientation_total_frames": summary["orientation_total_frames"],
-    }
 
 
 @router.get("/samples")
@@ -338,28 +272,7 @@ def _output_response(filename: str) -> FileResponse:
 def _ensure_dirs() -> None:
     """Create required directories if they don't exist."""
     SMOOTHED_INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    LEGACY_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _recording_paths() -> list[Path]:
-    """Return all available recording JSON files."""
-    paths: dict[str, Path] = {}
-    for directory in RECORDING_DIRS:
-        if not directory.exists():
-            continue
-        for path in sorted(directory.glob("rec_*.json")):
-            paths.setdefault(path.name, path)
-    return sorted(paths.values(), key=lambda item: item.name)
-
-
-def _resolve_recording(recording: str) -> Path:
-    """Resolve a recording filename to an absolute path."""
-    name = _safe_filename(recording, expected_suffix=".json")
-    for path in _recording_paths():
-        if path.name == name:
-            return path
-    raise HTTPException(status_code=404, detail=f"Recording not found: {name}")
 
 
 def _safe_filename(filename: str, expected_suffix: str | None = None) -> str:

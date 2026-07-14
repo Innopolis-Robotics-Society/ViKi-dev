@@ -22,13 +22,9 @@ class OptimizationRoutesTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         self.samples = self.root / "data" / "skeleton_smoothed"
-        self.legacy_samples = self.root / "data" / "optimization_samples"
         self.output = self.root / "data" / "robot_out"
-        self.opt_dir = self.root / "viki" / "optimization" / "optimization"
         self.samples.mkdir(parents=True)
-        self.legacy_samples.mkdir(parents=True)
         self.output.mkdir(parents=True)
-        self.opt_dir.mkdir(parents=True)
         np.savez(
             self.samples / "cln_api.npz",
             positions=np.ones((2, 3), dtype=np.float64),
@@ -36,30 +32,13 @@ class OptimizationRoutesTests(unittest.TestCase):
             valid=np.array([True, True]),
             timestamps=np.array([1_000_000, 1_100_000], dtype=np.int64),
         )
-        self.recording = self.root / "rec_api_smoothed.json"
-        landmarks = [[0.0, 0.0, 0.0] for _ in range(23)]
-        landmarks[0] = [1.0, 2.0, 3.0]
-        landmarks[1] = [1.0, 3.0, 3.0]
-        landmarks[9] = [2.0, 2.0, 3.0]
-        landmarks[21] = [100.0, 100.0, 100.0]
-        landmarks[22] = [200.0, 200.0, 200.0]
-        self.recording.write_text(
-            json.dumps([{"ts": 1_000_000, "landmarks": landmarks}]),
-            encoding="utf-8",
-        )
         app = FastAPI()
         app.include_router(optimization.router)
         self.client = TestClient(app)
         self.patches = [
             patch.object(optimization, "PROJECT_ROOT", self.root),
             patch.object(optimization, "SMOOTHED_INPUT_DIR", self.samples),
-            patch.object(optimization, "LEGACY_SAMPLES_DIR", self.legacy_samples),
             patch.object(optimization, "OUTPUT_DIR", self.output),
-            patch.object(
-                optimization,
-                "RECORDING_DIRS",
-                (self.root, self.root / "data" / "skeleton_recs"),
-            ),
             patch.object(optimization, "_jobs", {}),
             patch.object(optimization, "_job_queue", queue.Queue()),
             patch.object(optimization, "_worker_started", False),
@@ -72,28 +51,7 @@ class OptimizationRoutesTests(unittest.TestCase):
             item.stop()
         self.tmp.cleanup()
 
-    def test_recording_listing_and_conversion(self) -> None:
-        listed = self.client.get("/api/optimization/recordings")
-        self.assertEqual(listed.status_code, 200)
-        self.assertEqual(
-            listed.json()["recordings"][0]["filename"], self.recording.name
-        )
-
-        converted = self.client.post(
-            "/api/optimization/convert",
-            json={
-                "recording": self.recording.name,
-                "output_name": "sample",
-                "hand": "right",
-                "include_arm": False,
-            },
-        )
-        self.assertEqual(converted.status_code, 200)
-        self.assertEqual(converted.json()["frames"], 1)
-        self.assertNotIn("include_arm", converted.json())
-        self.assertEqual(converted.json()["orientation_valid_frames"], 1)
-        self.assertTrue((self.legacy_samples / "sample.npz").exists())
-
+    def test_samples_listing(self) -> None:
         samples = self.client.get("/api/optimization/samples")
         self.assertEqual(samples.status_code, 200)
         self.assertEqual(samples.json()["samples"][0]["filename"], "cln_api.npz")

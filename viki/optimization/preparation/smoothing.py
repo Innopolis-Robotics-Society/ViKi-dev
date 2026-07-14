@@ -1,6 +1,6 @@
 """
-viki.skeleton.smoothing
------------------------
+viki.optimization.preparation.smoothing
+--------------------------------------
 Temporal smoothing helpers for completed skeleton sequences.
 """
 

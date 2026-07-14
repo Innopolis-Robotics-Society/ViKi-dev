@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from eval_tracking_error import (  # noqa: E402
+from viki.optimization.retarget.eval_tracking_error import (  # noqa: E402
     compute_error_metrics,
     compute_error_mm,
     evaluate,
@@ -21,8 +21,8 @@ from eval_tracking_error import (  # noqa: E402
     select_q_key,
     select_target_source,
 )
-from smoothing import adjusted_savgol_window, smooth_none  # noqa: E402
-from archive_io import write_hdf5_archive  # noqa: E402
+from viki.optimization.retarget.smoothing import adjusted_savgol_window, smooth_none  # noqa: E402
+from viki.optimization.retarget.archive_io import write_hdf5_archive  # noqa: E402
 
 
 class EvalTrackingErrorTests(unittest.TestCase):
@@ -155,9 +155,9 @@ class EvalTrackingErrorTests(unittest.TestCase):
             )()
 
             with (
-                patch("eval_tracking_error.load_robot_poses", side_effect=fake_fk),
-                patch("eval_tracking_error.save_error_plot"),
-                patch("eval_tracking_error.save_trajectory_plot"),
+                patch("viki.optimization.retarget.eval_tracking_error.load_robot_poses", side_effect=fake_fk),
+                patch("viki.optimization.retarget.eval_tracking_error.save_error_plot"),
+                patch("viki.optimization.retarget.eval_tracking_error.save_trajectory_plot"),
             ):
                 metrics = evaluate(args)
 

@@ -24,7 +24,7 @@ from argparse import Namespace
 import viki.config as config
 from viki.server.deps import get_worker, get_processor
 from viki.server.skeleton_worker import SkeletonWorker
-from viki.skeleton.processor import SkeletonProcessor
+from viki.optimization.preparation.processor import PreparationPipeline
 
 
 def sanitize_nan(val):
@@ -136,7 +136,7 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
 async def list_recordings(
     page: int = 0, 
     limit: int = 10, 
-    processor: SkeletonProcessor = Depends(get_processor)
+    processor: PreparationPipeline = Depends(get_processor)
 ):
     """
     List recorded skeleton data files (paginated).
@@ -159,7 +159,7 @@ async def list_recordings(
 @router.post("/smooth")
 async def smooth_recording(
     req: SmoothRequest,
-    processor: SkeletonProcessor = Depends(get_processor)
+    processor: PreparationPipeline = Depends(get_processor)
 ):
     """
     Apply Savitzky-Golay smoothing to a recorded skeleton file.

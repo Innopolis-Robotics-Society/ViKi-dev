@@ -18,21 +18,8 @@ from typing import Any
 
 import numpy as np
 
-try:
-    from archive_io import load_archive, write_hdf5_archive
-except ImportError:  # pragma: no cover - allows package-style imports later.
-    try:
-        from .archive_io import load_archive, write_hdf5_archive
-    except ImportError:
-        from experiments.archive_io import load_archive, write_hdf5_archive
-
-try:
-    from smoothing import smooth_trajectory
-except ImportError:  # pragma: no cover - allows package-style imports later.
-    try:
-        from .smoothing import smooth_trajectory
-    except ImportError:
-        from experiments.smoothing import smooth_trajectory
+from .archive_io import load_archive, write_hdf5_archive
+from .smoothing import smooth_trajectory
 
 
 RIGHT_WRIST = 16

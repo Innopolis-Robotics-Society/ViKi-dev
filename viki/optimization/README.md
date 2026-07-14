@@ -1,21 +1,25 @@
 # Skeleton Tests Optimisation
 
-This directory is the temporary home for the skeleton optimisation and retargeting workflow while the APIs and data contracts are still being developed. It is intentionally separate from the main `viki/` package so the experimental code can move quickly without changing the capture/skeleton runtime path.
+This directory holds the skeleton optimisation and retargeting workflow, organised into `preparation/` (recorded landmarks -> end-effector pose) and `retarget/` (end-effector pose -> IK solution).
 
 No frontend code or Docker mounts are changed for this workflow.
 
 ## Directory Layout
 
 ```text
-skeleton_tests/
-  optimization/
-    convert_viki23_json.py     # ViKi skeleton JSON -> optimiser .npz sample
-    retarget_rgb_only.py       # IK retargeting entry point
-    eval_tracking_error.py     # FK/evaluation helpers
-    smoothing.py               # Savitzky-Golay helpers used by retarget/eval
-    test_*.py                  # Lightweight tests
-  samples/                     # Generated optimiser input .npz files
-  output/                      # Retargeted HDF5 trajectories, metrics, and plots
+viki/optimization/
+  preparation/                # landmarks -> end-effector rotation + position
+    processor.py              # PreparationPipeline: interpolate, fuse, smooth, EE pose -> cln-*.npz
+    smoothing.py              # Savitzky-Golay helpers for landmark sequences
+    fusion.py                 # cross-camera trajectory fusion
+    test_processor_orientation.py
+  retarget/                   # end-effector pose -> IK solution (.h5)
+    retarget_rgb_only.py      # IK retargeting entry point
+    archive_io.py             # HDF5 trajectory writer/reader
+    smoothing.py              # Savitzky-Golay helpers for joint trajectories
+    eval_tracking_error.py    # FK/evaluation helpers
+    debug.py                  # retarget debug visualisation
+    test_*.py                 # Lightweight tests
 ```
 
 `skeleton_tests/` is ignored by the repo, so files in this directory must be added with `git add -f` when they are ready to commit.
@@ -40,59 +44,32 @@ Each frame is expected to contain `landmarks` in either list or dict form. The c
 
 Recordings with only landmarks `0..20` are also accepted by the converter. For optimisation, elbow `21` and shoulder `22` are ignored. Landmark `0` supplies the wrist position target. Landmarks `0`, `1`, and `9` supply the palm orientation for `hand_se3`.
 
-## Conversion Contract
+## Pipeline
 
-`optimization/convert_viki23_json.py` converts a ViKi skeleton JSON recording into the optimiser sample format:
+The legacy ViKi2.3 JSON converter (`convert_viki23_json.py`) and its
+`/api/optimization/convert` + `/api/optimization/recordings` endpoints have been
+removed — there is no legacy format to import.
 
-```text
-body:          (T, 33, 3)
-right_hand:    (T, 21, 3)
-left_hand:     (T, 21, 3)
-body_conf:     (T, 33)
-right_conf:    (T, 21)
-left_conf:     (T, 21)
-fps
-frame_count
-timestamps_us
-source_json
-source
-coordinate_frame
-working_hand
-orientation_valid
-orientation_valid_frames
-```
-
-For right-hand wrist-only export:
+The current flow is:
 
 ```text
-ViKi landmark 0 -> MediaPipe body index 16
+skeleton recording (rec-*.npz) -> PreparationPipeline
+  (per-camera interpolate, cross-camera fuse, smooth, compute EE pose)
+  -> cln-*.npz (positions, rotations, valid, timestamps)
+  -> retarget (PINK IK) -> robot_out/*.h5
 ```
 
-For left-hand wrist-only export:
-
-```text
-ViKi landmark 0 -> MediaPipe body index 15
-```
-
-The converter stores `coordinate_frame="viki_world_or_camera"` by default. Retargeting keeps the legacy coordinate transform for this frame. Samples marked `coordinate_frame="robot_base"` skip that legacy transform.
-
-`orientation_valid` is computed from the raw recording before the converter fills missing landmark coordinates for smoothing. That keeps missing or collinear palm-bone frames visible to `hand_se3`; retargeting fills those rotations from the nearest valid frame and records the validity mask in the HDF5 output.
+`PreparationPipeline.smooth_recording` reads a raw `rec-*.npz`, interpolates and
+smooths per-camera landmark trajectories, fuses the cameras onto a common time
+grid, and computes end-effector poses. The resulting `cln-*.npz` is the input to
+the retarget endpoints.
 
 ## CLI Usage
-
-Convert a smoothed recording into an optimiser sample:
-
-```powershell
-python skeleton_tests\optimization\convert_viki23_json.py `
-  --input rec_1782584807_smoothed.json `
-  --out skeleton_tests\samples\rec_1782584807_smoothed_wrist_only.npz `
-  --hand right
-```
 
 Run retargeting directly through the expected FK conda environment:
 
 ```powershell
-& 'C:\Users\minim\miniforge3\Scripts\conda.exe' run -n viki-fk python viki\optimization\optimization\retarget_rgb_only.py `
+& 'C:\Users\minim\miniforge3\Scripts\conda.exe' run -n viki-fk   python viki\optimization\retarget\retarget_rgb_only.py `
   --sample data\skeleton_smoothed\cln-17.20-12.07.2026.npz `
   --robot ur10 `
   --out data\robot_out\boardbase_ur10 `
@@ -122,8 +99,6 @@ The backend router is mounted at:
 Implemented endpoints:
 
 ```text
-GET  /api/optimization/recordings
-POST /api/optimization/convert
 GET  /api/optimization/samples
 POST /api/optimization/retarget
 GET  /api/optimization/jobs
@@ -139,30 +114,6 @@ GET /api/optimization/recordings
 ```
 
 Returns usable `rec_*.json` files with filename, relative path, size, modified time, and `looks_smoothed`.
-
-### Convert Recording
-
-```text
-POST /api/optimization/convert
-```
-
-Request:
-
-```json
-{
-  "recording": "rec_1782584807_smoothed.json",
-  "output_name": "rec_1782584807_smoothed_wrist_only.npz",
-  "hand": "right"
-}
-```
-
-The output is written under:
-
-```text
-skeleton_tests/samples/
-```
-
-The response includes output path, frame count, fps, working hand, and orientation-valid frame counts.
 
 ### List Samples
 
@@ -303,9 +254,9 @@ Do not use `--recenter-to-neutral` for calibrated robot-base trajectories becaus
 Run the focused tests from the repo root:
 
 ```powershell
-python -m unittest discover viki\skeleton
+python -m unittest discover viki\optimization\preparation
+python -m unittest discover viki\optimization\retarget
 python -m unittest viki.server.routes.test_optimization
-python -m unittest discover skeleton_tests\optimization
 ```
 
 The retarget logic tests do not require PINK/Pinocchio. Full IK execution still requires the `viki-fk` conda environment.
