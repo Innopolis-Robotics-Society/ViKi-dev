@@ -113,8 +113,6 @@ async function init() {
     });
   }
 
-  config.checkServer();
-  setInterval(config.checkServer, 5000);
   cameras.scanDevices();
   calibration.populateArucoDicts();
   calibration.toggleBoardFields();

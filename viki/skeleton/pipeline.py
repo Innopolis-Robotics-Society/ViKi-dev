@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from time import sleep
 
+from pathlib import Path
 from typing import Any, Dict, Optional, Literal
 import logging
 
@@ -311,7 +312,36 @@ class SkeletonPipeline:
             logger.debug("SkeletonPipeline: no synced frames from SyncFrameGroup")
             return None
 
-        return prepare_frame(frame)
+        prepared = prepare_frame(frame)
+        self._attach_base_depth(device_id, prepared)
+        return prepared
+
+    def _attach_base_depth(self, device_id: str, prepared: PreparedFrame) -> None:
+        """
+        Load the captured static-background depth (if present) onto ``prepared``.
+
+        ``lift_to_3d`` uses ``prepared.base_depth_m`` to subtract the scene so the
+        tracked hand stands out from the background. Missing/corrupt/mismatched
+        bases are silently ignored so estimation never breaks.
+        """
+        base_dir = getattr(viki.config, "SKELETON_DEPTH_BASE_DIR", "data/depth_bases/")
+        base_path = Path(base_dir) / f"{device_id}.npy"
+        if not base_path.exists():
+            return
+        try:
+            base = np.load(base_path)
+        except Exception as exc:  # noqa: BLE001 - best-effort, never fatal
+            logger.error("Failed to load base depth for %s: %s", device_id, exc)
+            return
+        if prepared.depth_m is None or base.shape != prepared.depth_m.shape:
+            logger.warning(
+                "Base depth shape %s does not match frame %s for %s; ignoring",
+                getattr(base, "shape", None),
+                getattr(prepared.depth_m, "shape", None),
+                device_id,
+            )
+            return
+        prepared.base_depth_m = base
 
     def _lift_camera(
         self,

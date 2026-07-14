@@ -1,423 +1,160 @@
 """
 viki.server.routes.optimization
 -------------------------------
-Backend endpoints for experimental skeleton retargeting/optimisation.
+Endpoints for converting raw skeleton recordings into prepared data:
+listing raw recordings and applying Savitzky-Golay smoothing (raw -> prepared).
 """
 
 from __future__ import annotations
 
-import queue
-import threading
-import time
-import uuid
-from dataclasses import asdict, dataclass, field
-from datetime import datetime
+import io
+import logging
 from pathlib import Path
-from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+import numpy as np
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
+from pydantic import BaseModel
 
-from viki.optimization.retarget.retarget_rgb_only import (
-    RunConfig,
-    evaluate_saved_traj,
-    normalize_robot,
-    output_traj_path,
-    retarget,
-)
+import viki.config as config
+from viki.optimization.preparation.processor import PreparationPipeline
+from viki.server.deps import get_processor
 
-router = APIRouter(prefix="/api/optimization", tags=["optimization"])
-
-PROJECT_ROOT = Path(__file__).resolve().parents[3]
-SMOOTHED_INPUT_DIR = PROJECT_ROOT / "data" / "skeleton_smoothed"
-OUTPUT_DIR = PROJECT_ROOT / "data" / "robot_out"
-OUTPUT_SUFFIXES = {".h5", ".hdf5", ".json", ".png"}
-TAIL_CHARS = 12000
+router = APIRouter(prefix="/optimization", tags=["optimization"])
+logger = logging.getLogger(__name__)
 
 
-class RetargetRequest(BaseModel):
-    """Request model for starting a retargeting optimisation job."""
-
-    sample: str
-    robot: str = "ur10"
-    output_name: str
-    target_mode: Literal["wrist_position", "hand_se3"] = "wrist_position"
-    ik_position_cost: float | None = None
-    ik_orientation_cost: float | None = None
-    ik_solver: str | None = None
-    joint_sg_window: int = 0
-    sg_window: int = 0
-    recenter_to_neutral: bool = False
-    trajectory_scale: float | None = Field(default=None, gt=0.0)
-    trajectory_scale_origin: Literal["auto", "initial_wrist", "robot_base"] = "auto"
-    align_initial_orientation: bool | None = None
-    evaluate: bool = True
+class SmoothRequest(BaseModel):
+    filename: str
+    window_length: int = 7
+    polyorder: int = 2
 
 
-@dataclass(frozen=True)
-class RobotRetargetDefaults:
-    """Default parameters for a given robot."""
-
-    ik_position_cost: float
-    ik_orientation_cost: float
-    ik_solver: str
-    trajectory_scale: float
-    align_initial_orientation: bool
-
-
-@dataclass
-class OptimizationJob:
-    """Internal state of an optimisation job."""
-
-    job_id: str
-    status: str
-    description: str
-    output_stem: str
-    created_at: float = field(default_factory=time.time)
-    started_at: float | None = None
-    finished_at: float | None = None
-    exit_code: int | None = None
-    stdout_tail: str = ""
-    stderr_tail: str = ""
-    error: str | None = None
-
-
-_jobs: dict[str, OptimizationJob] = {}
-_jobs_lock = threading.Lock()
-_job_queue: queue.Queue[tuple[str, Path, Path, RunConfig, bool]] = queue.Queue()
-_worker_started = False
-
-
-@router.get("/samples")
-async def list_samples() -> dict[str, Any]:
+@router.get("/recordings")
+async def list_recordings(
+    page: int = 0,
+    limit: int = 10,
+    processor: PreparationPipeline = Depends(get_processor),
+):
     """
-    List available smoothed skeleton samples (.npz files) for retargeting.
-
-    Returns
-    -------
-    dict
-        {"samples": list[file_info]}
-    """
-    _ensure_dirs()
-    return {
-        "samples": [
-            _file_info(path) for path in sorted(SMOOTHED_INPUT_DIR.glob("*.npz"))
-        ]
-    }
-
-
-@router.post("/retarget")
-async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
-    """
-    Enqueue a retargeting job.
+    List raw skeleton recordings (rec-*.npz), paginated.
 
     Parameters
     ----------
-    req : RetargetRequest
-        Sample name, robot, output name, and optimisation parameters.
+    page : int, default=0
+        Page number (zero-based).
+    limit : int, default=10
+        Number of recordings per page.
 
     Returns
     -------
     dict
-        Job details (job_id, status, etc.).
+        {"recordings": list[str]} – list of filenames.
+    """
+    return {"recordings": processor.list_recordings(page=page, page_size=limit)}
+
+
+@router.post("/smooth")
+async def smooth_recording(
+    req: SmoothRequest,
+    processor: PreparationPipeline = Depends(get_processor),
+):
+    """
+    Apply Savitzky-Golay smoothing to a raw recording, producing a prepared
+    (cln-*.npz) file with smoothed landmarks and end-effector poses.
+
+    Parameters
+    ----------
+    req : SmoothRequest
+        Filename, window length, and polynomial order.
+
+    Returns
+    -------
+    dict
+        {"status": "success", "path": str} – path to the prepared file.
 
     Raises
     ------
     HTTPException 404
-        If the sample file is not found.
+        If file not found.
+    HTTPException 400
+        If smoothing parameters are invalid.
+    HTTPException 500
+        If an internal error occurs.
     """
-    _ensure_dirs()
-    sample_name = _safe_filename(req.sample, expected_suffix=".npz")
-    sample_path = SMOOTHED_INPUT_DIR / sample_name
-    if not sample_path.exists():
-        raise HTTPException(status_code=404, detail=f"Sample not found: {sample_name}")
-
-    output_name = _safe_filename(req.output_name)
-    output_path = OUTPUT_DIR / output_name
-    output_path = output_traj_path(output_path, sample_path, normalize_robot(req.robot))
-    output_stem = output_path.stem.replace("_traj", "")
-    defaults = _retarget_defaults(req.robot, req.target_mode)
-
-    robot_cfg = normalize_robot(req.robot)
-    cfg = RunConfig(
-        robot=robot_cfg,
-        working_hand="right",
-        landmark_sg_window=req.sg_window,
-        landmark_sg_polyorder=2,
-        ik_position_cost=(
-            req.ik_position_cost
-            if req.ik_position_cost is not None
-            else defaults.ik_position_cost
-        ),
-        ik_orientation_cost=(
-            req.ik_orientation_cost
-            if req.ik_orientation_cost is not None
-            else defaults.ik_orientation_cost
-        ),
-        ik_posture_cost=1e-3,
-        target_mode=req.target_mode,
-        ik_substeps=20,
-        ik_solver="quadprog",
-        approach_sec=5.0,
-        joint_sg_window=req.joint_sg_window,
-        joint_sg_polyorder=3,
-        limit_frames=None,
-        recenter_to_neutral=req.recenter_to_neutral,
-        trajectory_scale=(
-            req.trajectory_scale
-            if req.trajectory_scale is not None
-            else defaults.trajectory_scale
-        ),
-        trajectory_scale_origin=req.trajectory_scale_origin,
-        align_initial_orientation=(
-            req.align_initial_orientation
-            if req.align_initial_orientation is not None
-            else defaults.align_initial_orientation
-        ),
-    )
-
-    do_evaluate = req.evaluate
-    description = (
-        f"retarget robot={req.robot} sample={sample_name} mode={req.target_mode}"
-    )
-    job = _enqueue_job(
-        description, output_stem, sample_path, output_path, cfg, do_evaluate
-    )
-    return _job_response(job)
-
-
-@router.get("/jobs")
-async def list_jobs() -> dict[str, Any]:
-    """
-    List all optimisation jobs (including finished and failed).
-
-    Returns
-    -------
-    dict
-        {"jobs": list[dict]}
-    """
-    with _jobs_lock:
-        jobs = [_job_response(job) for job in _jobs.values()]
-    jobs.sort(key=lambda item: item["created_at"])
-    return {"jobs": jobs}
-
-
-@router.get("/jobs/{job_id}")
-async def get_job(job_id: str) -> dict[str, Any]:
-    """
-    Get the status and details of a specific optimisation job.
-
-    Parameters
-    ----------
-    job_id : str
-        Job ID.
-
-    Returns
-    -------
-    dict
-        Job details.
-
-    Raises
-    ------
-    HTTPException 404
-        If job not found.
-    """
-    with _jobs_lock:
-        job = _jobs.get(job_id)
-        if job is None:
-            raise HTTPException(status_code=404, detail=f"Job not found: {job_id}")
-        return _job_response(job)
-
-
-@router.get("/outputs")
-async def list_outputs() -> dict[str, Any]:
-    """
-    List all generated output files (trajectories, evaluations).
-
-    Returns
-    -------
-    dict
-        {"outputs": list[file_info]}
-    """
-    _ensure_dirs()
-    paths = [
-        path
-        for path in sorted(OUTPUT_DIR.iterdir())
-        if path.is_file() and path.suffix.lower() in OUTPUT_SUFFIXES
-    ]
-    return {"outputs": [_file_info(path) for path in paths]}
-
-
-@router.get("/outputs/download")
-async def download_output(filename: str) -> FileResponse:
-    return _output_response(filename)
-
-
-@router.get("/outputs/{filename}")
-async def download_output_by_filename(filename: str) -> FileResponse:
-    return _output_response(filename)
-
-
-def _output_response(filename: str) -> FileResponse:
-    name = _safe_filename(filename)
-    path = OUTPUT_DIR / name
-    if not path.exists() or not path.is_file():
-        raise HTTPException(status_code=404, detail=f"Output not found: {name}")
-    if path.suffix.lower() not in OUTPUT_SUFFIXES:
-        raise HTTPException(status_code=400, detail="Unsupported output file type")
-    return FileResponse(path, filename=name)
-
-
-def _ensure_dirs() -> None:
-    """Create required directories if they don't exist."""
-    SMOOTHED_INPUT_DIR.mkdir(parents=True, exist_ok=True)
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-
-def _safe_filename(filename: str, expected_suffix: str | None = None) -> str:
-    """Sanitize filename to prevent path traversal."""
-    path = Path(filename)
-    name = path.name
-    if not name or name in {".", ".."} or name != filename:
-        raise HTTPException(status_code=400, detail=f"Invalid filename: {filename}")
-    if expected_suffix and Path(name).suffix.lower() != expected_suffix:
-        name = name + expected_suffix
-    if Path(name).name != name:
-        raise HTTPException(status_code=400, detail=f"Invalid filename: {filename}")
-    return name
-
-
-def _file_info(path: Path) -> dict[str, Any]:
-    """Return file metadata (filename, path, size, modification time)."""
-    stat = path.stat()
-    return {
-        "filename": path.name,
-        "path": _relative_path(path),
-        "size": stat.st_size,
-        "modified": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-        "looks_smoothed": path.parent == SMOOTHED_INPUT_DIR
-        or "smoothed" in path.stem.lower()
-        or path.stem.lower().startswith("cln-"),
-    }
-
-
-def _relative_path(path: Path) -> str:
-    """Return path relative to the project root."""
     try:
-        return str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
-    except ValueError:
-        return str(path)
-
-
-def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
-    """Return default optimisation parameters for a given robot and mode."""
-    robot_key = robot.strip().lower()
-    if target_mode == "wrist_position":
-        return RobotRetargetDefaults(
-            ik_position_cost=(
-                2.0 if robot_key in {"iiwa14", "iiwa14_description"} else 5.0
-            ),
-            ik_orientation_cost=0.0,
-            ik_solver="quadprog",
-            trajectory_scale=(
-                0.55 if robot_key in {"iiwa14", "iiwa14_description"} else 0.8
-            ),
-            align_initial_orientation=False,
+        path, _ = processor.smooth_recording(
+            req.filename,
+            window_length=req.window_length,
+            polyorder=req.polyorder,
         )
-    if robot_key in {"iiwa14", "iiwa14_description"}:
-        return RobotRetargetDefaults(
-            ik_position_cost=2.0,
-            ik_orientation_cost=0.3,
-            ik_solver="quadprog",
-            trajectory_scale=0.55,
-            align_initial_orientation=False,
-        )
-    return RobotRetargetDefaults(
-        ik_position_cost=5.0,
-        ik_orientation_cost=0.6,
-        ik_solver="quadprog",
-        trajectory_scale=0.75,
-        align_initial_orientation=True,
-    )
+        return {"status": "success", "path": path}
+    except FileNotFoundError:
+        raise HTTPException(404, f"Recording {req.filename} not found")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        logger.exception("Smoothing failed")
+        raise HTTPException(500, f"Smoothing failed: {str(e)}")
 
 
-def _enqueue_job(
-    description: str,
-    output_stem: str,
-    sample_path: Path,
-    output_path: Path,
-    cfg: RunConfig,
-    do_evaluate: bool,
-) -> OptimizationJob:
-    """Create a job and enqueue it for background processing."""
-    global _worker_started
-    job = OptimizationJob(
-        job_id=uuid.uuid4().hex,
-        status="queued",
-        description=description,
-        output_stem=output_stem,
-    )
-    with _jobs_lock:
-        _jobs[job.job_id] = job
-        if not _worker_started:
-            thread = threading.Thread(target=_job_worker, daemon=True)
-            thread.start()
-            _worker_started = True
-    _job_queue.put((job.job_id, sample_path, output_path, cfg, do_evaluate))
-    return job
+@router.get("/smooth-plot")
+async def smooth_plot(filename: str):
+    """
+    Return a PNG comparing raw and smoothed wrist trajectories.
 
+    Parameters
+    ----------
+    filename : str
+        Prepared (cln-*.npz) file name.
 
-def _job_worker() -> None:
-    """Background worker that processes jobs from the queue."""
-    while True:
-        job_id, sample_path, output_path, cfg, do_evaluate = _job_queue.get()
-        with _jobs_lock:
-            job = _jobs[job_id]
-            job.status = "running"
-            job.started_at = time.time()
-        try:
-            summary = retarget(sample_path, output_path, cfg)
-            if do_evaluate:
-                traj_path = output_path
-                eval_prefix = traj_path.with_name(
-                    traj_path.stem.replace("_traj", "") + "_eval"
-                )
-                robot = cfg.robot
-                summary.update(
-                    evaluate_saved_traj(
-                        sample_path, traj_path, robot, "rigid", eval_prefix
-                    )
-                )
+    Returns
+    -------
+    Response
+        PNG image.
 
-            with _jobs_lock:
-                job.exit_code = 0
-                job.stdout_tail = _tail(
-                    f"Saved trajectory: {summary.get('traj_path', str(output_path))}"
-                )
-                job.status = "succeeded"
-                job.finished_at = time.time()
-        except Exception as exc:
-            with _jobs_lock:
-                job.status = "failed"
-                job.error = str(exc)
-                job.exit_code = 1
-                job.finished_at = time.time()
-        finally:
-            _job_queue.task_done()
+    Raises
+    ------
+    HTTPException 404
+        If file not found.
+    """
+    smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
+    npz_path = smoothed_dir / filename
+    if not npz_path.exists():
+        raise HTTPException(status_code=404, detail=f"Smoothed recording not found: {filename}")
 
+    with np.load(npz_path) as data:
+        positions = data["positions"]
+        timestamps = data["timestamps"]
+        raw_points = data.get("raw_points")
+        landmark_ids = data.get("landmark_ids")
 
-def _tail(text: str) -> str:
-    """Trim text to the last TAIL_CHARS characters."""
-    return text[-TAIL_CHARS:] if text and len(text) > TAIL_CHARS else (text or "")
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
+    fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
+    t_sec = (timestamps - timestamps[0]) / 1_000_000
 
-def _job_response(job: OptimizationJob) -> dict[str, Any]:
-    """Return a serialisable representation of a job."""
-    data = asdict(job)
-    data["outputs"] = [
-        _file_info(path)
-        for path in sorted(OUTPUT_DIR.glob(f"{job.output_stem}*"))
-        if path.is_file() and path.suffix.lower() in OUTPUT_SUFFIXES
-    ]
-    return data
+    labels = ["X", "Y", "Z"]
+    colors_raw = ["#e74c3c", "#e67e22", "#3498db"]
+    colors_smooth = ["#2ecc71", "#1abc9c", "#9b59b6"]
+
+    for i, (ax, label, cr, cs) in enumerate(zip(axes, labels, colors_raw, colors_smooth)):
+        ax.plot(t_sec, positions[:, i], color=cs, linewidth=2, label="Smoothed" if i == 0 else None)
+        if raw_points is not None and landmark_ids is not None:
+            wrist_col = int(np.where(landmark_ids == 0)[0][0])
+            ax.plot(t_sec, raw_points[:, wrist_col, i], color=cr, linewidth=1, alpha=0.5, label="Raw" if i == 0 else None)
+        ax.set_ylabel(f"{label} (m)")
+        ax.legend(loc="upper right", fontsize=8)
+        ax.grid(True, alpha=0.3)
+
+    axes[-1].set_xlabel("Time (s)")
+    fig.suptitle(f"Smoothing comparison — {filename}", fontsize=12)
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=120)
+    plt.close(fig)
+    buf.seek(0)
+    return Response(content=buf.getvalue(), media_type="image/png")

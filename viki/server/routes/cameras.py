@@ -20,7 +20,7 @@ from viki.capture.manager import CameraManager
 from viki.server.deps import get_calibrator, get_manager
 from viki.server.streams import camera_stream
 
-router = APIRouter(prefix="/api", tags=["cameras"])
+router = APIRouter(prefix="/cameras", tags=["cameras"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
@@ -52,7 +52,7 @@ async def list_devices(mgr: CameraManager = Depends(get_manager)):
     return mgr.list_devices()
 
 
-@router.post("/cameras/{device_id}/start")
+@router.post("/{device_id}/start")
 async def start_camera(
     device_id: str,
     req: StartRequest,
@@ -95,7 +95,7 @@ async def start_camera(
     return {"status": "started", "device_id": device_id}
 
 
-@router.post("/cameras/{device_id}/stop")
+@router.post("/{device_id}/stop")
 async def stop_camera(device_id: str, mgr: CameraManager = Depends(get_manager)):
     """
     Stop streaming from a camera.
@@ -114,7 +114,7 @@ async def stop_camera(device_id: str, mgr: CameraManager = Depends(get_manager))
     return {"status": "stopped", "device_id": device_id}
 
 
-@router.get("/cameras/{device_id}/info")
+@router.get("/{device_id}/info")
 async def camera_info(device_id: str, mgr: CameraManager = Depends(get_manager)):
     """
     Get camera info (resolution, intrinsics, running status, latest frame timestamp).
@@ -135,7 +135,7 @@ async def camera_info(device_id: str, mgr: CameraManager = Depends(get_manager))
     return info
 
 
-@router.get("/cameras/{device_id}/stream")
+@router.get("/{device_id}/stream")
 def colour_stream(
     device_id: str,
     undistort: bool = True,
@@ -164,7 +164,7 @@ def colour_stream(
     )
 
 
-@router.get("/cameras/{device_id}/depth")
+@router.get("/{device_id}/depth")
 def depth_stream(
     device_id: str,
     mgr: CameraManager = Depends(get_manager),

@@ -32,6 +32,7 @@ from viki.skeleton.models import (
     PreparedFrame,
 )
 from viki.calibration.models import CalibrationExtrinsics
+import viki.config as config
 
 # Palm/knuckle landmarks used to estimate the hand position when not using the
 # wrist alone.  Solid skin areas that almost never project onto the inter-finger
@@ -113,6 +114,11 @@ def lift_to_3d(
 
     # Phase 1 -- project every detected landmark (pixels) to depth space and
     # deproject at its OWN measured depth -> raw3d[lm].
+    base_depth_m = getattr(frame, "base_depth_m", None)
+    use_validation = bool(getattr(config, "SKELETON_ENABLE_DEPTH_VALIDATION", False))
+    samp_radius = int(getattr(config, "SKELETON_DEPTH_SAMP_RADIUS", 15))
+    subtract_thresh = float(getattr(config, "SKELETON_DEPTH_SUBTRACT_THRESHOLD", 0.01))
+
     proj_uv: dict[LM, tuple[float, float]] = {}
     raw3d: dict[LM, np.ndarray] = {}
     for lm, uv in detection.points.items():
@@ -125,12 +131,46 @@ def lift_to_3d(
         proj_uv[lm] = (ud, vd)
 
         ui, vi = int(round(ud)), int(round(vd))
-        if 0 <= vi < h and 0 <= ui < w:
-            z = depth_m[vi, ui]
-            if not np.isnan(z) and 0.01 < z <= 10.0:
-                X = (ud - cx) * z / fx
-                Y = (vd - cy) * z / fy
-                raw3d[lm] = np.array([X, Y, z], dtype=np.float32)
+
+        # When a static background depth has been captured, sample a small ROI
+        # around the landmark and subtract the base: only pixels that are
+        # significantly *closer* than the background (diff > threshold) belong to
+        # the hand, so we take the median of those. This isolates the tracked
+        # hand from the static scene and stabilises depth at sparse IR spots.
+        z = np.nan
+        if (
+            use_validation
+            and base_depth_m is not None
+            and base_depth_m.shape == depth_m.shape
+        ):
+            r = samp_radius
+            v0, v1 = max(0, vi - r), min(h, vi + r + 1)
+            u0, u1 = max(0, ui - r), min(w, ui + r + 1)
+            if v1 > v0 and u1 > u0:
+                current_roi = depth_m[v0:v1, u0:u1]
+                base_roi = base_depth_m[v0:v1, u0:u1]
+                valid = (
+                    ~np.isnan(current_roi) & (current_roi > 0.01) & (current_roi <= 10.0)
+                )
+                if valid.any():
+                    if base_roi.shape == current_roi.shape:
+                        diff = np.maximum(0.0, base_roi - current_roi)
+                        keep = valid & (diff > subtract_thresh)
+                        if keep.any():
+                            z = float(np.median(current_roi[keep]))
+                    if not np.isfinite(z):
+                        # Fallback: median of all valid depth in the ROI.
+                        z = float(np.median(current_roi[valid]))
+        else:
+            if 0 <= vi < h and 0 <= ui < w:
+                zv = depth_m[vi, ui]
+                if not np.isnan(zv) and 0.01 < zv <= 10.0:
+                    z = float(zv)
+
+        if np.isfinite(z):
+            X = (ud - cx) * z / fx
+            Y = (vd - cy) * z / fy
+            raw3d[lm] = np.array([X, Y, z], dtype=np.float32)
 
     if len(proj_uv) < 3:
         logger.warning(

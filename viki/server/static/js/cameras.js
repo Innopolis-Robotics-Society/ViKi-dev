@@ -4,7 +4,7 @@ import { api, log, state, CAMERA_CONFIG, FRONTEND_CONFIG } from './core.js';
 export async function scanDevices() {
   log('Scanning for devices...');
   try {
-    const data = await api('GET', '/api/devices');
+    const data = await api('GET', '/api/cameras/devices');
     log(`Found: ${data.realsense.length} RealSense, ${data.kinect.length} Kinect`, 'ok');
     const all = [
       ...data.realsense.map(id => ({ id, type: 'realsense' })),

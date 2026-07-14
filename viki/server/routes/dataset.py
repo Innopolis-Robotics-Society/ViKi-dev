@@ -44,7 +44,7 @@ from viki.config import (
 )
 from viki.server.robot_viz import robot_trajectory_stream
 
-router = APIRouter(prefix="/api/dataset", tags=["dataset"])
+router = APIRouter(prefix="/dataset", tags=["dataset"])
 logger = logging.getLogger(__name__)
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"

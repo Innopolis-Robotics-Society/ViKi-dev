@@ -12,7 +12,7 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, APIRouter
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -84,13 +84,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ViKi Capture Server", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
-app.include_router(cameras.router)
-app.include_router(calibration.router)
-app.include_router(skeleton.router)
-app.include_router(system.router)
-app.include_router(recording.router)
-app.include_router(optimization.router)
-app.include_router(dataset.router)
+
+router = APIRouter(prefix="/api", tags=["api"])
+router.include_router(cameras.router)
+router.include_router(calibration.router)
+router.include_router(skeleton.router)
+router.include_router(system.router)
+router.include_router(recording.router)
+router.include_router(optimization.router)
+router.include_router(dataset.router)
+app.include_router(router)
 
 
 @app.get("/", response_class=HTMLResponse)
