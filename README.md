@@ -81,7 +81,6 @@ docker compose -f docker-compose.test.yml run --rm tests
 - `viki/capture`: Abstracts camera backends (RealSense, Kinect), manages multi‑camera synchronisation, and serves MJPEG streams.
 - `viki/calibration`: Handles intrinsic/extrinsic calibration of all cameras using chessboard or ChArUco boards.
 - `viki/viz`: Pure pixel processing (depth colorization, MJPEG encoding).
-- `viki/server`: FastAPI backend that exposes REST endpoints for controlling cameras, calibration, skeleton processing, and recording.
+- `viki/server`: FastAPI backend that exposes frontend files and REST endpoints for controlling cameras, calibration, skeleton processing, and recording.
 - `viki/skeleton`: Runs MediaPipe Hand/Pose detectors, lifts 2D detections to 3D using depth, and fuses observations from multiple cameras.
 - `viki/optimization`: Smooths trajectories, runs IK retargeting to robot URDFs, and exports evaluation metrics.
-- `viki/streamlit_app`: Streamlit‑based UI that provides an intuitive interface for demo capture and visualisation.
