@@ -18,16 +18,20 @@ Pipeline:
 """
 
 from __future__ import annotations
-from typing import Any
+from typing import Any, Optional
 
 import numpy as np
 import logging
 
 logger = logging.getLogger(__name__)
 
-from viki.skeleton.models import HandDetection, Landmarks3D, LM, PreparedFrame
-
-_ZD_FALLBACK = 1.0  # metres, when no depth sample is available
+from viki.skeleton.models import (
+    HandDetection,
+    Landmarks3D,
+    LM,
+    PreparedFrame,
+)
+from viki.calibration.models import CalibrationExtrinsics
 
 # Palm/knuckle landmarks used to estimate the hand position when not using the
 # wrist alone.  Solid skin areas that almost never project onto the inter-finger
@@ -62,7 +66,7 @@ def lift_to_3d(
     discard_outliers: bool = False,
     discard_outliers_max_portion: float = 0.2,
     position_from_wrist: bool = False,
-) -> Landmarks3D:
+) -> Optional[Landmarks3D]:
     """
     Lift a single-camera HandDetection into 3-D camera-space landmarks.
 
@@ -86,8 +90,10 @@ def lift_to_3d(
 
     Returns
     -------
-    Landmarks3D
-        Per-landmark 3-D camera positions, or NaNs on failure.
+    Landmarks3D | None
+        Per-landmark 3-D camera positions, or None when the hand region has no
+        usable depth (all palm nodes are depth holes) so a pose cannot be placed
+        without mis-locating the hand.
     """
     depth_m = frame.depth_m
     h, w = depth_m.shape[:2]
@@ -133,33 +139,31 @@ def lift_to_3d(
         )
         return _empty_landmarks(detection)
 
-    # Phase 2 -- estimate hand position from the reference set.
-    ref_set = (LM.WRIST,) if position_from_wrist else _PALM_LM
-    ref_raw = [raw3d[lm] for lm in ref_set if lm in raw3d]
+    # Phase 2 -- estimate hand position from the palm/knuckle reference nodes.
+    # If none of the palm nodes have depth, the hand region is a depth hole:
+    # emitting any fallback depth would place the hand at a wrong position, so
+    # we drop the frame (return None) and let the smooth stage interpolate
+    # across the gap instead.
+    palm_raw = [raw3d[lm] for lm in _PALM_LM if lm in raw3d]
+    if not palm_raw:
+        return None
 
-    if ref_raw:
-        hand_pos = _smart_median(
-            np.array(ref_raw, dtype=np.float64),
-            discard_outliers,
-            discard_outliers_max_portion,
-        )
+    if position_from_wrist and LM.WRIST in raw3d:
+        ref_raw = [raw3d[LM.WRIST]]
     else:
-        # No depth on any reference landmark: fall back to the palm nodes if any
-        # of them have depth, otherwise a default depth in front of the camera.
-        alt = [raw3d[lm] for lm in _PALM_LM if lm in raw3d]
-        if alt:
-            hand_pos = _smart_median(
-                np.array(alt, dtype=np.float64),
-                discard_outliers,
-                discard_outliers_max_portion,
-            )
-        else:
-            hand_pos = np.array([0.0, 0.0, _ZD_FALLBACK], dtype=np.float32)
+        ref_raw = palm_raw
+    hand_pos = _smart_median(
+        np.array(ref_raw, dtype=np.float64),
+        discard_outliers,
+        discard_outliers_max_portion,
+    )
 
     zd = float(hand_pos[2])
     if not (0.05 <= zd <= 10.0):
-        zd = _ZD_FALLBACK
-        hand_pos = np.array([0.0, 0.0, zd], dtype=np.float32)
+        # Depth is present but outside the plausible hand range; do not emit a
+        # mis-placed pose.
+        return None
+    hand_pos = np.array([float(hand_pos[0]), float(hand_pos[1]), zd], dtype=np.float32)
 
     # Phase 3 -- build the hand SHAPE from MediaPipe (x, y, z) at depth zd, then
     # translate so the reference landmark(s) coincide with hand_pos.
@@ -242,3 +246,38 @@ def _smart_median(
     keep = np.ones(pts.shape[0], dtype=bool)
     keep[outlier_idx] = False
     return np.median(pts[keep], axis=0).astype(np.float32)
+
+
+def camera_landmarks_to_world(
+    landmarks: Landmarks3D,
+    extr: CalibrationExtrinsics | None,
+) -> dict[LM, np.ndarray]:
+    """
+    Transform one camera's camera‑frame 3‑D landmarks into world coordinates.
+
+    Uses the camera's ``transform_matrix`` (World‑to‑Camera). Landmarks with
+    non‑finite coordinates are skipped so they cannot poison downstream fusion.
+    This is the same transform the fusion step used; it is exposed here so the
+    live pipeline can emit world‑frame per‑camera skeletons without fusing them.
+
+    Parameters
+    ----------
+    landmarks : Landmarks3D
+        Camera‑frame 3‑D landmarks for a single camera.
+    extr : CalibrationExtrinsics | None
+        Extrinsic calibration for that camera (None → identity transform).
+
+    Returns
+    -------
+    dict[LM, np.ndarray]
+        World‑frame landmark positions, excluding non‑finite observations.
+    """
+    T = extr.transform_matrix if extr is not None else np.eye(4)
+    world_points: dict[LM, np.ndarray] = {}
+    for index, vec in landmarks.points.items():
+        if len(vec.flatten()) != 3 or np.isnan(vec).any():
+            continue
+        pos_mtx = np.eye(4)
+        pos_mtx[:3, 3] = vec
+        world_points[index] = (T @ pos_mtx)[:3, 3].flatten().astype(np.float32)
+    return world_points

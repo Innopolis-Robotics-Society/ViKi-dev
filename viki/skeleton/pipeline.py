@@ -6,10 +6,9 @@ Public orchestrator for the skeleton detection pipeline.
 
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
 from time import sleep
 
-from typing import Dict, Optional, Literal
+from typing import Any, Dict, Optional, Literal
 import logging
 
 from viki.calibration.models import CalibrationExtrinsics
@@ -22,8 +21,8 @@ from viki.capture.base import SyncedFrameGroup
 from viki.capture.manager import CameraManager
 from viki.calibration.manager import CalibrationManager
 from viki.skeleton.camera_prep import prepare_frame
-from viki.skeleton.fusion import fuse
-from viki.skeleton.geometry import lift_to_3d
+from viki.skeleton.geometry import lift_to_3d, camera_landmarks_to_world
+from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
@@ -31,11 +30,14 @@ from viki.skeleton.detectors import (
 )
 from viki.skeleton.models import (
     Landmarks3D,
+    SkeletonFrame,
     PipelineResult,
     HandDetection,
     PreparedFrame,
+    DepthDebug,
     LM,
 )
+from viki.calibration.models import CalibrationExtrinsics
 import viki.config
 
 # Palm/knuckle landmarks used to pick a representative hand position.
@@ -49,15 +51,68 @@ _PALM_LM_POS = (
 )
 
 
+def _depth_stats(frame_depth: np.ndarray) -> tuple[float, float, float]:
+    """
+    Summarise a raw uint16‑mm depth image.
+
+    Returns (valid_fraction, median_m, mean_m). ``valid_fraction`` is the share
+    of pixels whose depth is in the plausible 0.01–10 m range; medians/means
+    are taken over those pixels only. Mirrors the range filter used by
+    ``lift_to_3d``.
+    """
+    d = frame_depth.astype(np.float32) / 1000.0
+    valid = (d > 0.01) & (d <= 10.0)
+    frac = float(valid.mean()) if d.size else 0.0
+    if not valid.any():
+        return frac, float("nan"), float("nan")
+    dv = d[valid]
+    return frac, float(np.median(dv)), float(dv.mean())
+
+
+def _wrist_depth_m(
+    det: HandDetection,
+    prepared: PreparedFrame,
+    backend: Any,
+) -> float:
+    """
+    Depth (metres) measured at the detected wrist landmark, or NaN.
+
+    Projects the wrist pixel into depth space and samples the measured depth —
+    the exact value that feeds hand‑position estimation for the lifted camera.
+    """
+    uv = det.points.get(LM.WRIST)
+    if uv is None or np.isnan(uv[0]) or np.isnan(uv[1]):
+        return float("nan")
+    res = backend.project_color_to_depth(uv[0], uv[1], 1.0)
+    if res is None:
+        res = (uv[0], uv[1])
+    ud, vd = res
+    depth_m = prepared.depth_m
+    if depth_m is None:
+        return float("nan")
+    h, w = depth_m.shape[:2]
+    ui, vi = int(round(ud)), int(round(vd))
+    if 0 <= vi < h and 0 <= ui < w:
+        z = depth_m[vi, ui]
+        if np.isfinite(z) and 0.01 < z <= 10.0:
+            return float(z)
+    return float("nan")
+
+
 class SkeletonPipeline:
     """
-    End‑to‑end skeleton detection from SyncedFrameGroup to SkeletonFrame.
+    End‑to‑end skeleton detection from SyncedFrameGroup to per‑camera frames.
 
     This pipeline:
         1. Prepares each camera frame (undistort, depth clean).
         2. Runs hand detection (MediaPipe) on each camera in parallel.
         3. Lifts 2D detections to 3D using depth maps.
-        4. Fuses per‑camera 3D landmarks into a single world‑frame skeleton.
+        4. Transforms each camera's 3D landmarks to world frame and emits one
+           ``SkeletonFrame`` per camera (tagged with its ``device_id``).
+
+    Capture‑time fusion is intentionally NOT performed here: the per‑camera
+    trajectories are recorded as‑is and fused later at the smooth/optimisation
+    stage.
 
     Parameters
     ----------
@@ -84,7 +139,6 @@ class SkeletonPipeline:
         self._manager = manager
         self._detectors: dict[str, CompositeLandmarkDetector] = {}
         self._hand_type = hand
-        self._executor = ThreadPoolExecutor(max_workers=4)
 
         self._discard_outliers = discard_outliers
         self._discard_outliers_max_portion = discard_outliers_max_portion
@@ -109,56 +163,62 @@ class SkeletonPipeline:
         Returns
         -------
         PipelineResult
-            Contains fused SkeletonFrame and per‑camera detections.
+            Contains one ``SkeletonFrame`` per camera (world‑frame, tagged with
+            ``device_id``) plus per‑camera detections and optional debug marks.
         """
         detections: dict[str, HandDetection | None] = {}
         lms_3d: dict[str, Landmarks3D | None] = {}
         prepared_by_dev: dict[str, PreparedFrame | None] = {}
+        extrinsics: dict[str, CalibrationExtrinsics] = {}
 
-        # 1. Run detections in parallel across all cameras
-        futures = {
-            self._executor.submit(self._detect_camera, dev_id, group): dev_id
-            for dev_id in group.frames.keys()
-        }
+        # # 1. Run detections in parallel across all cameras
+        # futures = {
+        #     self._executor.submit(self._detect_camera, dev_id, group): dev_id
+        #     for dev_id in group.frames.keys()
+        # }
 
-        for future in futures:
-            dev_id, det, prepared = future.result()
+        # for future in futures:
+        #     dev_id, det, prepared = future.result()
+        #     detections[dev_id] = det
+        #     prepared_by_dev[dev_id] = prepared
+        #     # 2. Lift to 3D (sequential, but fast)
+        #     lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
+        #     extr = self._calibrator.get_extrinsics(dev_id)
+        #     extrinsics[dev_id] = extr if extr else CalibrationExtrinsics()
+        # 1. Detect + lift each camera sequentially (no concurrent MediaPipe
+        #    inference — running two live models at once contends on the GPU and
+        #    produces stale/out-of-order detections).
+        dev_ids = list(group.frames.keys())
+        if not dev_ids:
+            return PipelineResult(frames=[], detections={})
+
+        for dev_id in dev_ids:
+            dev_id, det, prepared = self._detect_camera(dev_id, group)
             detections[dev_id] = det
             prepared_by_dev[dev_id] = prepared
             # 2. Lift to 3D (sequential, but fast)
             lms_3d[dev_id] = self._lift_camera(dev_id, group, det, prepared)
-
-        # Extract confidences for weighted fusion
-        confidences: dict[str, dict[LM, float]] = {}
-        for dev_id, det in detections.items():
-            if det:
-                # MediaPipe confidence is overall, but if we have per-landmark we'd use it.
-                # Currently HandDetection only has overall confidence.
-                # We'll map this overall confidence to all landmarks for now.
-                confidences[dev_id] = {LM(i): det.confidence for i in range(LM.N)}
-
-        # Fusion logic:
-
-        # Master camera is the first device in the group.
-        dev_ids = list(group.frames.keys())
-        if not dev_ids:
-            return PipelineResult(fused_frame=None, detections={})
-
-        extrinsics: Dict[str, CalibrationExtrinsics] = {}
-        for dev_id in dev_ids:
             extr = self._calibrator.get_extrinsics(dev_id)
-            if not extr:
-                extrinsics[dev_id] = CalibrationExtrinsics()
-            else:
-                extrinsics[dev_id] = extr
+            extrinsics[dev_id] = extr if extr else CalibrationExtrinsics()
 
-        fused = fuse(
-            dev_ids,
-            lms_3d,
-            extrinsics,
-            group.sync_timestamp_us,
-            confidences=confidences,
-        )
+        # 3. Build one world‑frame SkeletonFrame per camera (no fusion here).
+        frames: list[SkeletonFrame] = []
+        for dev_id in dev_ids:
+            lm = lms_3d.get(dev_id)
+            if lm is None:
+                continue
+            world_points = camera_landmarks_to_world(lm, extrinsics[dev_id])
+            if not world_points:
+                continue
+            pose = compute_end_effector_pose(world_points, int(group.sync_timestamp_us))
+            frames.append(
+                SkeletonFrame(
+                    device_id=dev_id,
+                    points=world_points,
+                    timestamp_us=int(group.sync_timestamp_us),
+                    end_effector=pose,
+                )
+            )
 
         debug_depth_marks = None
         if self._depth_debug:
@@ -166,10 +226,32 @@ class SkeletonPipeline:
                 detections, prepared_by_dev, extrinsics
             )
 
+        # 4. Depth diagnostics for every camera in the group (regardless of
+        #    whether it was lifted). Surfaces what the depth cameras were doing
+        #    this frame so recordings can be inspected for depth corruption.
+        depth_debug: dict[str, DepthDebug] = {}
+        for dev_id, frame in group.frames.items():
+            frac, median, mean = _depth_stats(frame.depth)
+            det = detections.get(dev_id)
+            prepared = prepared_by_dev.get(dev_id) if det is not None else None
+            backend = self._manager.get_backend(dev_id) if det is not None else None
+            wrist = float("nan")
+            if det is not None and prepared is not None and backend is not None:
+                wrist = _wrist_depth_m(det, prepared, backend)
+            depth_debug[dev_id] = DepthDebug(
+                device_id=dev_id,
+                depth_valid_fraction=frac,
+                depth_median_m=median,
+                depth_mean_m=mean,
+                hand_detected=det is not None,
+                wrist_depth_m=wrist,
+            )
+
         return PipelineResult(
-            fused_frame=fused,
+            frames=frames,
             detections=detections,
             debug_depth_marks=debug_depth_marks,
+            depth_debug=depth_debug,
         )
 
     def _detect_camera(
@@ -186,8 +268,8 @@ class SkeletonPipeline:
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
                 detectors=[
-                    # MediaPipeArm(hand=self._hand, mode="live"),
-                    MediaPipeHand(hand=self._hand, mode="live"),
+                    # MediaPipeArm(hand=self._hand, mode="video"),
+                    MediaPipeHand(hand=self._hand, mode="video"),
                 ],
                 mode=FusionMode.ANY,
             )
@@ -197,7 +279,6 @@ class SkeletonPipeline:
 
     def close(self) -> None:
         """Release MediaPipe resources."""
-        self._executor.shutdown(wait=False)
         for detector in self._detectors.values():
             detector.close()
 
@@ -300,7 +381,8 @@ class SkeletonPipeline:
         if wrist is not None and np.all(np.isfinite(wrist)):
             return wrist.astype(np.float64)
         pts = [
-            p for lm, p in landmarks.points.items()
+            p
+            for lm, p in landmarks.points.items()
             if lm in _PALM_LM_POS and p is not None and np.all(np.isfinite(p))
         ]
         if not pts:

@@ -116,23 +116,33 @@ class EndEffectorPose:
 @dataclass
 class SkeletonFrame:
     """
-    Final fused skeleton in world coordinates.
+    Per‑camera 3‑D hand skeleton in world coordinates.
+
+    The live skeleton pipeline no longer fuses cameras at capture time; it
+    emits one ``SkeletonFrame`` per camera that detected a hand. Fusion of the
+    multiple per‑camera trajectories is deferred to the smooth/optimisation
+    stage. ``device_id`` identifies the source camera so the frontend can draw
+    each hand in a distinct colour.
 
     Attributes
     ----------
+    device_id : str
+        Identifier of the camera that produced this frame.
     points : dict[LM, np.ndarray]
         Mapping from landmark enum to world‑frame (X, Y, Z) in metres.
     timestamp_us : int
-        Sync timestamp of the fused frame.
+        Sync timestamp of the frame.
     end_effector : Optional[EndEffectorPose]
         World‑frame wrist pose, if computable.
     """
+    device_id: str
     points: dict[LM, np.ndarray]
     timestamp_us: int
     end_effector: Optional[EndEffectorPose] = None
 
     def as_dict(self) -> dict:
         return {
+            "device_id": self.device_id,
             "points": {index.value: vec.tolist() for index, vec in self.points.items()},
             "timestamp_us": self.timestamp_us,
             "end_effector": (
@@ -142,26 +152,53 @@ class SkeletonFrame:
 
 
 @dataclass
+class DepthDebug:
+    """
+    Per‑camera, per‑frame depth diagnostics captured for recording/debugging.
+
+    Records what the depth camera was doing this frame: the fraction of valid
+    depth pixels, the median/mean depth across the frame, and — for the camera
+    that was actually lifted — the depth measured at the wrist landmark. The
+    wrist depth is the single value that drives hand‑position estimation, so its
+    trajectory is the most direct signal when depth starts mis‑behaving.
+    """
+
+    device_id: str
+    depth_valid_fraction: float  # 0..1 share of in‑range depth pixels
+    depth_median_m: float  # median valid depth (m); NaN if none
+    depth_mean_m: float  # mean valid depth (m); NaN if none
+    hand_detected: bool
+    wrist_depth_m: float  # depth at wrist (m); NaN if no hand / no depth
+
+
+@dataclass
 class PipelineResult:
     """
-    Result of a full pipeline run.
+    Result of a full pipeline run (no capture‑time fusion).
 
     Attributes
     ----------
-    fused_frame : SkeletonFrame
-        The world‑space 3D skeleton (or None if fusion failed).
+    frames : list[SkeletonFrame]
+        One ``SkeletonFrame`` per camera that detected a hand (world‑frame,
+        each tagged with its ``device_id``). The frontend draws each in its own
+        colour; the smooth stage fuses these trajectories later.
     detections : dict[str, HandDetection | None]
         Per‑camera 2D detections (None if no hand found).
     debug_depth_marks : dict[str, dict[LM, np.ndarray]] | None
         Per‑camera, per‑landmark 3D points obtained purely from the depth
         camera (deprojected at each landmark's measured depth, transformed to
-        world frame). Only populated when depth debugging is enabled. Used by
-        the frontend to visualise the raw depth estimate that feeds hand‑position
-        estimation.
+        world frame). Only populated when depth debugging is enabled. Passed
+        through *as‑is* (never fused) so the frontend can render every camera's
+        raw depth estimate.
+    depth_debug : dict[str, DepthDebug] | None
+        Per‑camera depth diagnostics for this frame group (every camera present
+        in the group, regardless of whether it was lifted). Used by the recorder
+        to capture what the depth cameras were doing during a recording.
     """
-    fused_frame: SkeletonFrame  # The world-space 3D skeleton
+    frames: list[SkeletonFrame]
     detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
     debug_depth_marks: Optional[dict[str, dict[LM, np.ndarray]]] = None
+    depth_debug: Optional[dict[str, "DepthDebug"]] = None
 
 
 # MediaPipe Hands landmark indices

@@ -163,9 +163,17 @@ class SkeletonProcessor:
             raise FileNotFoundError(f"Recording file {filename} not found.")
 
         with np.load(input_path) as data:
-            timestamps = data["timestamps"]
-            points = data["points"]
-            landmark_ids = data["landmark_ids"]
+            if "device_ids" not in data:
+                # Legacy single-trajectory recording: treat as one camera.
+                timestamps = data["timestamps"]
+                points = data["points"]
+                landmark_ids = data["landmark_ids"]
+                device_ids = np.array(["cam0"] * len(timestamps), dtype=object)
+            else:
+                device_ids = list(data["device_ids"])
+                timestamps = data["timestamps"]
+                points = data["points"]
+                landmark_ids = data["landmark_ids"]
 
         if points.size == 0:
             raise ValueError("Recording file is empty.")
@@ -176,17 +184,49 @@ class SkeletonProcessor:
             points = points[:, hand_mask, :]
             landmark_ids = landmark_ids[hand_mask]
 
-        # 1. Fill NaN gaps via linear interpolation, then smooth
-        filled = interpolate_nans(points)
-        smoothed_points = smooth_landmark_sequence(
-            filled,
-            window_length=window_length,
-            polyorder=polyorder,
-        )
+        # Reconstruct per-camera trajectories (each camera may have skipped
+        # frames where it did not detect the hand).
+        from collections import defaultdict
 
-        # 2. Compute end-effector poses
-        T = smoothed_points.shape[0]
-        L = smoothed_points.shape[1]
+        groups: dict[object, list[int]] = defaultdict(list)
+        for i, dev in enumerate(device_ids):
+            groups[dev].append(i)
+
+        trajectories: dict[str, np.ndarray] = {}
+        ts_map: dict[str, np.ndarray] = {}
+        for dev, idxs in groups.items():
+            trajectories[str(dev)] = np.array(
+                [points[i] for i in idxs], dtype=np.float32
+            )
+            ts_map[str(dev)] = np.array(
+                [int(timestamps[i]) for i in idxs], dtype=np.int64
+            )
+
+        # 1. Interpolation part: per camera, fill NaN gaps then smooth.
+        smoothed: dict[str, np.ndarray] = {}
+        raw_filled: dict[str, np.ndarray] = {}
+        for dev in trajectories:
+            filled = interpolate_nans(trajectories[dev])
+            raw_filled[dev] = filled
+            smoothed[dev] = smooth_landmark_sequence(
+                filled,
+                window_length=window_length,
+                polyorder=polyorder,
+            )
+
+        # 2. Fusion part: right after interpolation, average the per-camera
+        #    trajectories onto a common time grid (deferred from capture time).
+        from viki.optimization.fusion import fuse_trajectories
+
+        fused_points, grid = fuse_trajectories(smoothed, ts_map, landmark_ids)
+        raw_fused, _ = fuse_trajectories(raw_filled, ts_map, landmark_ids)
+
+        if grid.size == 0:
+            raise ValueError("Recording contains no valid trajectories.")
+
+        # 3. Compute end-effector poses on the fused trajectory.
+        T = fused_points.shape[0]
+        L = fused_points.shape[1]
 
         positions = np.zeros((T, 3), dtype=np.float32)
         rotations = np.zeros((T, 3, 3), dtype=np.float32)
@@ -194,35 +234,35 @@ class SkeletonProcessor:
         valid = np.zeros(T, dtype=bool)
 
         for t in range(T):
-            current_mapping = {LM(landmark_ids[i]): smoothed_points[t, i] for i in range(L)}
-            
-            pose = compute_end_effector_pose(current_mapping, int(timestamps[t]))
-            
+            current_mapping = {LM(landmark_ids[i]): fused_points[t, i] for i in range(L)}
+
+            pose = compute_end_effector_pose(current_mapping, int(grid[t]))
+
             positions[t] = pose.position
             rotations[t] = pose.R_world_palm
             rpy[t] = pose.rpy_deg
             valid[t] = pose.valid
 
         valid = stable_palm_orientation_mask(
-            smoothed_points,
+            fused_points,
             landmark_ids,
             rotations,
             valid,
         )
 
-        # 3. Save to smoothed directory as cln-*.npz
+        # 4. Save to smoothed directory as cln-*.npz
         output_filename = filename.replace("rec-", "cln-")
         output_path = self.smoothed_dir / output_filename
-        
+
         np.savez_compressed(
             output_path,
             positions=positions,
             rotations=rotations,
             rpy=rpy,
             valid=valid,
-            timestamps=timestamps,
-            raw_points=points.astype(np.float32),
-            smoothed_points=smoothed_points.astype(np.float32),
+            timestamps=grid,
+            raw_points=raw_fused.astype(np.float32),
+            smoothed_points=fused_points.astype(np.float32),
             landmark_ids=landmark_ids,
             coordinate_frame=getattr(
                 config,
@@ -235,20 +275,20 @@ class SkeletonProcessor:
             json_path = output_path.with_suffix(".json")
             json_data = []
             for t in range(T):
-                frame_pts = {int(landmark_ids[i]): smoothed_points[t, i].tolist() for i in range(L)}
+                frame_pts = {int(landmark_ids[i]): fused_points[t, i].tolist() for i in range(L)}
                 frame = {
-                    "ts": int(timestamps[t]),
+                    "ts": int(grid[t]),
                     "landmarks": frame_pts,
                     "end_effector": {
                         "position": positions[t].tolist(),
                         "R_world_palm": rotations[t].tolist(),
                         "rpy_deg": rpy[t].tolist(),
                         "valid": bool(valid[t]),
-                        "timestamp_us": int(timestamps[t]),
+                        "timestamp_us": int(grid[t]),
                     }
                 }
                 json_data.append(frame)
             with open(json_path, "w") as f:
                 json.dump(json_data, f, indent=2)
 
-        return str(output_path), smoothed_points
+        return str(output_path), fused_points

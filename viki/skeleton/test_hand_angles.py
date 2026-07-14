@@ -61,7 +61,12 @@ class HandPoseTests(unittest.TestCase):
             recorder = SkeletonRecorder(base_dir=tmp)
             filename = recorder.start()
             recorder.record(
-                SkeletonFrame(points=points, timestamp_us=123, end_effector=pose)
+                SkeletonFrame(
+                    device_id="cam0",
+                    points=points,
+                    timestamp_us=123,
+                    end_effector=pose,
+                )
             )
             saved = recorder.stop()
 
