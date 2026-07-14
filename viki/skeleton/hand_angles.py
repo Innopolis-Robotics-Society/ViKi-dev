@@ -22,7 +22,7 @@ plus a proper rotation matrix ``R_world_palm ∈ SO(3)`` from a palm-attached
 frame to the world
 
 Required landmarks:
-    WRIST, THUMB_CMC, MIDDLE_MCP  (no elbow / shoulder needed).
+    WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP  (MCP spread replaces thumb).
 
 compute_palm_rotation is the palm-only rotation sub-routine used by the
 optimization module.
@@ -191,7 +191,9 @@ def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
 
 
 # Landmarks required to build the palm frame in the world.
-_EE_REQUIRED_LM: tuple[LM, ...] = (LM.WRIST, LM.THUMB_CMC, LM.MIDDLE_MCP)
+# Uses MCP knuckle spread (INDEX → PINKY) for palm normal instead of THUMB_CMC,
+# which moves independently and degenerates when thumb is close to fingers.
+_EE_REQUIRED_LM: tuple[LM, ...] = (LM.WRIST, LM.INDEX_MCP, LM.MIDDLE_MCP, LM.PINKY_MCP)
 
 
 def _rot_to_rpy_extrinsic_xyz(R: np.ndarray) -> np.ndarray:
@@ -225,20 +227,24 @@ def _rot_to_rpy_extrinsic_xyz(R: np.ndarray) -> np.ndarray:
 
 def compute_palm_rotation(
     wrist: np.ndarray,
-    thumb_cmc: np.ndarray,
+    index_mcp: np.ndarray,
     middle_mcp: np.ndarray,
+    pinky_mcp: np.ndarray,
 ) -> np.ndarray | None:
     """
     Compute the 3x3 rotation matrix from palm frame to world.
 
     Palm frame:
         x = normalise(MIDDLE_MCP - WRIST)
-        z = normalise((MIDDLE_MCP - WRIST) × (THUMB_CMC - WRIST))
+        z = normalise((MIDDLE_MCP - WRIST) × (PINKY_MCP - INDEX_MCP))
         y = z × x
+
+    The palm normal uses the MCP knuckle spread instead of the thumb,
+    which is invariant to thumb pose and more stable across hand shapes.
 
     Parameters
     ----------
-    wrist, thumb_cmc, middle_mcp : np.ndarray
+    wrist, index_mcp, middle_mcp, pinky_mcp : np.ndarray
         World‑frame positions (3,).
 
     Returns
@@ -246,15 +252,15 @@ def compute_palm_rotation(
     np.ndarray or None
         (3,3) rotation matrix, or None if any landmark is invalid or degenerate.
     """
-    coords = [np.asarray(p, dtype=np.float64) for p in (wrist, thumb_cmc, middle_mcp)]
+    coords = [np.asarray(p, dtype=np.float64) for p in (wrist, index_mcp, middle_mcp, pinky_mcp)]
     if any(not np.all(np.isfinite(p)) for p in coords):
         return None
 
-    to_middle = coords[2] - coords[0]
-    to_thumb = coords[1] - coords[0]
+    fwd = coords[2] - coords[0]               # MIDDLE_MCP - WRIST
+    spread = coords[3] - coords[1]             # PINKY_MCP - INDEX_MCP
 
-    x_palm = _normalise(to_middle)
-    z_palm = _normalise(np.cross(to_middle, to_thumb))
+    x_palm = _normalise(fwd)
+    z_palm = _normalise(np.cross(fwd, spread))
     if x_palm is None or z_palm is None:
         return None
 
@@ -310,7 +316,7 @@ def compute_end_effector_pose(
     Compute the world‑frame pose of the hand from a fused skeleton.
 
     The primary pose uses the wrist position and palm frame orientation
-    (requires WRIST, THUMB_CMC, MIDDLE_MCP).
+    (requires WRIST, INDEX_MCP, MIDDLE_MCP, PINKY_MCP).
 
     **Fallback**: if the wrist is not available (NaN), the centroid of all
     available palm landmarks (WRIST, THUMB_CMC, INDEX_MCP, MIDDLE_MCP,
@@ -336,13 +342,12 @@ def compute_end_effector_pose(
             break
         coords[lm] = np.asarray(p, dtype=np.float64)
     else:
-        # All three required landmarks are valid → full pose with rotation.
         wrist = coords[LM.WRIST]
-        to_middle = coords[LM.MIDDLE_MCP] - wrist
-        to_thumb = coords[LM.THUMB_CMC] - wrist
+        fwd = coords[LM.MIDDLE_MCP] - wrist
+        spread = coords[LM.PINKY_MCP] - coords[LM.INDEX_MCP]
 
-        x_palm = _normalise(to_middle)
-        z_palm = _normalise(np.cross(to_middle, to_thumb))
+        x_palm = _normalise(fwd)
+        z_palm = _normalise(np.cross(fwd, spread))
         if x_palm is not None and z_palm is not None:
             y_palm = np.cross(z_palm, x_palm)
             y_norm = float(np.linalg.norm(y_palm))

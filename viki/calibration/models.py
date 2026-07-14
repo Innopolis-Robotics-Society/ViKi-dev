@@ -153,7 +153,9 @@ class CalibrationExtrinsics:
     def transform_matrix(self) -> np.ndarray:
         """Return a 4x4 homogeneous transformation matrix from camera to board."""
         R = self.rotation_matrix
+        R_inv = R.T
+        t = self.tvec.flatten()
         T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3] = self.tvec.flatten()
+        T[:3, :3] = R_inv
+        T[:3, 3] = -R_inv @ t
         return np.array(T)

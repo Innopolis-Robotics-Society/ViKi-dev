@@ -114,11 +114,12 @@ function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
   const labels = ['X', 'Y', 'Z'];
   const origin = projFn(pos);
   if (!origin) return;
+  // R_world_palm is column-major: each column is a world-space axis.
   for (let i = 0; i < 3; i++) {
     const tip = [
-      pos[0] + len * R[i][0],
-      pos[1] + len * R[i][1],
-      pos[2] + len * R[i][2],
+      pos[0] + len * R[0][i],
+      pos[1] + len * R[1][i],
+      pos[2] + len * R[2][i],
     ];
     const pTip = projFn(tip);
     if (!pTip) continue;
@@ -157,11 +158,21 @@ function _drawBoard(ctx, proj, cx, cy, scale) {
   ctx.fill();
 }
 
+function _camWorldPos(cam) {
+  const R = rodrigues(cam.rvec), t = cam.tvec;
+  // Camera position in world frame is -R^T @ tvec.
+  return [
+    -(R[0][0] * t[0] + R[1][0] * t[1] + R[2][0] * t[2]),
+    -(R[0][1] * t[0] + R[1][1] * t[1] + R[2][1] * t[2]),
+    -(R[0][2] * t[0] + R[1][2] * t[1] + R[2][2] * t[2]),
+  ];
+}
+
 function _drawCameras(ctx, proj, cx, cy, scale) {
   if (!_calibVisible()) return;
   const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
   calibCameras.forEach((cam, i) => {
-    const p = proj(cam.tvec);
+    const p = proj(_camWorldPos(cam));
     if (!p) return;
     const col = colors[i % colors.length];
     const px = cx + p.x * scale, py = cy - p.y * scale;
@@ -295,7 +306,7 @@ function drawSkeleton3D(landmarks, endEffector) {
     if (calibOverlayVisible && calibCameras && calibCameras.length > 0) {
       const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
       calibCameras.forEach((cam, i) => {
-        const p = projectCam(cam.tvec);
+        const p = projectCam(_camWorldPos(cam));
         if (!p) return;
         const col = colors[i % colors.length];
         const px = cx + p.x * scale, py = cy - p.y * scale;

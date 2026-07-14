@@ -38,6 +38,7 @@ class PreparedFrame:
     aligned_depth: Optional[np.ndarray] = None  # (H, W) uint16, SDK estimated
     base_depth_m: Optional[np.ndarray] = None  # (H, W)    float32, background depth
     depth_K: Optional[np.ndarray] = None  # (3, 3)    depth intrinsic matrix
+    dist_coeffs: Optional[np.ndarray] = None  # (5,)     distortion coefficients (k1,k2,p1,p2,k3)
 
 
 #

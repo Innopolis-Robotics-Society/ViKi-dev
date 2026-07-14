@@ -17,22 +17,19 @@ def _normalize(v: np.ndarray) -> np.ndarray | None:
 
 def compute_palm_rotation(
     wrist: np.ndarray,
-    thumb_cmc: np.ndarray,
+    index_mcp: np.ndarray,
     middle_mcp: np.ndarray,
+    pinky_mcp: np.ndarray,
 ) -> np.ndarray | None:
-    """Build R_world_palm from wrist, thumb CMC, and middle MCP points."""
-    wrist = np.asarray(wrist, dtype=np.float64)
-    thumb_cmc = np.asarray(thumb_cmc, dtype=np.float64)
-    middle_mcp = np.asarray(middle_mcp, dtype=np.float64)
-    if wrist.shape != (3,) or thumb_cmc.shape != (3,) or middle_mcp.shape != (3,):
-        return None
-    if not (np.isfinite(wrist).all() and np.isfinite(thumb_cmc).all() and np.isfinite(middle_mcp).all()):
+    """Build R_world_palm from wrist and MCP knuckle spread points."""
+    coords = [np.asarray(p, dtype=np.float64) for p in (wrist, index_mcp, middle_mcp, pinky_mcp)]
+    if any(p.shape != (3,) or not np.isfinite(p).all() for p in coords):
         return None
 
-    to_middle = middle_mcp - wrist
-    to_thumb = thumb_cmc - wrist
-    x_palm = _normalize(to_middle)
-    z_palm = _normalize(np.cross(to_middle, to_thumb))
+    fwd = coords[2] - coords[0]               # MIDDLE_MCP - WRIST
+    spread = coords[3] - coords[1]             # PINKY_MCP - INDEX_MCP
+    x_palm = _normalize(fwd)
+    z_palm = _normalize(np.cross(fwd, spread))
     if x_palm is None or z_palm is None:
         return None
     y_palm = _normalize(np.cross(z_palm, x_palm))

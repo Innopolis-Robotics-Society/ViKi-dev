@@ -183,7 +183,7 @@ class SkeletonWorker:
                             result = self._pipeline.process(group)
                             with self._lock:
                                 self._latest_result = result
-                            if self._recording:
+                            if self._recording and result.fused_frame is not None:
                                 self._recorder.record(result.fused_frame)
                     else:
                         # No synced frames - if recording, we could write a duplicate here
