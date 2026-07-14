@@ -1,3 +1,9 @@
+"""
+viki.server.routes.recording
+----------------------------
+Endpoints for starting/stopping RGB-D recording in the background worker.
+"""
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from viki.capture.manager import CameraManager
@@ -17,6 +23,27 @@ async def start_recording(
     mgr: CameraManager = Depends(get_manager),
     worker: SkeletonWorker = Depends(get_worker),
 ):
+    """
+    Start an RGB-D recording in the background worker.
+
+    The recording will run for the specified duration and save raw colour
+    and depth data to the output directory.
+
+    Parameters
+    ----------
+    req : RecordRequest
+        Duration (seconds), FPS, and output directory.
+
+    Returns
+    -------
+    dict
+        {"status": "recording started in background worker", "duration": float, "fps": int}
+
+    Raises
+    ------
+    HTTPException 400
+        If no cameras are currently active.
+    """
     if not mgr.active_device_ids():
         raise HTTPException(status_code=400, detail="No cameras are currently active. Start cameras first.")
     

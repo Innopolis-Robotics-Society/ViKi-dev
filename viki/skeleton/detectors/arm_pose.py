@@ -35,7 +35,23 @@ _LEFT = (15, 13, 11)
 
 
 class MediaPipeArm(PartialLandmarkDetector):
-    """Partial detector for one arm."""
+    """
+    Partial detector for one arm using MediaPipe Pose Landmarker.
+
+    Emits landmarks for WRIST (slot 0), ELBOW (21), and SHOULDER (22).
+    The wrist slot is also used by the hand detector; this detector has
+    lower priority (0) so it will be overwritten by the hand detector if
+    both are present, but it provides a fallback when no hand is detected.
+
+    Attributes
+    ----------
+    name : str
+        Detector identifier ("arm_pose").
+    indices : tuple[int, ...]
+        Global slots written: (0, 21, 22).
+    priority : int
+        Priority (0) – lower means higher priority.
+    """
 
     name = "arm_pose"
     indices = (0, 21, 22)
@@ -90,14 +106,18 @@ class MediaPipeArm(PartialLandmarkDetector):
 
     def detect(self, frame: PreparedFrame) -> Optional[PartialDetection2D]:
         """
-        parameters
-        ----------
-        frame : prepared camera frame (RGB + depth + K).
+        Run the detector on a prepared frame.
 
-        returns
+        Parameters
+        ----------
+        frame : PreparedFrame
+            Prepared camera frame (RGB + depth + intrinsics).
+
+        Returns
         -------
-        PartialDetection2D over slots (0, 21, 22), or None when pose was
-        not detected (or LIVE result is not ready yet).
+        Optional[PartialDetection2D]
+            Detection over slots (0, 21, 22) if pose is detected and the requested
+            hand arm is visible; otherwise None.
         """
         raw = self._runner.submit(frame.rgb, frame.timestamp_us)
         if raw is None or not raw.pose_landmarks:
@@ -105,21 +125,24 @@ class MediaPipeArm(PartialLandmarkDetector):
         return self._extract(raw, frame)
 
     def close(self) -> None:
-        """Release the underlying MediaPipe task."""
+        """Release the underlying MediaPipe task resources."""
         self._runner.close()
 
     def _extract(self, raw, frame: PreparedFrame) -> PartialDetection2D:
         """
-        Build PartialDetection2D from a raw PoseLandmarkerResult.
+        Extract pixel coordinates, z, and confidence from the raw MediaPipe result.
 
-        parameters
+        Parameters
         ----------
-        raw   : MediaPipe PoseLandmarkerResult (already non-None).
-        frame : the source PreparedFrame (for shape and metadata).
+        raw : mediapipe.tasks.python.vision.PoseLandmarkerResult
+            Raw result from the runner.
+        frame : PreparedFrame
+            The source frame (used for image size and metadata).
 
-        returns
+        Returns
         -------
-        PartialDetection2D with shape (3, 2) px, (3,) lm_z_rel, (3,) conf.
+        PartialDetection2D
+            Detection object with shape (3, 2) px, (3,) z, (3,) confidence.
         """
         h, w = frame.rgb.shape[:2]
         lms = raw.pose_landmarks[0]  # take only one person

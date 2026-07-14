@@ -1,3 +1,12 @@
+"""
+viki.calibration.models
+--------------------
+Data models for camera calibration.
+
+This module defines dataclasses that hold calibration parameters,
+samples, and results. These are used throughout the calibration pipeline.
+"""
+
 from dataclasses import dataclass, field
 from cv2.typing import MatLike
 import numpy as np
@@ -8,12 +17,34 @@ from viki.capture.base import Frame
 
 @dataclass
 class BoardParameters:
+    """
+    Physical parameters of a calibration board.
+
+    Attributes
+    ----------
+    board_size : Tuple[int, int]
+        Number of internal corners per row and column (e.g., (9,6) for a 9x6 board).
+    square_size : float
+        Length of one square side in real-world units (e.g., meters).
+    """
+
     board_size: Tuple[int, int]
     square_size: float
 
 
 @dataclass
 class ArucoBoardParameters(BoardParameters):
+    """
+    Parameters specific to a ChArUco board.
+
+    Attributes
+    ----------
+    marker_size : float
+        Size of each ArUco marker (in the same units as square_size).
+    aruco_dict : int
+        OpenCV predefined dictionary ID (e.g., cv2.aruco.DICT_6X6_250).
+    """
+
     marker_size: float
     # aruco_dict: int = cv2.aruco.DICT_6X6_250
     aruco_dict: int
@@ -21,6 +52,21 @@ class ArucoBoardParameters(BoardParameters):
 
 @dataclass
 class CalibrationSample:
+    """
+    A single calibration sample (detected corners from one image).
+
+    Attributes
+    ----------
+    frame : Frame
+        The original captured frame (may include color and depth).
+    corners : MatLike
+        Detected corner points (image coordinates).
+    resolution : Tuple[int, int]
+        Image resolution as (width, height).
+    board_params : BoardParameters
+        Board parameters used for this detection.
+    """
+
     frame: Frame
     corners: MatLike
     resolution: Tuple[int, int]
@@ -29,6 +75,19 @@ class CalibrationSample:
 
 @dataclass
 class ArucoCalibrationSample(CalibrationSample):
+    """
+    Extended sample for ChArUco boards, containing both marker and corner data.
+
+    Attributes
+    ----------
+    c_ids : MatLike
+        IDs of detected chessboard corners (from Charuco detection).
+    markers : Sequence[MatLike]
+        Detected marker corner lists (from ArUco detection).
+    m_ids : MatLike
+        IDs of detected ArUco markers.
+    """
+
     c_ids: MatLike
     markers: Sequence[MatLike]
     m_ids: MatLike
@@ -36,6 +95,19 @@ class ArucoCalibrationSample(CalibrationSample):
 
 @dataclass
 class CalibrationIntrinsics:
+    """
+    Camera intrinsic parameters.
+
+    Attributes
+    ----------
+    fx, fy : float
+        Focal lengths in pixels.
+    cx, cy : float
+        Principal point coordinates.
+    dist_coeffs : np.ndarray
+        Distortion coefficients (k1, k2, p1, p2, k3) as a 5‑element vector.
+    """
+
     fx: float
     fy: float
     cx: float
@@ -44,6 +116,7 @@ class CalibrationIntrinsics:
 
     @property
     def camera_matrix(self) -> np.ndarray:
+        """Return the 3x3 camera matrix."""
         return np.array(
             [
                 [self.fx, 0.0, self.cx],
@@ -56,16 +129,29 @@ class CalibrationIntrinsics:
 
 @dataclass
 class CalibrationExtrinsics:
+    """
+    Extrinsic parameters (pose of the board relative to the camera).
+
+    Attributes
+    ----------
+    rvec : np.ndarray
+        Rotation vector (3 elements) in Rodrigues form.
+    tvec : np.ndarray
+        Translation vector (3 elements).
+    """
+
     rvec: np.ndarray = field(default_factory=lambda: np.zeros(3))
     tvec: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
     @property
     def rotation_matrix(self) -> np.ndarray:
+        """Convert rotation vector to a 3x3 rotation matrix."""
         R, _ = cv2.Rodrigues(self.rvec)
         return np.array(R)
 
     @property
-    def trasnform_matrix(self) -> np.ndarray:
+    def transform_matrix(self) -> np.ndarray:
+        """Return a 4x4 homogeneous transformation matrix from camera to board."""
         R = self.rotation_matrix
         T = np.eye(4)
         T[:3, :3] = R

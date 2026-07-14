@@ -13,21 +13,42 @@ import os
 from typing import Optional
 
 import numpy as np
-from viki.capture.base import SyncedFrameGroup
-from viki.capture.kinect import KinectBackend
 from viki.skeleton.models import SkeletonFrame, HandDetection
 from viki.skeleton.pipeline import SkeletonPipeline, PipelineResult
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.capture.sync import MultiCameraSync
 from viki.capture.manager import CameraManager
 from viki.capture.recorder import RGBDRecorder
-from viki.skeleton.viz import visualize_color_depth_mapping
-from viki.config import DEPTH_PROJECTION_DEBUG
 
 
 class SkeletonWorker:
     """
     Manages a background thread that periodically runs the skeleton pipeline.
+
+    The worker fetches synchronised frames, runs the pipeline to estimate
+    hand skeleton, and optionally records the results. It also supports
+    separate RGB‑D recording (raw color+depth) for debugging.
+
+    Attributes
+    ----------
+    _manager : CameraManager
+        The camera manager.
+    _sync : MultiCameraSync
+        The synchroniser for multi‑camera frames.
+    _pipeline : SkeletonPipeline
+        The skeleton estimation pipeline.
+    _recorder : SkeletonRecorder
+        Recorder for skeleton data (JSON/other formats).
+    _target_fps : float
+        Desired processing rate.
+    _enabled : bool
+        Whether skeleton processing is active.
+    _recording : bool
+        Whether skeleton data is being recorded.
+    _rgbd_recording : bool
+        Whether RGB‑D frames are being recorded.
+    _latest_result : Optional[PipelineResult]
+        Most recent pipeline output (cached).
     """
 
     def __init__(
@@ -81,7 +102,7 @@ class SkeletonWorker:
             self.set_recording(False)
 
     def set_recording(self, recording: bool) -> None:
-        """Enable or disable recording to disk."""
+        """Enable or disable recording of skeleton data to disk."""
         if recording and not self._enabled:
             self._enabled = True  # Must be enabled to record
 
@@ -95,7 +116,18 @@ class SkeletonWorker:
     def set_rgbd_recording(
         self, enabled: bool, duration: float = 10.0, output_dir: str = "data/videos"
     ) -> None:
-        """Enable or disable synchronized RGB-D recording."""
+        """
+        Enable or disable synchronized RGB‑D recording.
+
+        Parameters
+        ----------
+        enabled : bool
+            If True, start recording; if False, stop and finalize.
+        duration : float, default=10.0
+            Recording duration in seconds (only used when enabling).
+        output_dir : str, default="data/videos"
+            Base directory where recordings are saved.
+        """
         with self._lock:
             if enabled:
                 self._rgbd_recorder = RGBDRecorder(
@@ -120,7 +152,12 @@ class SkeletonWorker:
             return self._latest_result.detections if self._latest_result else {}
 
     def _run(self) -> None:
-        """Main loop of the worker thread."""
+        """
+        Main loop of the worker thread.
+
+        Repeatedly obtains a synchronised frame group, processes it through
+        the skeleton pipeline, and optionally records. Maintains the target FPS.
+        """
         import logging
 
         logger = logging.getLogger(__name__)

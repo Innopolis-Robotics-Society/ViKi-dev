@@ -23,20 +23,21 @@ class PreparedFrame:
     A single camera frame ready for model inference.
 
     Produced by camera_prep from a raw Frame:
-      - color is undistorted and converted BGR to RGB
+      - color is converted BGR to RGB (no undistort)
       - depth is float32 metres with 0 replaced by nan
 
     Carries K so that downstream geometry code doesn't need to reach
     back into CameraManager.
     """
 
-    rgb: np.ndarray  # (H, W, 3) uint8, RGB, undistorted
+    rgb: np.ndarray  # (H, W, 3) uint8, RGB
     depth_m: np.ndarray  # (H, W)    float32, metres
-    K: np.ndarray  # (3, 3)    intrinsic matrix for this frame
+    K: np.ndarray  # (3, 3)    color intrinsic matrix (dummy identity, not used for 3D)
     device_id: str
     timestamp_us: int
     aligned_depth: Optional[np.ndarray] = None  # (H, W) uint16, SDK estimated
     base_depth_m: Optional[np.ndarray] = None  # (H, W)    float32, background depth
+    depth_K: Optional[np.ndarray] = None  # (3, 3)    depth intrinsic matrix
 
 
 #
@@ -84,33 +85,6 @@ class Landmarks3D:
 @dataclass
 class EndEffectorPose:
     """
-    World-frame wrist pose derived from hand bones.
-
-    R_world_palm columns are the palm-frame axes expressed in world frame:
-      x: WRIST -> MIDDLE_MCP
-      z: palm normal from (MIDDLE_MCP - WRIST) x (THUMB_CMC - WRIST)
-      y: z x x
-    """
-
-    position: np.ndarray
-    R_world_palm: np.ndarray
-    rpy_deg: np.ndarray
-    valid: bool
-    timestamp_us: int
-
-    def as_dict(self) -> dict:
-        return {
-            "position": self.position.tolist(),
-            "R_world_palm": self.R_world_palm.tolist(),
-            "rpy_deg": self.rpy_deg.tolist(),
-            "valid": self.valid,
-            "timestamp_us": self.timestamp_us,
-        }
-
-
-@dataclass
-class EndEffectorPose:
-    """
     World-frame pose of the end-effector (wrist).
 
     Fields
@@ -146,6 +120,18 @@ class EndEffectorPose:
 
 @dataclass
 class SkeletonFrame:
+    """
+    Final fused skeleton in world coordinates.
+
+    Attributes
+    ----------
+    points : dict[LM, np.ndarray]
+        Mapping from landmark enum to world‑frame (X, Y, Z) in metres.
+    timestamp_us : int
+        Sync timestamp of the fused frame.
+    end_effector : Optional[EndEffectorPose]
+        World‑frame wrist pose, if computable.
+    """
     points: dict[LM, np.ndarray]
     timestamp_us: int
     end_effector: Optional[EndEffectorPose] = None
@@ -165,12 +151,28 @@ class SkeletonFrame:
 
 @dataclass
 class PipelineResult:
+    """
+    Result of a full pipeline run.
+
+    Attributes
+    ----------
+    fused_frame : SkeletonFrame
+        The world‑space 3D skeleton (or None if fusion failed).
+    detections : dict[str, HandDetection | None]
+        Per‑camera 2D detections (None if no hand found).
+    """
     fused_frame: SkeletonFrame  # The world-space 3D skeleton
     detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
 
 
 # MediaPipe Hands landmark indices
 class LM(IntEnum):
+    """
+    Landmark indices for MediaPipe Hands (21 hand landmarks) plus two arm landmarks.
+
+    Hand landmarks: 0 (WRIST) to 20 (PINKY_TIP).
+    Arm landmarks (not detected): 21 (ELBOW), 22 (SHOULDER) – kept for schema compatibility.
+    """
     WRIST = 0
     THUMB_CMC = 1
     THUMB_MCP = 2

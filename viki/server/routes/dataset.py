@@ -1,3 +1,10 @@
+"""
+viki.server.routes.dataset
+--------------------------
+Dataset handling and optimisation endpoints: listing recorded skeleton data,
+triggering retargeting optimisation, and streaming robot trajectories.
+"""
+
 from __future__ import annotations
 
 import logging
@@ -50,6 +57,21 @@ _dataset_jobs_lock = threading.Lock()
 
 @router.get("/recordings")
 async def list_smoothed_recordings(page: int = 0, limit: int = 10):
+    """
+    List smoothed skeleton recordings (cln-*.npz files) with pagination.
+
+    Parameters
+    ----------
+    page : int, default=0
+        Page number (zero-based).
+    limit : int, default=10
+        Number of recordings per page.
+
+    Returns
+    -------
+    dict
+        {"recordings": list[str]} – list of filenames.
+    """
     smoothed_dir = Path(SKELETON_SMOOTHED_DIR)
     smoothed_dir.mkdir(parents=True, exist_ok=True)
     files = sorted([f.name for f in smoothed_dir.glob("cln-*.npz")], reverse=True)
@@ -67,10 +89,30 @@ class OptimizeRequest(BaseModel):
 async def optimize_recording(
     req: OptimizeRequest,
 ):
+    """
+    Start a background optimisation job for a smoothed recording.
+
+    Parameters
+    ----------
+    req : OptimizeRequest
+        Filename (cln-*.npz) and robot name.
+
+    Returns
+    -------
+    dict
+        {"job_id": str, "status": "queued"}
+
+    Raises
+    ------
+    HTTPException 404
+        If the recording file does not exist.
+    """
     smoothed_dir = Path(SKELETON_SMOOTHED_DIR)
     cln_path = smoothed_dir / req.filename
     if not cln_path.exists():
-        raise HTTPException(status_code=404, detail=f"Recording not found: {req.filename}")
+        raise HTTPException(
+            status_code=404, detail=f"Recording not found: {req.filename}"
+        )
 
     job_id = uuid.uuid4().hex
     job = {
@@ -86,7 +128,9 @@ async def optimize_recording(
         _dataset_jobs[job_id] = job
 
     thread = threading.Thread(
-        target=_run_optimize, args=(job_id, cln_path, req.robot, req.filename), daemon=True
+        target=_run_optimize,
+        args=(job_id, cln_path, req.robot, req.filename),
+        daemon=True,
     )
     thread.start()
 
@@ -95,6 +139,24 @@ async def optimize_recording(
 
 @router.get("/optimize/status/{job_id}")
 async def optimize_status(job_id: str):
+    """
+    Get the status of an optimisation job.
+
+    Parameters
+    ----------
+    job_id : str
+        Job identifier returned by `/optimize`.
+
+    Returns
+    -------
+    dict
+        Job details.
+
+    Raises
+    ------
+    HTTPException 404
+        If job not found.
+    """
     with _dataset_jobs_lock:
         job = _dataset_jobs.get(job_id)
         if job is None:
@@ -104,6 +166,14 @@ async def optimize_status(job_id: str):
 
 @router.get("/outputs")
 async def list_outputs():
+    """
+    List all generated robot trajectory output files (.h5).
+
+    Returns
+    -------
+    dict
+        {"outputs": list[str]} – filenames.
+    """
     ROBOT_OUT_DIR.mkdir(parents=True, exist_ok=True)
     files = sorted(
         [f.name for f in ROBOT_OUT_DIR.glob("*.h5") if f.is_file()],
@@ -116,14 +186,38 @@ async def list_outputs():
 async def retarget_debug_viz():
     """Return the latest retargeting debug overlay as a PNG."""
     from viki.optimization.debug import render_debug_viz_png
+
     png = render_debug_viz_png()
     if png is None:
-        raise HTTPException(status_code=404, detail="No retargeting debug data available. Run a retargeting job first.")
+        raise HTTPException(
+            status_code=404,
+            detail="No retargeting debug data available. Run a retargeting job first.",
+        )
     return Response(content=png, media_type="image/png", headers=_STREAM_HEADERS)
 
 
 @router.get("/viz-stream")
 async def robot_viz_stream(filename: str, loop: bool = True):
+    """
+    MJPEG stream visualising a robot trajectory from an HDF5 file.
+
+    Parameters
+    ----------
+    filename : str
+        Output filename (.h5).
+    loop : bool, default=True
+        Repeat the trajectory indefinitely.
+
+    Returns
+    -------
+    StreamingResponse
+        MJPEG stream of the 3D robot visualisation.
+
+    Raises
+    ------
+    HTTPException 404
+        If the file does not exist.
+    """
     h5_path = ROBOT_OUT_DIR / filename
     if not h5_path.exists():
         raise HTTPException(status_code=404, detail=f"Output not found: {filename}")
@@ -136,6 +230,14 @@ async def robot_viz_stream(filename: str, loop: bool = True):
 
 @router.get("/optimize/jobs")
 async def list_optimize_jobs():
+    """
+    List all optimisation jobs (history).
+
+    Returns
+    -------
+    dict
+        {"jobs": list[dict]} – each job details, sorted by creation time descending.
+    """
     with _dataset_jobs_lock:
         jobs = sorted(
             _dataset_jobs.values(), key=lambda j: j["created_at"], reverse=True

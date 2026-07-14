@@ -22,8 +22,8 @@ import time
 import cv2
 import numpy as np
 
-from viki.capture.base import Frame
-from viki.skeleton.camera_prep import UndistortCache, prepare_frame
+from viki.capture.base import Frame, CameraIntrinsics
+from viki.skeleton.camera_prep import prepare_frame
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
@@ -196,7 +196,6 @@ def main():
         mode=FusionMode.ANY,
     )
     stats = SkeletonStats(window=150)
-    cache = UndistortCache()
 
     ret, bgr = cap.read()
     if not ret:
@@ -243,13 +242,20 @@ def main():
             depth=depth_fake,
             timestamp_us=frame_idx * 33333,
             device_id="webcam",
+            color_intrinsics=CameraIntrinsics(
+                fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2],
+                width=proc_w, height=proc_h,
+            ),
+            depth_intrinsics=CameraIntrinsics(
+                fx=K[0, 0], fy=K[1, 1], cx=K[0, 2], cy=K[1, 2],
+                width=proc_w, height=proc_h,
+            ),
         )
-        prepared = prepare_frame(frame, K, dist, cache)
+        prepared = prepare_frame(frame)
         detection = detector.detect(prepared)
 
         if detection is not None:
-            lm3d = lift_to_3d(detection, prepared)
-            stats.update(lm3d, confidence=detection.confidence)
+            stats.update(None, confidence=detection.confidence)
         else:
             stats.update(None)
 

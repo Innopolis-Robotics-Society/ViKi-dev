@@ -41,6 +41,14 @@ class StartRequest(BaseModel):
 
 @router.get("/devices")
 async def list_devices(mgr: CameraManager = Depends(get_manager)):
+    """
+    List all detected camera devices (RealSense and Kinect).
+
+    Returns
+    -------
+    dict
+        Keys: "realsense", "kinect", "active" (currently running), and error keys if any.
+    """
     return mgr.list_devices()
 
 
@@ -50,6 +58,26 @@ async def start_camera(
     req: StartRequest,
     mgr: CameraManager = Depends(get_manager),
 ):
+    """
+    Start streaming from a camera.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera identifier (serial for RealSense, "kinect_N" for Kinect).
+    req : StartRequest
+        FPS, resolution, depth mode, and Kinect sync options.
+
+    Returns
+    -------
+    dict
+        {"status": "started", "device_id": device_id}
+
+    Raises
+    ------
+    HTTPException 500
+        If the backend fails to start.
+    """
     try:
         mgr.start(
             device_id,
@@ -69,12 +97,38 @@ async def start_camera(
 
 @router.post("/cameras/{device_id}/stop")
 async def stop_camera(device_id: str, mgr: CameraManager = Depends(get_manager)):
+    """
+    Stop streaming from a camera.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        {"status": "stopped", "device_id": device_id}
+    """
     mgr.stop(device_id)
     return {"status": "stopped", "device_id": device_id}
 
 
 @router.get("/cameras/{device_id}/info")
 async def camera_info(device_id: str, mgr: CameraManager = Depends(get_manager)):
+    """
+    Get camera info (resolution, intrinsics, running status, latest frame timestamp).
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    dict
+        Camera info or 404 if not found/started.
+    """
     info = mgr.get_info(device_id)
     if info is None:
         raise HTTPException(status_code=404, detail="Camera not found or not started")
@@ -88,6 +142,21 @@ def colour_stream(
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    MJPEG stream of the colour image.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+    undistort : bool, default=True
+        Apply undistortion using loaded intrinsics.
+
+    Returns
+    -------
+    StreamingResponse
+        Multipart MJPEG stream.
+    """
     return StreamingResponse(
         camera_stream(mgr, cal, device_id, "color", undistort=undistort),
         media_type=_MJPEG_MEDIA,
@@ -101,6 +170,19 @@ def depth_stream(
     mgr: CameraManager = Depends(get_manager),
     cal: CalibrationManager = Depends(get_calibrator),
 ):
+    """
+    MJPEG stream of the colour-mapped depth image.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera ID.
+
+    Returns
+    -------
+    StreamingResponse
+        Multipart MJPEG stream.
+    """
     return StreamingResponse(
         camera_stream(mgr, cal, device_id, "depth"),
         media_type=_MJPEG_MEDIA,

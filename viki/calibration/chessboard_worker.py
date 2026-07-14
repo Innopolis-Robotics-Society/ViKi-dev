@@ -1,3 +1,12 @@
+"""
+viki.calibration.chessboard_worker
+--------------------
+Chessboard calibration worker.
+
+This module provides a calibration worker that uses a standard chessboard
+pattern. It detects chessboard corners and performs intrinsic/extrinsic
+calibration using OpenCV's `findChessboardCorners` and `calibrateCamera`.
+"""
 import cv2
 import numpy as np
 from typing import List
@@ -11,9 +20,24 @@ from viki.calibration.worker import _CalibrationWorker
 
 
 class ChessboardWorker(_CalibrationWorker):
+    """
+    Calibration worker for standard chessboard patterns.
+
+    Detects chessboard corners (with sub‑pixel refinement) and stores
+    samples. Requires at least 20 samples for intrinsic calibration.
+    """
 
     def add_sample(self, frame: Frame) -> None:
+        """
+        Detect chessboard corners in the frame and store a sample if successful.
 
+        Uses sub‑pixel refinement to improve corner accuracy.
+
+        Parameters
+        ----------
+        frame : Frame
+            Input frame.
+        """
         board_params = self.board_params
         board_size = board_params.board_size
 
@@ -46,7 +70,26 @@ class ChessboardWorker(_CalibrationWorker):
     def intrinsics_calibration(
         self, samples: List[CalibrationSample] | None = None
     ) -> CalibrationIntrinsics:
+        """
+        Calibrate intrinsic parameters using chessboard samples.
 
+        Requires at least 20 samples with consistent resolution.
+
+        Parameters
+        ----------
+        samples : Optional[List[CalibrationSample]]
+            List of samples; if None, uses internal list.
+
+        Returns
+        -------
+        CalibrationIntrinsics
+            Camera matrix and distortion coefficients.
+
+        Raises
+        ------
+        RuntimeError
+            If insufficient samples, resolution mismatch, or calibration fails.
+        """
         if not samples:
             samples = self.samples
         count = len(samples)
@@ -100,7 +143,28 @@ class ChessboardWorker(_CalibrationWorker):
         intrinsics: CalibrationIntrinsics,
         sample: CalibrationSample | None = None,
     ) -> CalibrationExtrinsics:
+        """
+        Compute the pose (rotation and translation) of the chessboard relative to the camera.
 
+        Uses `cv2.solvePnP` with the object points derived from board parameters.
+
+        Parameters
+        ----------
+        intrinsics : CalibrationIntrinsics
+            Known camera intrinsics.
+        sample : Optional[CalibrationSample]
+            Sample to use; if None, uses the last sample.
+
+        Returns
+        -------
+        CalibrationExtrinsics
+            Rotation vector and translation vector.
+
+        Raises
+        ------
+        RuntimeError
+            If no sample available or solvePnP fails.
+        """
         if not sample:
             if self.samples_count < 1:
                 msg = f"{self.device_id} extrinsics_calibration: no sample"
@@ -129,6 +193,19 @@ class ChessboardWorker(_CalibrationWorker):
         return CalibrationExtrinsics(rvec=rvec, tvec=tvec)
 
     def mark_board(self, frame: Frame) -> np.ndarray:
+        """
+        Generate a debug image with detected chessboard corners overlaid.
+
+        Parameters
+        ----------
+        frame : Frame
+            Input frame.
+
+        Returns
+        -------
+        np.ndarray
+            Annotated BGR image (original if no detection).
+        """
         pattern_size = self._board_params.board_size
         frm = frame.color
         gray = cv2.cvtColor(frm, cv2.COLOR_BGR2GRAY)

@@ -42,12 +42,11 @@ Quick start:
 ```bash
 sudo ./scripts/host_setup.sh   # run once
 docker compose up --build
-# open http://localhost:8501
+# open http://localhost:8000
 ```
 
-The web UI is a **Streamlit** app in `viki/streamlit_app/`, started as its own service by
-`docker compose` on port `8501`. It talks to the FastAPI capture server (port `8000`) over
-HTTP; `http://localhost:8000/` redirects to the Streamlit UI.
+The web UI is a plain HTML/CSS/JS page (`viki/server/static/index.html`) served directly
+by the FastAPI capture server at `http://localhost:8000/`.
 
 ---
 

@@ -1,3 +1,9 @@
+"""
+viki.server.routes.system
+-------------------------
+System endpoints: configuration management and server restart.
+"""
+
 from fastapi import APIRouter, HTTPException
 import json
 import os
@@ -10,6 +16,19 @@ router = APIRouter(prefix="/api", tags=["system"])
 
 @router.get("/config")
 async def get_config():
+    """
+    Get the current user configuration (from `user_configuration.json`).
+
+    Returns
+    -------
+    dict
+        The configuration object.
+
+    Raises
+    ------
+    HTTPException 404
+        If the user configuration file does not exist.
+    """
     if not os.path.exists(USER_CONFIG_PATH):
         raise HTTPException(status_code=404, detail="User configuration file not found")
     with open(USER_CONFIG_PATH, "r") as f:
@@ -17,6 +36,24 @@ async def get_config():
 
 @router.post("/config")
 async def save_config(config: dict):
+    """
+    Save a new configuration to `user_configuration.json`.
+
+    Parameters
+    ----------
+    config : dict
+        Full configuration object.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+
+    Raises
+    ------
+    HTTPException 500
+        If saving fails (e.g., permission error).
+    """
     try:
         with open(USER_CONFIG_PATH, "w") as f:
             json.dump(config, f, indent=2)
@@ -27,6 +64,21 @@ async def save_config(config: dict):
 
 @router.post("/config/reset")
 async def reset_config():
+    """
+    Reset the user configuration to the default by copying `default_configuration.json`.
+
+    Returns
+    -------
+    dict
+        {"status": "success"}
+
+    Raises
+    ------
+    HTTPException 404
+        If the default configuration file is missing.
+    HTTPException 500
+        If copying fails.
+    """
     try:
         if not os.path.exists(DEFAULT_CONFIG_PATH):
             raise HTTPException(status_code=404, detail="Default configuration file not found")
@@ -38,6 +90,12 @@ async def reset_config():
 
 @router.post("/restart")
 async def restart_server():
+    """
+    Restart the server by exiting the process (container restarts automatically).
+
+    This endpoint calls `os._exit(1)`, which terminates the Python process.
+    With Docker's `restart: unless-stopped`, the container will restart.
+    """
     logger.info("Restarting server via API request...")
     # os._exit(1) is used to kill the python process immediately.
     # Since the container is set to restart: unless-stopped, Docker will restart it.

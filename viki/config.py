@@ -3,6 +3,10 @@ viki.config
 -----------
 Centralised tunables for the ViKi capture server.
 Loaded from data/user_configuration.json.
+
+The module reads the JSON configuration file once at import and updates
+the global namespace with all keys. This allows constants to be imported
+directly from the module (e.g., from viki.config import DEFAULT_FPS).
 """
 
 import json
@@ -71,10 +75,20 @@ RETARGET_TRAJECTORY_SCALE: float
 ROBOT_BASE_OFFSET: list[float]
 TARGET_OFFSET: list[float]
 SKELETON_COORDINATE_FRAME: str
+RETARGET_BASE_ROTATION: list[list[float]]
+RETARGET_BASE_TRANSLATION: list[float]
 MODELS_DIR: str
 
 
 def _load_config():
+    """
+    Load configuration from the user JSON file, or copy from default if missing.
+
+    Returns
+    -------
+    dict
+        The configuration dictionary. If neither file exists, returns an empty dict.
+    """
     if not os.path.exists(USER_CONFIG_PATH):
         if os.path.exists(DEFAULT_CONFIG_PATH):
             shutil.copy(DEFAULT_CONFIG_PATH, USER_CONFIG_PATH)

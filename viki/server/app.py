@@ -22,13 +22,15 @@ from viki.capture.sync import MultiCameraSync
 from viki.skeleton.pipeline import SkeletonPipeline
 from viki.skeleton.recorder import SkeletonRecorder
 from viki.server.skeleton_worker import SkeletonWorker
+from importlib import import_module
+
 from viki.server.routes import (
     calibration,
     cameras,
-    optimization,
     skeleton,
     recording,
     system,
+    optimization,
     dataset,
 )
 
@@ -40,12 +42,20 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan context manager.
+
+    Initialises and starts:
+        - CameraManager (all cameras)
+        - CalibrationManager (for intrinsics/extrinsics)
+        - MultiCameraSync (for software synchronisation)
+        - SkeletonPipeline, SkeletonRecorder, and SkeletonWorker (background thread)
+
+    On shutdown, stops the skeleton worker and all cameras.
+    """
     app.state.manager = CameraManager()
     app.state.calibrator = CalibrationManager(app.state.manager)
-    # for device in range(app.state.manager.active_device_ids):
-
-    # app.state.calibrator.load_intrinsics(app.state.manager.active_device_ids)
-    # app.state.calibrator.load_extrinsics()
+    app.state.calibrator.load_all_extrinsics()
     app.state.sync = MultiCameraSync(app.state.manager)
     app.state.skeleton_pipeline = SkeletonPipeline(
         app.state.calibrator, app.state.manager
@@ -78,12 +88,12 @@ app.include_router(cameras.router)
 app.include_router(calibration.router)
 app.include_router(skeleton.router)
 app.include_router(system.router)
-app.include_router(optimization.router)
-
 app.include_router(recording.router)
+app.include_router(optimization.router)
 app.include_router(dataset.router)
 
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    """Serve the main frontend HTML page."""
     return (STATIC_DIR / "index.html").read_text()
