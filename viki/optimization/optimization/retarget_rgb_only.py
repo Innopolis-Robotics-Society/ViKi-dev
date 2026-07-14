@@ -997,6 +997,9 @@ def retarget_from_poses(
     T = len(positions)
     positions = np.asarray(positions, dtype=np.float64)
 
+    # Snapshot world-frame positions BEFORE the robot-frame transform
+    world_positions = positions.copy()
+
     if rotations is not None:
         rotations = np.asarray(rotations, dtype=np.float64)
         if rotations.shape != (T, 3, 3):
@@ -1028,6 +1031,22 @@ def retarget_from_poses(
         offset = neutral_ee_position(pin, robot, cfg.robot.ee_frame) - positions[0]
         positions = positions + offset
         recenter_offset = offset
+
+    # Save debug snapshot of world vs robot-frame positions
+    try:
+        from viki.optimization.debug import save_retarget_debug
+        save_retarget_debug(
+            world_positions=world_positions,
+            robot_positions=positions,
+            robot_base_offset=ROBOT_BASE_OFFSET,
+            target_offset=TARGET_OFFSET,
+            trajectory_scale=cfg.trajectory_scale,
+            recenter_to_neutral=cfg.recenter_to_neutral,
+            robot_name=cfg.robot.description,
+            sample_file=str(out_path),
+        )
+    except Exception:
+        pass
 
     # Build SE3 targets
     if rotations is not None:

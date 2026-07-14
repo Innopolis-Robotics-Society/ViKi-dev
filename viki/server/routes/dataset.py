@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from viki.optimization.optimization.convert_viki23_json import estimate_fps
@@ -17,7 +17,24 @@ from viki.optimization.optimization.retarget_rgb_only import (
     retarget_from_poses,
     RunConfig,
 )
-from viki.config import RETARGET_DEFAULT_ROBOT, SKELETON_SMOOTHED_DIR
+from viki.config import (
+    HAND_TO_DETECT,
+    RETARGET_APPROACH_SEC,
+    RETARGET_DEFAULT_ROBOT,
+    RETARGET_IK_ORIENTATION_COST,
+    RETARGET_IK_POSITION_COST,
+    RETARGET_IK_POSTURE_COST,
+    RETARGET_IK_SOLVER,
+    RETARGET_IK_SUBSTEPS,
+    RETARGET_JOINT_SG_POLYORDER,
+    RETARGET_JOINT_SG_WINDOW,
+    RETARGET_LANDMARK_SG_POLYORDER,
+    RETARGET_LANDMARK_SG_WINDOW,
+    RETARGET_RECENTER_TO_NEUTRAL,
+    RETARGET_TARGET_MODE,
+    RETARGET_TRAJECTORY_SCALE,
+    SKELETON_SMOOTHED_DIR,
+)
 from viki.server.robot_viz import robot_trajectory_stream
 
 router = APIRouter(prefix="/api/dataset", tags=["dataset"])
@@ -95,6 +112,16 @@ async def list_outputs():
     return {"outputs": files}
 
 
+@router.get("/debug-viz")
+async def retarget_debug_viz():
+    """Return the latest retargeting debug overlay as a PNG."""
+    from viki.optimization.debug import render_debug_viz_png
+    png = render_debug_viz_png()
+    if png is None:
+        raise HTTPException(status_code=404, detail="No retargeting debug data available. Run a retargeting job first.")
+    return Response(content=png, media_type="image/png", headers=_STREAM_HEADERS)
+
+
 @router.get("/viz-stream")
 async def robot_viz_stream(filename: str, loop: bool = True):
     h5_path = ROBOT_OUT_DIR / filename
@@ -131,21 +158,22 @@ def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
         robot = normalize_robot(robot_name)
         cfg = RunConfig(
             robot=robot,
-            working_hand="right",
-            landmark_sg_window=0,
-            landmark_sg_polyorder=0,
-            ik_position_cost=5.0,
-            ik_orientation_cost=0.3,
-            ik_posture_cost=1e-3,
-            target_mode="hand_se3",
-            ik_substeps=20,
-            ik_solver="quadprog",
-            approach_sec=5.0,
-            joint_sg_window=0,
-            joint_sg_polyorder=3,
+            working_hand=HAND_TO_DETECT,
+            landmark_sg_window=RETARGET_LANDMARK_SG_WINDOW,
+            landmark_sg_polyorder=RETARGET_LANDMARK_SG_POLYORDER,
+            ik_position_cost=float(RETARGET_IK_POSITION_COST),
+            ik_orientation_cost=float(RETARGET_IK_ORIENTATION_COST),
+            ik_posture_cost=float(RETARGET_IK_POSTURE_COST),
+            target_mode=RETARGET_TARGET_MODE,
+            ik_substeps=RETARGET_IK_SUBSTEPS,
+            ik_solver=RETARGET_IK_SOLVER,
+            approach_sec=RETARGET_APPROACH_SEC,
+            joint_sg_window=RETARGET_JOINT_SG_WINDOW,
+            joint_sg_polyorder=RETARGET_JOINT_SG_POLYORDER,
             limit_frames=None,
-            recenter_to_neutral=True,
-            trajectory_scale=0.25,
+            recenter_to_neutral=RETARGET_RECENTER_TO_NEUTRAL,
+            trajectory_scale=RETARGET_TRAJECTORY_SCALE,
+            trajectory_scale_origin="initial_wrist",
             align_initial_orientation=False,
         )
 
@@ -162,7 +190,7 @@ def _run_optimize(job_id: str, cln_path: Path, robot_name: str, filename: str):
             _dataset_jobs[job_id]["finished_at"] = time.time()
             _dataset_jobs[job_id]["result"] = summary
     except Exception as exc:
-        logger.error("Optimization failed: %s", exc)
+        logger.exception("Optimization failed")
         with _dataset_jobs_lock:
             _dataset_jobs[job_id]["status"] = "failed"
             _dataset_jobs[job_id]["finished_at"] = time.time()

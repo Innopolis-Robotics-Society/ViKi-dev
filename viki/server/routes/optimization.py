@@ -181,7 +181,6 @@ async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
             if req.align_initial_orientation is not None
             else defaults.align_initial_orientation
         ),
-        trajectory_scale_origin=req.trajectory_scale_origin,
     )
 
     do_evaluate = req.evaluate

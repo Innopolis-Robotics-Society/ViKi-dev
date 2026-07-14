@@ -103,6 +103,8 @@ def main():
     parser.add_argument("--start-frame", type=int, default=None, help="Start frame for trajectory plot")
     parser.add_argument("--end-frame", type=int, default=None, help="End frame for trajectory plot")
     parser.add_argument("--robot", type=str, default=RETARGET_DEFAULT_ROBOT, help="Robot alias")
+    parser.add_argument("--debug-file", type=str, default="data/retarget_debug.json",
+                        help="Path to retargeting debug JSON (overlays IK targets)")
     args = parser.parse_args()
 
     print(f"Loading extrinsics from {EXTRINSICS_FILE}...")
@@ -234,6 +236,29 @@ def main():
 
         else:
             print(f"Error: Sample file {args.sample} not found.")
+
+    # 5. Retargeting debug overlay (from actual retargeting job)
+    if os.path.exists(args.debug_file):
+        try:
+            with open(args.debug_file, "r") as f:
+                ddata = json.load(f)
+            dw = np.array(ddata.get("world_positions", []), dtype=np.float64)
+            dr = np.array(ddata.get("robot_positions", []), dtype=np.float64)
+            if len(dw) > 0 and len(dr) > 0:
+                ax.plot(dw[:, 0], dw[:, 1], dw[:, 2], c='darkorange', linewidth=2,
+                        linestyle='--', label='Debug: Human Wrist')
+                ax.plot(dr[:, 0], dr[:, 1], dr[:, 2], c='darkblue', linewidth=2,
+                        linestyle='--', label='Debug: Robot EE Target')
+                rbo = ddata.get("robot_base_offset", [0, 0, 0])
+                ax.scatter(rbo[0], rbo[1], rbo[2], c='black', marker='s', s=180,
+                           label='Debug: Robot Base')
+                # Base-to-first-target line
+                if len(dr) > 0:
+                    ax.plot([rbo[0], dr[0, 0]], [rbo[1], dr[0, 1]], [rbo[2], dr[0, 2]],
+                            color='black', linestyle=':', alpha=0.4)
+                print(f"[Debug] Loaded {len(dw)} frames from {args.debug_file}")
+        except Exception as e:
+            print(f"[Debug] Could not load {args.debug_file}: {e}")
 
     ax.set_xlabel('X (m)')
     ax.set_ylabel('Y (m)')

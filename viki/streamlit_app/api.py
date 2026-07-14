@@ -219,6 +219,11 @@ class ViKiApi:
         """GET /api/dataset/outputs -> {outputs: [filenames]}."""
         return self._get("/api/dataset/outputs").get("outputs", [])
 
+    def dataset_debug_viz_url(self) -> str:
+        """URL for the retargeting debug overlay PNG (browser fetches directly)."""
+        from .settings import browser_url
+        return browser_url("/api/dataset/debug-viz")
+
     def dataset_viz_stream_url(self, filename: str) -> str:
         """URL for the robot viz MJPEG stream."""
         from .settings import browser_url

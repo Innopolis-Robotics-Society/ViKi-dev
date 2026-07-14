@@ -38,6 +38,13 @@ def _job_status(api, job_id: str, chosen: str):
         viz_url = api.dataset_viz_stream_url(h5_name)
         st.subheader("Robot trajectory")
         components.html(mjpeg_img(viz_url, height=400), height=420)
+
+        st.subheader("Debug: IK target overlay")
+        img_url = api.dataset_debug_viz_url()
+        try:
+            st.image(img_url, use_container_width=True)
+        except Exception:
+            st.caption("Debug viz unavailable (no retargeting data yet).")
     elif status == "failed":
         st.error(f"Conversion failed: {job.get('error', 'unknown')}")
 

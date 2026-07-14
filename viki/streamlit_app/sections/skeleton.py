@@ -147,6 +147,19 @@ def render() -> None:
     else:
         st.caption("No recordings found. Record a skeleton session first.")
 
+    # Latest retargeting debug overlay (if a retargeting job ran)
+    st.divider()
+    st.subheader("Retargeting Debug Overlay")
+    st.caption(
+        "World-frame human wrist (magenta) vs robot-frame IK target (cyan). "
+        "Appears automatically after a retargeting job completes."
+    )
+    debug_url = api.dataset_debug_viz_url()
+    try:
+        st.image(debug_url, use_container_width=True)
+    except Exception:
+        st.caption("No retargeting data yet — run a conversion in the Dataset tab.")
+
     if not devices:
         st.info(
             "No cameras detected. The skeleton view will show data once cameras "
