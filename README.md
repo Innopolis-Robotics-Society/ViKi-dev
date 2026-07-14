@@ -29,8 +29,13 @@ Human demo (RGB-D video)
 
 ## Why ViKi?
 
-Teleoperation is expensive, slow, and tied to one robot. Human video is cheap and abundant — but naive retargeting from human to robot kinematics produces noisy, jerky trajectories that hurt policy quality. ViKi closes that gap with trajectory optimisation that respects joint limits, smoothness, and object-relative task structure.
+Teleoperation is expensive, slow, and tied to one robot. Human video is cheap and abundant — but naive retargeting from human to robot kinematics produces noisy, jerky trajectories that hurt policy quality. ViKi closes that gap with a full pipeline that:
 
+- Captures **synchronised multi‑view RGB‑D** streams (RealSense + Azure Kinect).
+- Extracts **3D skeletons** via MediaPipe with depth fusion for robust hand tracking.
+- **Smooths and interpolates** trajectories to reduce jitter.
+- **Retargets** motions to arbitrary robot kinematics (PINK/Pinocchio IK) with object‑relative costs.
+- Exports **LeRobot‑compatible HDF5 datasets** ready for ACT or Diffusion Policy training.
 ---
 
 ## Setup
@@ -73,8 +78,10 @@ docker compose -f docker-compose.test.yml run --rm tests
 ```
 
 ### Project Architecture
-- `viki/capture`: Camera backend abstractions and multi-camera management.
+- `viki/capture`: Abstracts camera backends (RealSense, Kinect), manages multi‑camera synchronisation, and serves MJPEG streams.
+- `viki/calibration`: Handles intrinsic/extrinsic calibration of all cameras using chessboard or ChArUco boards.
 - `viki/viz`: Pure pixel processing (depth colorization, MJPEG encoding).
-- `viki/server`: FastAPI handlers and streaming logic.
-- `viki/skeleton`: Pose estimation (MediaPipe) and multi-view fusion.
-- `viki/optimization`: Trajectory smoothing and interpolation.
+- `viki/server`: FastAPI backend that exposes REST endpoints for controlling cameras, calibration, skeleton processing, and recording.
+- `viki/skeleton`: Runs MediaPipe Hand/Pose detectors, lifts 2D detections to 3D using depth, and fuses observations from multiple cameras.
+- `viki/optimization`: Smooths trajectories, runs IK retargeting to robot URDFs, and exports evaluation metrics.
+- `viki/streamlit_app`: Streamlit‑based UI that provides an intuitive interface for demo capture and visualisation.
