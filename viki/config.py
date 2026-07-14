@@ -3,6 +3,10 @@ viki.config
 -----------
 Centralised tunables for the ViKi capture server.
 Loaded from data/user_configuration.json.
+
+The module reads the JSON configuration file once at import and updates
+the global namespace with all keys. This allows constants to be imported
+directly from the module (e.g., from viki.config import DEFAULT_FPS).
 """
 
 import json
@@ -31,6 +35,7 @@ SKELETON_DEPTH_SAMP_RADIUS: int
 SKELETON_DEPTH_BASE_DIR: str
 SKELETON_RECS_DIR: str
 SKELETON_SMOOTHED_DIR: str
+SKELETON_COORDINATE_FRAME: str
 SKELETON_ENABLE_DEPTH_VALIDATION: bool
 SKELETON_DEPTH_SUBTRACT_THRESHOLD: float
 HAND_TO_DETECT: str
@@ -67,10 +72,23 @@ RETARGET_JOINT_SG_WINDOW: int
 RETARGET_JOINT_SG_POLYORDER: int
 RETARGET_RECENTER_TO_NEUTRAL: bool
 RETARGET_TRAJECTORY_SCALE: float
+ROBOT_BASE_OFFSET: list[float]
+TARGET_OFFSET: list[float]
+SKELETON_COORDINATE_FRAME: str
+RETARGET_BASE_ROTATION: list[list[float]]
+RETARGET_BASE_TRANSLATION: list[float]
 MODELS_DIR: str
 
 
 def _load_config():
+    """
+    Load configuration from the user JSON file, or copy from default if missing.
+
+    Returns
+    -------
+    dict
+        The configuration dictionary. If neither file exists, returns an empty dict.
+    """
     if not os.path.exists(USER_CONFIG_PATH):
         if os.path.exists(DEFAULT_CONFIG_PATH):
             shutil.copy(DEFAULT_CONFIG_PATH, USER_CONFIG_PATH)
@@ -86,6 +104,12 @@ _config = _load_config()
 
 # We assign these to globals so that 'from viki.config import CONSTANT' still works
 globals().update(_config)
+
+# Fallback defaults for retargeting offsets (backward compat with old config keys)
+if "ROBOT_BASE_OFFSET" not in _config:
+    globals()["ROBOT_BASE_OFFSET"] = [0.0, 0.0, 0.0]
+if "TARGET_OFFSET" not in _config:
+    globals()["TARGET_OFFSET"] = [0.0, 0.0, 0.0]
 
 # Keep a reference to the paths for the API
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH

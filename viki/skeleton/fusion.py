@@ -1,5 +1,11 @@
 """
 viki.skeleton.fusion
+--------------------
+Fuse per‑camera 3D landmark observations into a single world‑frame skeleton.
+
+The fusion step uses extrinsic calibration (transform matrices) to convert
+each camera's 3D landmarks to world coordinates, then performs weighted
+averaging across cameras (weights can be confidence-based).
 """
 
 from __future__ import annotations
@@ -20,7 +26,35 @@ def fuse(
     confidences: dict[str, dict[LM, float]] | None = None,
     bone_emas: dict[tuple[LM, LM], float] | None = None,
 ) -> SkeletonFrame:
+    """
+    Fuse per‑camera 3D landmarks into a single world‑frame skeleton.
 
+    For each camera with valid landmarks and extrinsics, the landmarks are
+    transformed into the world coordinate system using the camera's
+    `transform_matrix`. Landmarks from all cameras are then aggregated
+    using a weighted average (by per‑landmark confidence, default 1.0).
+
+    Parameters
+    ----------
+    dev_ids : list[str]
+        List of camera device IDs (order does not matter).
+    lms : dict[str, Landmarks3D | None]
+        Per‑camera 3D landmarks (or None if detection failed).
+    extrinsics : dict[str, CalibrationExtrinsics]
+        Extrinsic parameters for each camera.
+    timestamp_us : int
+        Timestamp (µs) of the fused frame.
+    confidences : dict[str, dict[LM, float]], optional
+        Per‑camera, per‑landmark confidence values (0..1). If omitted, all weights are 1.
+    bone_emas : dict[tuple[LM, LM], float], optional
+        Not used in this version; kept for API compatibility.
+
+    Returns
+    -------
+    SkeletonFrame
+        Fused skeleton with world‑frame landmarks and end‑effector pose.
+        If no valid observations, all landmarks are set to NaN.
+    """
     observations: dict[LM, dict[str, np.ndarray]] = {}
 
     for dev_id in dev_ids:
@@ -31,7 +65,9 @@ def fuse(
         extr = extrinsics.get(dev_id)
         if not extr:
             continue
-        T = extr.trasnform_matrix
+        T = extr.transform_matrix
+        # Invert the World-to-Camera transform to get Camera-to-World
+        # T_inv = np.linalg.inv(T)
 
         ps = lm.points
         world_points: dict[LM, np.ndarray] = {}

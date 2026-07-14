@@ -19,7 +19,18 @@ import viki.config as config
 
 class SkeletonRecorder:
     """
-    Records a sequence of SkeletonFrames to a JSON file.
+    Records a sequence of SkeletonFrames to a compressed NPZ file.
+
+    Attributes
+    ----------
+    _base_dir : Path
+        Directory where recordings are saved.
+    _filter_indices : list[LM] | None
+        Unused; kept for API compatibility.
+    _current_file : Path | None
+        Path to the currently open recording file.
+    _frames : List[SkeletonFrame]
+        Buffer of frames for the current recording session.
     """
 
     def __init__(
@@ -27,6 +38,14 @@ class SkeletonRecorder:
         base_dir: str | Path = "data/skeleton_recs",
         filter_indices: list[LM] | None = None,
     ) -> None:
+        """
+        Parameters
+        ----------
+        base_dir : str or Path, default="data/skeleton_recs"
+            Root directory for recordings.
+        filter_indices : list[LM], optional
+            Not used; kept for API compatibility.
+        """
         self._base_dir = Path(base_dir)
         self._base_dir.mkdir(parents=True, exist_ok=True)
         self._filter_indices = filter_indices
@@ -36,7 +55,11 @@ class SkeletonRecorder:
     def start(self) -> str:
         """
         Start a new recording session.
-        Returns the filename of the recording.
+
+        Returns
+        -------
+        str
+            Filename (e.g., "rec-12.34-12.12.2025.npz") without the full path.
         """
         self._frames = []
         timestamp = datetime.now().strftime("%H.%M-%d.%m.%Y")
@@ -47,6 +70,11 @@ class SkeletonRecorder:
     def record(self, frame: SkeletonFrame) -> None:
         """
         Add a frame to the current recording session.
+
+        Parameters
+        ----------
+        frame : SkeletonFrame
+            The frame to append.
         """
         if self._current_file is None:
             return
@@ -56,8 +84,14 @@ class SkeletonRecorder:
     def stop(self) -> str | None:
         """
         Finalise the recording and write to disk as compressed NumPy arrays.
+
         Saves all 23 landmarks; missing ones become NaN.
-        Returns the path to the saved file.
+        If `SKELETON_SAVE_JSON_DEBUG` is True, also saves a JSON version.
+
+        Returns
+        -------
+        str or None
+            Path to the saved NPZ file, or None if no recording was active.
         """
         if self._current_file is None:
             return None
@@ -101,4 +135,5 @@ class SkeletonRecorder:
 
     @property
     def is_recording(self) -> bool:
+        """True if a recording session is currently active."""
         return self._current_file is not None

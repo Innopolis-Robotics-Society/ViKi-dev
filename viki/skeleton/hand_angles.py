@@ -57,15 +57,21 @@ class HandAngles:
     """
     Hand orientation summary in the forearm-local frame.
 
-    fields
-    ------
-    flexion_deg   : palmar / dorsi flexion angle in degrees. (угол сгибания / разгибания кисти)
-    deviation_deg : radial / ulnar deviation angle in degrees. (угол отведения в сторону большого пальца)
-    roll_deg      : palm rotation around the forearm axis in degrees. (ротация вокруг оси предплечья)
-    palm_normal   : (3,) float32 world-frame palm normal for visualisation.
-    forearm_axis  : (3,) float32 world-frame forearm axis
-    valid         : True when every required landmark was present and the
-                    forearm-local frame could be resolved.
+    Attributes
+    ----------
+    flexion_deg : float
+        Palmar/dorsi flexion angle in degrees. (угол сгибания / разгибания кисти)
+    deviation_deg : float
+        Radial/ulnar deviation angle in degrees. (угол отведения в сторону большого пальца)
+    roll_deg : float
+        Palm rotation around the forearm axis in degrees. (ротация вокруг оси предплечья)
+    palm_normal : np.ndarray
+        (3,) float32 world-frame palm normal for visualisation.
+    forearm_axis : np.ndarray
+        (3,) float32 world-frame forearm axis.
+    valid : bool
+        True when every required landmark was present and the forearm-local frame
+        could be resolved.
     """
 
     flexion_deg: float
@@ -78,13 +84,17 @@ class HandAngles:
 
 def _normalise(v: np.ndarray) -> np.ndarray | None:
     """
-    parameters
-    ----------
-    v : (3,) vector.
+    Normalise a vector to unit length.
 
-    returns
+    Parameters
+    ----------
+    v : np.ndarray
+        Input vector (3,).
+
+    Returns
     -------
-    v / |v|, or None if |v| < _MIN_LEN.
+    np.ndarray or None
+        Normalised vector, or None if norm < _MIN_LEN.
     """
     n = float(np.linalg.norm(v))
     if n < _MIN_LEN:
@@ -108,18 +118,20 @@ def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
     """
     Compute forearm-local flexion / deviation / roll from a landmark dict.
 
-    Arm landmarks (ELBOW, SHOULDER) are never detected by the pipeline
+    **Note**: Arm landmarks (ELBOW, SHOULDER) are never detected by the pipeline
     (MediaPipeArm is disabled), so this function will always return invalid
     at runtime. Kept for schema compatibility.
 
-    parameters
+    Parameters
     ----------
-    points : mapping of LM enum to world-frame position in metres.
+    points : Mapping[LM, np.ndarray]
+        Mapping from LM enum to world‑frame position in metres.
 
-    returns
+    Returns
     -------
-    HandAngles. On success `.valid == True` and every scalar / vector is
-    finite. On failure the result is fully NaN with `.valid == False`.
+    HandAngles
+        On success `.valid == True` and every scalar/vector is finite.
+        On failure the result is fully NaN with `.valid == False`.
     """
     coords: dict[LM, np.ndarray] = {}
     for lm in REQUIRED_LM:
@@ -184,9 +196,19 @@ _EE_REQUIRED_LM: tuple[LM, ...] = (LM.WRIST, LM.THUMB_CMC, LM.MIDDLE_MCP)
 
 def _rot_to_rpy_extrinsic_xyz(R: np.ndarray) -> np.ndarray:
     """
-    Extract roll/pitch/yaw (radians) from a rotation
-    R = Rz(yaw) · Ry(pitch) · Rx(roll)  (extrinsic XYZ).
+    Extract roll/pitch/yaw (radians) from a rotation matrix.
 
+    Assumes extrinsic XYZ convention: R = Rz(yaw) · Ry(pitch) · Rx(roll).
+
+    Parameters
+    ----------
+    R : np.ndarray
+        (3,3) rotation matrix.
+
+    Returns
+    -------
+    np.ndarray
+        (roll, pitch, yaw) in radians.
     """
     sy = -float(R[2, 0])
     sy = max(-1.0, min(1.0, sy))
@@ -206,6 +228,24 @@ def compute_palm_rotation(
     thumb_cmc: np.ndarray,
     middle_mcp: np.ndarray,
 ) -> np.ndarray | None:
+    """
+    Compute the 3x3 rotation matrix from palm frame to world.
+
+    Palm frame:
+        x = normalise(MIDDLE_MCP - WRIST)
+        z = normalise((MIDDLE_MCP - WRIST) × (THUMB_CMC - WRIST))
+        y = z × x
+
+    Parameters
+    ----------
+    wrist, thumb_cmc, middle_mcp : np.ndarray
+        World‑frame positions (3,).
+
+    Returns
+    -------
+    np.ndarray or None
+        (3,3) rotation matrix, or None if any landmark is invalid or degenerate.
+    """
     coords = [np.asarray(p, dtype=np.float64) for p in (wrist, thumb_cmc, middle_mcp)]
     if any(not np.all(np.isfinite(p)) for p in coords):
         return None
@@ -228,6 +268,7 @@ def compute_palm_rotation(
 
 
 def _invalid_pose(timestamp_us: int) -> EndEffectorPose:
+    """Return an invalid (NaN) EndEffectorPose."""
     return EndEffectorPose(
         position=_NAN_VEC3.copy(),
         R_world_palm=np.full((3, 3), np.nan, dtype=np.float32),
@@ -237,54 +278,96 @@ def _invalid_pose(timestamp_us: int) -> EndEffectorPose:
     )
 
 
+_PALM_LM: tuple[LM, ...] = (
+    LM.WRIST,
+    LM.THUMB_CMC,
+    LM.INDEX_MCP,
+    LM.MIDDLE_MCP,
+    LM.RING_MCP,
+    LM.PINKY_MCP,
+)
+
+
+def _landmark_centroid(points: Mapping[LM, np.ndarray]) -> np.ndarray | None:
+    """Compute the centroid of all finite landmark positions.
+
+    Returns (3,) float64 or None if no finite landmarks exist.
+    """
+    valid = [
+        p for p in (points.get(lm) for lm in _PALM_LM)
+        if p is not None and np.all(np.isfinite(p))
+    ]
+    if not valid:
+        return None
+    return np.mean(valid, axis=0).astype(np.float64)
+
+
 def compute_end_effector_pose(
     points: Mapping[LM, np.ndarray],
     timestamp_us: int,
 ) -> EndEffectorPose:
     """
-    Compute the world-frame pose of the wrist end-effector from a fused
-    skeleton.
+    Compute the world‑frame pose of the hand from a fused skeleton.
+
+    The primary pose uses the wrist position and palm frame orientation
+    (requires WRIST, THUMB_CMC, MIDDLE_MCP).
+
+    **Fallback**: if the wrist is not available (NaN), the centroid of all
+    available palm landmarks (WRIST, THUMB_CMC, INDEX_MCP, MIDDLE_MCP,
+    RING_MCP, PINKY_MCP) is used as the position, with identity rotation.
 
     Parameters
     ----------
-    points       : mapping LM to world-frame metres.
-    timestamp_us : timestamp to embed in the returned pose.
+    points : Mapping[LM, np.ndarray]
+        Mapping from LM enum to world‑frame position in metres.
+    timestamp_us : int
+        Timestamp to embed in the returned pose.
 
     Returns
     -------
     EndEffectorPose
+        Valid pose if at least one palm landmark is finite; otherwise
+        invalid with NaNs.
     """
     coords: dict[LM, np.ndarray] = {}
     for lm in _EE_REQUIRED_LM:
         p = points.get(lm)
         if p is None or not np.all(np.isfinite(p)):
-            return _invalid_pose(timestamp_us)
+            break
         coords[lm] = np.asarray(p, dtype=np.float64)
+    else:
+        # All three required landmarks are valid → full pose with rotation.
+        wrist = coords[LM.WRIST]
+        to_middle = coords[LM.MIDDLE_MCP] - wrist
+        to_thumb = coords[LM.THUMB_CMC] - wrist
 
-    wrist = coords[LM.WRIST]
-    to_middle = coords[LM.MIDDLE_MCP] - wrist
-    to_thumb = coords[LM.THUMB_CMC] - wrist
+        x_palm = _normalise(to_middle)
+        z_palm = _normalise(np.cross(to_middle, to_thumb))
+        if x_palm is not None and z_palm is not None:
+            y_palm = np.cross(z_palm, x_palm)
+            y_norm = float(np.linalg.norm(y_palm))
+            if y_norm >= _MIN_LEN:
+                y_palm = y_palm / y_norm
+                R = np.column_stack([x_palm, y_palm, z_palm]).astype(np.float32)
+                rpy_rad = _rot_to_rpy_extrinsic_xyz(R.astype(np.float64))
+                rpy_deg = np.degrees(rpy_rad).astype(np.float32)
+                return EndEffectorPose(
+                    position=wrist.astype(np.float32),
+                    R_world_palm=R,
+                    rpy_deg=rpy_deg,
+                    valid=True,
+                    timestamp_us=timestamp_us,
+                )
 
-    x_palm = _normalise(to_middle)
-    z_palm = _normalise(np.cross(to_middle, to_thumb))
-    if x_palm is None or z_palm is None:
-        return _invalid_pose(timestamp_us)
+    # Fallback: centroid of available palm landmarks.
+    centroid = _landmark_centroid(points)
+    if centroid is not None:
+        return EndEffectorPose(
+            position=centroid.astype(np.float32),
+            R_world_palm=np.eye(3, dtype=np.float32),
+            rpy_deg=np.zeros(3, dtype=np.float32),
+            valid=True,
+            timestamp_us=timestamp_us,
+        )
 
-    # Re-orthogonalise y against x and z, in case the three landmarks are not perfectly coplanar.
-    y_palm = np.cross(z_palm, x_palm)
-    y_norm = float(np.linalg.norm(y_palm))
-    if y_norm < _MIN_LEN:
-        return _invalid_pose(timestamp_us)
-    y_palm = y_palm / y_norm
-
-    R = np.column_stack([x_palm, y_palm, z_palm]).astype(np.float32)
-    rpy_rad = _rot_to_rpy_extrinsic_xyz(R.astype(np.float64))
-    rpy_deg = np.degrees(rpy_rad).astype(np.float32)
-
-    return EndEffectorPose(
-        position=wrist.astype(np.float32),
-        R_world_palm=R,
-        rpy_deg=rpy_deg,
-        valid=True,
-        timestamp_us=timestamp_us,
-    )
+    return _invalid_pose(timestamp_us)

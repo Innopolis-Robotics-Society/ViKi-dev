@@ -9,6 +9,7 @@ x-common: &common
     - /dev:/dev
     - /run/udev:/run/udev:ro
     - /tmp/.X11-unix:/tmp/.X11-unix
+    - ./tests:/app/tests
     - ./data:/app/data
     - ./viki:/app/viki
     - ./scripts:/app/scripts
@@ -30,29 +31,6 @@ services:
     restart: unless-stopped
     entrypoint: ["/app/docker/entrypoint.sh"]
     command: ["uvicorn", "viki.server.app:app", "--host", "0.0.0.0", "--port", "8000"]  #, "--reload"]
-
-  # Disabled — frontend is now served directly from FastAPI (viki/server/static/).
-  # streamlit:
-  #   build:
-  #     context: .
-  #     dockerfile: docker/frontend.Dockerfile
-  #   network_mode: host
-  #   volumes:
-  #     - ./viki:/app/viki
-  #   environment:
-  #     - PYTHONUNBUFFERED=1
-  #     - PYTHONPATH=/app
-  #   container_name: viki-streamlit
-  #   restart: unless-stopped
-  #   depends_on:
-  #     - viki
-  #   command:
-  #     - streamlit
-  #     - run
-  #     - viki/streamlit_app/app.py
-  #     - --server.port=8501
-  #     - --server.address=0.0.0.0
-  #     - --server.headless=true
 
   terminal:
     <<: *common

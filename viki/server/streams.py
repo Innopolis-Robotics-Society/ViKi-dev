@@ -36,8 +36,25 @@ def camera_stream(
     """
     Yield MJPEG chunks for one camera.
 
-    ``mode`` is ``"color"`` (optionally undistorted) or ``"depth"`` (colour-mapped).
-    Ends when the device is no longer active.
+    The stream ends when the device is no longer active.
+
+    Parameters
+    ----------
+    mgr : CameraManager
+        The camera manager.
+    cal : CalibrationManager
+        The calibration manager (for intrinsics).
+    device_id : str
+        The camera device ID.
+    mode : str
+        Either "color" (optionally undistorted) or "depth" (colour-mapped).
+    undistort : bool, default=True
+        If True and mode=="color", apply undistortion using the loaded intrinsics.
+
+    Yields
+    ------
+    bytes
+        JPEG-encoded MJPEG chunk (HTTP multipart image).
     """
     pw, ph = PLACEHOLDER_SIZE
     last_ts = -1
@@ -84,6 +101,29 @@ def camera_stream(
 def marked_camera_stream(
     mgr: CameraManager, cal: CalibrationManager, device_id: str, mode: str
 ) -> Iterator[bytes]:
+    """
+    Yield MJPEG chunks with calibration board overlay (markers/corners).
+
+    If a calibration worker exists for the device, the stream shows the
+    detected board (via `worker.mark_board()`). Otherwise, it falls back to
+    the raw `camera_stream` until the worker becomes available.
+
+    Parameters
+    ----------
+    mgr : CameraManager
+        The camera manager.
+    cal : CalibrationManager
+        The calibration manager (to access workers).
+    device_id : str
+        The camera device ID.
+    mode : str
+        "color" or "depth" (passed to the fallback stream).
+
+    Yields
+    ------
+    bytes
+        JPEG-encoded MJPEG chunk.
+    """
     pw, ph = PLACEHOLDER_SIZE
     last_ts = -1
     while True:

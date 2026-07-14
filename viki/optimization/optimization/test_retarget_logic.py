@@ -24,6 +24,8 @@ from viki.optimization.optimization.retarget_rgb_only import (
     load_smoothed_targets,
     normalize_robot,
     output_traj_path,
+    resolve_trajectory_scale_origin,
+    scale_landmarks,
     should_apply_legacy_transform,
     transform_points,
     transform_rotations_to_robot,
@@ -94,6 +96,38 @@ class RetargetLogicTests(unittest.TestCase):
         self.assertFalse(should_apply_legacy_transform("robot_base"))
         self.assertTrue(should_apply_legacy_transform("viki_world_or_camera"))
 
+    def test_auto_scale_origin_uses_robot_base_for_calibrated_input(self) -> None:
+        self.assertEqual(
+            resolve_trajectory_scale_origin("auto", "robot_base"),
+            "robot_base",
+        )
+        self.assertEqual(
+            resolve_trajectory_scale_origin("auto", "viki_world_or_camera"),
+            "initial_wrist",
+        )
+
+    def test_robot_base_scaling_uses_zero_origin(self) -> None:
+        body = np.zeros((2, 33, 3), dtype=np.float64)
+        body[:, 16, :] = [[1.0, 2.0, 3.0], [2.0, 3.0, 4.0]]
+
+        scaled, _ = scale_landmarks(body, None, "right", 1.5, "robot_base")
+
+        np.testing.assert_allclose(
+            scaled[:, 16, :],
+            [[1.5, 3.0, 4.5], [3.0, 4.5, 6.0]],
+        )
+
+    def test_initial_wrist_scaling_preserves_first_target(self) -> None:
+        body = np.zeros((2, 33, 3), dtype=np.float64)
+        body[:, 16, :] = [[1.0, 2.0, 3.0], [2.0, 3.0, 4.0]]
+
+        scaled, _ = scale_landmarks(body, None, "right", 1.5, "initial_wrist")
+
+        np.testing.assert_allclose(
+            scaled[:, 16, :],
+            [[1.0, 2.0, 3.0], [2.5, 3.5, 4.5]],
+        )
+
     def test_output_trajectory_path_uses_hdf5(self) -> None:
         robot = normalize_robot("ur10")
         sample = Path("sample.npz")
@@ -118,7 +152,7 @@ class RetargetLogicTests(unittest.TestCase):
         np.testing.assert_allclose(targets[0].rotation[:, 1], [0.0, 1.0, 0.0])
         np.testing.assert_allclose(targets[0].rotation[:, 2], [0.0, 0.0, 1.0])
 
-    def test_invalid_rotations_fill_from_nearest_valid_frame(self) -> None:
+    def test_invalid_rotations_hold_single_valid_frame(self) -> None:
         valid_rotation = np.eye(3)
         filled, valid = fill_invalid_rotations([None, valid_rotation, None])
 
@@ -126,6 +160,29 @@ class RetargetLogicTests(unittest.TestCase):
         np.testing.assert_allclose(filled[1], valid_rotation)
         np.testing.assert_allclose(filled[2], valid_rotation)
         np.testing.assert_array_equal(valid, [False, True, False])
+
+    def test_invalid_rotations_are_slerp_interpolated(self) -> None:
+        angle = np.pi / 2.0
+        end = np.array(
+            [
+                [np.cos(angle), -np.sin(angle), 0.0],
+                [np.sin(angle), np.cos(angle), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+
+        filled, valid = fill_invalid_rotations([np.eye(3), None, end])
+
+        middle_angle = np.pi / 4.0
+        expected_middle = np.array(
+            [
+                [np.cos(middle_angle), -np.sin(middle_angle), 0.0],
+                [np.sin(middle_angle), np.cos(middle_angle), 0.0],
+                [0.0, 0.0, 1.0],
+            ]
+        )
+        np.testing.assert_allclose(filled[1], expected_middle, atol=1e-12)
+        np.testing.assert_array_equal(valid, [True, False, True])
 
     def test_hand_se3_targets_respect_orientation_valid_hint(self) -> None:
         body = np.zeros((2, 33, 3), dtype=np.float64)
@@ -193,6 +250,7 @@ class RetargetLogicTests(unittest.TestCase):
             loaded = load_smoothed_targets(path, "right", limit_frames=None)
 
             self.assertEqual(loaded.source_format, "smoothed_targets")
+            self.assertEqual(loaded.coordinate_frame, "robot_base")
             self.assertIsNone(loaded.hand)
             self.assertEqual(loaded.body.shape, (2, 33, 3))
             np.testing.assert_allclose(loaded.body[:, 16, :], positions)

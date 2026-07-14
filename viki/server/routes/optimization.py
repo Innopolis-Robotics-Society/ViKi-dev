@@ -41,6 +41,8 @@ TAIL_CHARS = 12000
 
 
 class ConvertRequest(BaseModel):
+    """Request model for converting a raw recording to a .npz sample."""
+
     recording: str
     output_name: str
     hand: Literal["right", "left"] = "right"
@@ -48,6 +50,8 @@ class ConvertRequest(BaseModel):
 
 
 class RetargetRequest(BaseModel):
+    """Request model for starting a retargeting optimisation job."""
+
     sample: str
     robot: str = "ur10"
     output_name: str
@@ -57,14 +61,17 @@ class RetargetRequest(BaseModel):
     ik_solver: str | None = None
     joint_sg_window: int = 0
     sg_window: int = 0
-    recenter_to_neutral: bool = True
+    recenter_to_neutral: bool = False
     trajectory_scale: float | None = Field(default=None, gt=0.0)
+    trajectory_scale_origin: Literal["auto", "initial_wrist", "robot_base"] = "auto"
     align_initial_orientation: bool | None = None
     evaluate: bool = True
 
 
 @dataclass(frozen=True)
 class RobotRetargetDefaults:
+    """Default parameters for a given robot."""
+
     ik_position_cost: float
     ik_orientation_cost: float
     ik_solver: str
@@ -74,6 +81,8 @@ class RobotRetargetDefaults:
 
 @dataclass
 class OptimizationJob:
+    """Internal state of an optimisation job."""
+
     job_id: str
     status: str
     description: str
@@ -95,11 +104,37 @@ _worker_started = False
 
 @router.get("/recordings")
 async def list_recordings() -> dict[str, Any]:
+    """
+    List available raw recordings (JSON files) that can be converted.
+
+    Returns
+    -------
+    dict
+        {"recordings": list[file_info]}
+    """
     return {"recordings": [_file_info(path) for path in _recording_paths()]}
 
 
 @router.post("/convert")
 async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
+    """
+    Convert a raw JSON recording to a .npz sample suitable for retargeting.
+
+    Parameters
+    ----------
+    req : ConvertRequest
+        Recording filename, output name, hand side, and arm inclusion.
+
+    Returns
+    -------
+    dict
+        Summary of the conversion: frames, fps, hand, orientation validity, etc.
+
+    Raises
+    ------
+    HTTPException 400
+        If conversion fails.
+    """
     _ensure_dirs()
     recording = _resolve_recording(req.recording)
     output_name = _safe_filename(req.output_name, expected_suffix=".npz")
@@ -122,6 +157,14 @@ async def convert_recording(req: ConvertRequest) -> dict[str, Any]:
 
 @router.get("/samples")
 async def list_samples() -> dict[str, Any]:
+    """
+    List available smoothed skeleton samples (.npz files) for retargeting.
+
+    Returns
+    -------
+    dict
+        {"samples": list[file_info]}
+    """
     _ensure_dirs()
     return {
         "samples": [
@@ -132,6 +175,24 @@ async def list_samples() -> dict[str, Any]:
 
 @router.post("/retarget")
 async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
+    """
+    Enqueue a retargeting job.
+
+    Parameters
+    ----------
+    req : RetargetRequest
+        Sample name, robot, output name, and optimisation parameters.
+
+    Returns
+    -------
+    dict
+        Job details (job_id, status, etc.).
+
+    Raises
+    ------
+    HTTPException 404
+        If the sample file is not found.
+    """
     _ensure_dirs()
     sample_name = _safe_filename(req.sample, expected_suffix=".npz")
     sample_path = SMOOTHED_INPUT_DIR / sample_name
@@ -174,6 +235,7 @@ async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
             if req.trajectory_scale is not None
             else defaults.trajectory_scale
         ),
+        trajectory_scale_origin=req.trajectory_scale_origin,
         align_initial_orientation=(
             req.align_initial_orientation
             if req.align_initial_orientation is not None
@@ -193,6 +255,14 @@ async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
 
 @router.get("/jobs")
 async def list_jobs() -> dict[str, Any]:
+    """
+    List all optimisation jobs (including finished and failed).
+
+    Returns
+    -------
+    dict
+        {"jobs": list[dict]}
+    """
     with _jobs_lock:
         jobs = [_job_response(job) for job in _jobs.values()]
     jobs.sort(key=lambda item: item["created_at"])
@@ -201,6 +271,24 @@ async def list_jobs() -> dict[str, Any]:
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str) -> dict[str, Any]:
+    """
+    Get the status and details of a specific optimisation job.
+
+    Parameters
+    ----------
+    job_id : str
+        Job ID.
+
+    Returns
+    -------
+    dict
+        Job details.
+
+    Raises
+    ------
+    HTTPException 404
+        If job not found.
+    """
     with _jobs_lock:
         job = _jobs.get(job_id)
         if job is None:
@@ -210,6 +298,14 @@ async def get_job(job_id: str) -> dict[str, Any]:
 
 @router.get("/outputs")
 async def list_outputs() -> dict[str, Any]:
+    """
+    List all generated output files (trajectories, evaluations).
+
+    Returns
+    -------
+    dict
+        {"outputs": list[file_info]}
+    """
     _ensure_dirs()
     paths = [
         path
@@ -221,6 +317,15 @@ async def list_outputs() -> dict[str, Any]:
 
 @router.get("/outputs/download")
 async def download_output(filename: str) -> FileResponse:
+    return _output_response(filename)
+
+
+@router.get("/outputs/{filename}")
+async def download_output_by_filename(filename: str) -> FileResponse:
+    return _output_response(filename)
+
+
+def _output_response(filename: str) -> FileResponse:
     name = _safe_filename(filename)
     path = OUTPUT_DIR / name
     if not path.exists() or not path.is_file():
@@ -231,12 +336,14 @@ async def download_output(filename: str) -> FileResponse:
 
 
 def _ensure_dirs() -> None:
+    """Create required directories if they don't exist."""
     SMOOTHED_INPUT_DIR.mkdir(parents=True, exist_ok=True)
     LEGACY_SAMPLES_DIR.mkdir(parents=True, exist_ok=True)
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def _recording_paths() -> list[Path]:
+    """Return all available recording JSON files."""
     paths: dict[str, Path] = {}
     for directory in RECORDING_DIRS:
         if not directory.exists():
@@ -247,6 +354,7 @@ def _recording_paths() -> list[Path]:
 
 
 def _resolve_recording(recording: str) -> Path:
+    """Resolve a recording filename to an absolute path."""
     name = _safe_filename(recording, expected_suffix=".json")
     for path in _recording_paths():
         if path.name == name:
@@ -255,6 +363,7 @@ def _resolve_recording(recording: str) -> Path:
 
 
 def _safe_filename(filename: str, expected_suffix: str | None = None) -> str:
+    """Sanitize filename to prevent path traversal."""
     path = Path(filename)
     name = path.name
     if not name or name in {".", ".."} or name != filename:
@@ -267,6 +376,7 @@ def _safe_filename(filename: str, expected_suffix: str | None = None) -> str:
 
 
 def _file_info(path: Path) -> dict[str, Any]:
+    """Return file metadata (filename, path, size, modification time)."""
     stat = path.stat()
     return {
         "filename": path.name,
@@ -280,6 +390,7 @@ def _file_info(path: Path) -> dict[str, Any]:
 
 
 def _relative_path(path: Path) -> str:
+    """Return path relative to the project root."""
     try:
         return str(path.resolve().relative_to(PROJECT_ROOT.resolve()))
     except ValueError:
@@ -287,6 +398,7 @@ def _relative_path(path: Path) -> str:
 
 
 def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
+    """Return default optimisation parameters for a given robot and mode."""
     robot_key = robot.strip().lower()
     if target_mode == "wrist_position":
         return RobotRetargetDefaults(
@@ -296,7 +408,7 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_orientation_cost=0.0,
             ik_solver="quadprog",
             trajectory_scale=(
-                0.1 if robot_key in {"iiwa14", "iiwa14_description"} else 0.25
+                0.55 if robot_key in {"iiwa14", "iiwa14_description"} else 0.8
             ),
             align_initial_orientation=False,
         )
@@ -305,14 +417,14 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_position_cost=2.0,
             ik_orientation_cost=0.3,
             ik_solver="quadprog",
-            trajectory_scale=0.1,
+            trajectory_scale=0.55,
             align_initial_orientation=False,
         )
     return RobotRetargetDefaults(
         ik_position_cost=5.0,
-        ik_orientation_cost=0.3,
+        ik_orientation_cost=0.6,
         ik_solver="quadprog",
-        trajectory_scale=0.25,
+        trajectory_scale=0.75,
         align_initial_orientation=True,
     )
 
@@ -325,6 +437,7 @@ def _enqueue_job(
     cfg: RunConfig,
     do_evaluate: bool,
 ) -> OptimizationJob:
+    """Create a job and enqueue it for background processing."""
     global _worker_started
     job = OptimizationJob(
         job_id=uuid.uuid4().hex,
@@ -343,6 +456,7 @@ def _enqueue_job(
 
 
 def _job_worker() -> None:
+    """Background worker that processes jobs from the queue."""
     while True:
         job_id, sample_path, output_path, cfg, do_evaluate = _job_queue.get()
         with _jobs_lock:
@@ -381,10 +495,12 @@ def _job_worker() -> None:
 
 
 def _tail(text: str) -> str:
+    """Trim text to the last TAIL_CHARS characters."""
     return text[-TAIL_CHARS:] if text and len(text) > TAIL_CHARS else (text or "")
 
 
 def _job_response(job: OptimizationJob) -> dict[str, Any]:
+    """Return a serialisable representation of a job."""
     data = asdict(job)
     data["outputs"] = [
         _file_info(path)
