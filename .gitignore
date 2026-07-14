@@ -242,3 +242,11 @@ AGENTS.md
 
 assets/
 node_modules/
+
+
+robot_out/
+data/robot_out/
+skeleton_smoothed/
+data/skeleton_smoothed/
+skeleton_recs/
+data/skeleton_recs/
