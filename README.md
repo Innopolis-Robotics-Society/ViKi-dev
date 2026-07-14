@@ -77,3 +77,8 @@ docker compose -f docker-compose.test.yml run --rm tests
 - `viki/server`: FastAPI handlers and streaming logic.
 - `viki/skeleton`: Pose estimation (MediaPipe) and multi-view fusion.
 - `viki/optimization`: Trajectory smoothing and interpolation.
+
+
+### The Project's UML Diagrams
+![classes](artifacts/classes_Viki-dev.png)
+![packages](artifacts/packages_Viki-dev.png)
