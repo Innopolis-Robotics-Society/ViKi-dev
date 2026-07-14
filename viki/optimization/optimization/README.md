@@ -28,22 +28,35 @@ orientation cost to `0`.
 
 `hand_se3` uses wrist position plus the provided palm/tool rotation. With
 `--align-initial-orientation`, frame 0 of the input rotation sequence is mapped
-onto the robot neutral end-effector rotation before IK. This is intended for
-the current debug flow where the smoothed data is not yet fully calibrated into
-robot base coordinates.
+onto the robot neutral end-effector rotation before IK.
 
-Recommended debug defaults for smoothed inputs are:
+Processed recordings are labelled `coordinate_frame="robot_base"` for the
+current ground-mounted ChArUco setup. The board center is `[0, 0, 0]`, so
+`--trajectory-scale-origin auto` scales these targets about the robot-base
+origin and the legacy camera-axis transform is skipped.
+
+Recommended defaults for the current recording geometry are:
 
 ```powershell
 --sg-window 0 `
 --joint-sg-window 0 `
---recenter-to-neutral `
---trajectory-scale 0.25 `
+--trajectory-scale-origin auto `
 --align-initial-orientation
 ```
 
-Use `--trajectory-scale 1.0` and omit `--recenter-to-neutral` only after the
-input positions are calibrated into the robot base frame.
+For `hand_se3`, use scale `0.75`, orientation cost `0.6`, and initial
+orientation alignment for UR10. Use scale `0.55`, orientation cost `0.3`, and
+no initial orientation alignment for iiwa14. For UR10 position-only tracking,
+scale `0.8` remains suitable. These are reach-normalization factors measured
+on `cln-17.20-12.07.2026.npz`; keep `--recenter-to-neutral` off so the board
+origin remains the robot-base origin. Scale `1.0` is retained as the literal
+calibrated trajectory, but this recording reaches 1.79 m from the base and is
+outside both robots' usable workspaces.
+
+The processor rejects palm orientations with implausible hand-bone lengths,
+near-collinear palm axes, or adjacent rotations over 60 degrees. Invalid
+orientation frames remain marked in `valid` and are interpolated on SO(3)
+during retargeting rather than copied from the nearest frame.
 
 ## Outputs
 

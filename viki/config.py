@@ -35,6 +35,7 @@ SKELETON_DEPTH_SAMP_RADIUS: int
 SKELETON_DEPTH_BASE_DIR: str
 SKELETON_RECS_DIR: str
 SKELETON_SMOOTHED_DIR: str
+SKELETON_COORDINATE_FRAME: str
 SKELETON_ENABLE_DEPTH_VALIDATION: bool
 SKELETON_DEPTH_SUBTRACT_THRESHOLD: float
 HAND_TO_DETECT: str
@@ -70,9 +71,12 @@ RETARGET_APPROACH_SEC: float
 RETARGET_JOINT_SG_WINDOW: int
 RETARGET_JOINT_SG_POLYORDER: int
 RETARGET_RECENTER_TO_NEUTRAL: bool
+RETARGET_TRAJECTORY_SCALE: float
+ROBOT_BASE_OFFSET: list[float]
+TARGET_OFFSET: list[float]
+SKELETON_COORDINATE_FRAME: str
 RETARGET_BASE_ROTATION: list[list[float]]
 RETARGET_BASE_TRANSLATION: list[float]
-RETARGET_TRAJECTORY_SCALE: float
 MODELS_DIR: str
 
 
@@ -100,6 +104,12 @@ _config = _load_config()
 
 # We assign these to globals so that 'from viki.config import CONSTANT' still works
 globals().update(_config)
+
+# Fallback defaults for retargeting offsets (backward compat with old config keys)
+if "ROBOT_BASE_OFFSET" not in _config:
+    globals()["ROBOT_BASE_OFFSET"] = [0.0, 0.0, 0.0]
+if "TARGET_OFFSET" not in _config:
+    globals()["TARGET_OFFSET"] = [0.0, 0.0, 0.0]
 
 # Keep a reference to the paths for the API
 DEFAULT_CONFIG_PATH = DEFAULT_CONFIG_PATH

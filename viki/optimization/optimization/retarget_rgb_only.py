@@ -25,7 +25,8 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from viki.skeleton.hand_angles import compute_palm_rotation
-from viki.config import MODELS_DIR, RETARGET_BASE_ROTATION, RETARGET_BASE_TRANSLATION
+import viki.config as viki_config
+from viki.config import MODELS_DIR
 
 try:
     from archive_io import load_archive, write_hdf5_archive
@@ -55,12 +56,26 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
 RIGHT_BODY_WRIST = 16
 LEFT_BODY_WRIST = 15
 HAND_IDXS = {"wrist": 0, "thumb_cmc": 1, "middle_mcp": 9}
-HAND_WRIST_CLUSTER = np.array([0, 1, 5, 9, 13, 17], dtype=np.intp)
 SMOOTHED_TARGET_KEYS = {"positions", "rotations", "valid", "timestamps"}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
 # into the robot-facing convention used by the saved trajectory archives.
+R_DEFAULT = np.array(
+    [
+        [0.0, 0.0, 1.0],
+        [1.0, 0.0, 0.0],
+        [0.0, -1.0, 0.0],
+    ],
+    dtype=np.float64,
+)
+T_DEFAULT = np.zeros(3, dtype=np.float64)
 R_REFLECTION_FIX = np.diag([1.0, 1.0, -1.0])
+ROBOT_BASE_OFFSET = np.array(
+    getattr(viki_config, "ROBOT_BASE_OFFSET", [0.0, 0.0, 0.0]), dtype=np.float64,
+)
+TARGET_OFFSET = np.array(
+    getattr(viki_config, "TARGET_OFFSET", [0.0, 0.0, 0.0]), dtype=np.float64,
+)
 
 
 @dataclass(frozen=True)
@@ -143,6 +158,7 @@ class RunConfig:
     recenter_to_neutral: bool
     trajectory_scale: float
     align_initial_orientation: bool
+    trajectory_scale_origin: str = "auto"
 
 
 @dataclass(frozen=True)
@@ -154,6 +170,7 @@ class RetargetInput:
     target_rotations: np.ndarray | None = None
     timestamps_us: np.ndarray | None = None
     source_format: str = "legacy_sample"
+    coordinate_frame: str = "viki_world_or_camera"
 
 
 def _load_robot_description(description: str):
@@ -214,6 +231,28 @@ def should_apply_legacy_transform(coordinate_frame: Any) -> bool:
     return frame not in {"robot_base", "robot-base", "robot base"}
 
 
+def normalize_coordinate_frame(coordinate_frame: Any) -> str:
+    frame = str(npz_scalar(coordinate_frame, "") or "").strip().lower()
+    if frame in {"robot_base", "robot-base", "robot base"}:
+        return "robot_base"
+    return "viki_world_or_camera"
+
+
+def resolve_trajectory_scale_origin(requested: str, coordinate_frame: Any) -> str:
+    """Resolve automatic scaling to the calibrated frame's natural origin."""
+    if requested == "auto":
+        return (
+            "robot_base"
+            if normalize_coordinate_frame(coordinate_frame) == "robot_base"
+            else "initial_wrist"
+        )
+    if requested not in {"initial_wrist", "robot_base"}:
+        raise ValueError(
+            "trajectory_scale_origin must be auto, initial_wrist, or robot_base."
+        )
+    return requested
+
+
 def normalize_robot(robot: str) -> RobotConfig:
     key = robot.strip()
     if key not in ROBOT_CONFIGS:
@@ -252,7 +291,7 @@ def sweep_candidate_path(out_dir: Path, sample_path: Path, robot: RobotConfig, c
     return out_dir / name
 
 
-def transform_points(points: np.ndarray, rotation: np.ndarray = RETARGET_BASE_ROTATION, translation: np.ndarray = RETARGET_BASE_TRANSLATION) -> np.ndarray:
+def transform_points(points: np.ndarray, rotation: np.ndarray = R_DEFAULT, translation: np.ndarray = T_DEFAULT) -> np.ndarray:
     arr = np.asarray(points, dtype=np.float64)
     rot = np.asarray(rotation, dtype=np.float64)
     trans = np.asarray(translation, dtype=np.float64)
@@ -277,7 +316,7 @@ def transform_rotations_to_robot(rotations: np.ndarray) -> np.ndarray:
         raise ValueError(f"Expected rotations shape (T, 3, 3), got {arr.shape}.")
     out = np.full_like(arr, np.nan, dtype=np.float64)
     finite = np.isfinite(arr).all(axis=(1, 2))
-    out[finite] = np.einsum("ij,tjk,kl->til", RETARGET_BASE_ROTATION, arr[finite], R_REFLECTION_FIX)
+    out[finite] = np.einsum("ij,tjk,kl->til", R_DEFAULT, arr[finite], R_REFLECTION_FIX)
     return out
 
 
@@ -327,8 +366,8 @@ def load_landmarks(
         body_robot = transform_points(body)
         hand_robot = transform_points(hand)
     else:
-        body_robot = body.copy()
-        hand_robot = hand.copy()
+        body_robot = body + TARGET_OFFSET - ROBOT_BASE_OFFSET
+        hand_robot = hand + TARGET_OFFSET - ROBOT_BASE_OFFSET
     if landmark_sg_window <= 0:
         return body_robot.copy(), hand_robot.copy(), fps
 
@@ -395,7 +434,11 @@ def load_smoothed_targets(
         rotations = np.asarray(data["rotations"], dtype=np.float64)
         valid = np.asarray(data["valid"], dtype=bool)
         timestamps_us = np.asarray(data["timestamps"], dtype=np.int64)
-        coordinate_frame = data["coordinate_frame"] if "coordinate_frame" in data.files else "viki_world_or_camera"
+        coordinate_frame = (
+            data["coordinate_frame"]
+            if "coordinate_frame" in data.files
+            else "viki_world_or_camera"
+        )
 
     if limit_frames is not None:
         if limit_frames <= 0:
@@ -424,6 +467,8 @@ def load_smoothed_targets(
     if should_apply_legacy_transform(coordinate_frame):
         positions = transform_points(positions)
         rotations = transform_rotations_to_robot(rotations)
+    else:
+        positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
     wrist_idx = body_wrist_index(working_hand)
     body = np.broadcast_to(positions[:, None, :], (len(positions), 33, 3)).copy()
     body[:, wrist_idx, :] = positions
@@ -437,6 +482,7 @@ def load_smoothed_targets(
         target_rotations=rotations,
         timestamps_us=timestamps_us,
         source_format="smoothed_targets",
+        coordinate_frame=normalize_coordinate_frame(coordinate_frame),
     )
 
 
@@ -450,6 +496,11 @@ def load_retarget_input(
     """Load either direct smoothed targets or a legacy optimiser sample."""
     with np.load(sample_path, allow_pickle=True) as data:
         files = set(data.files)
+        coordinate_frame = (
+            data["coordinate_frame"]
+            if "coordinate_frame" in data.files
+            else "viki_world_or_camera"
+        )
     if SMOOTHED_TARGET_KEYS.issubset(files):
         return load_smoothed_targets(sample_path, working_hand, limit_frames)
 
@@ -466,6 +517,7 @@ def load_retarget_input(
         fps=fps,
         orientation_valid=load_orientation_valid(sample_path, limit_frames),
         source_format="legacy_sample",
+        coordinate_frame=normalize_coordinate_frame(coordinate_frame),
     )
 
 
@@ -481,15 +533,6 @@ def hand_palm_rotation(hand_frame: np.ndarray) -> np.ndarray | None:
     )
 
 
-def compute_hand_center_position(hand_frame: np.ndarray) -> np.ndarray:
-    indices = HAND_WRIST_CLUSTER
-    cluster_points = hand_frame[indices]
-    valid = np.all(np.isfinite(cluster_points), axis=1)
-    if not valid.any():
-        raise ValueError("No valid hand landmarks in wrist cluster.")
-    return np.mean(cluster_points[valid], axis=0)
-
-
 def fill_invalid_rotations(rotations: list[np.ndarray | None]) -> tuple[np.ndarray, np.ndarray]:
     valid = np.array([rotation is not None for rotation in rotations], dtype=bool)
     if not valid.any():
@@ -498,17 +541,33 @@ def fill_invalid_rotations(rotations: list[np.ndarray | None]) -> tuple[np.ndarr
             "from landmarks 0 (wrist), 1 (thumb CMC), and 9 (middle MCP)."
         )
 
+    from scipy.spatial.transform import Rotation, Slerp
+
     valid_indices = np.flatnonzero(valid)
-    filled = np.zeros((len(rotations), 3, 3), dtype=np.float64)
-    for frame_idx, rotation in enumerate(rotations):
-        if rotation is not None:
-            filled[frame_idx] = np.asarray(rotation, dtype=np.float64)
-            continue
-        nearest = valid_indices[np.argmin(np.abs(valid_indices - frame_idx))]
-        nearest_rotation = rotations[int(nearest)]
-        assert nearest_rotation is not None
-        filled[frame_idx] = np.asarray(nearest_rotation, dtype=np.float64)
+    valid_rotations = np.stack(
+        [np.asarray(rotations[int(idx)], dtype=np.float64) for idx in valid_indices]
+    )
+    filled = np.empty((len(rotations), 3, 3), dtype=np.float64)
+    if len(valid_indices) == 1:
+        filled[:] = valid_rotations[0]
+        return filled, valid
+
+    first = int(valid_indices[0])
+    last = int(valid_indices[-1])
+    filled[:first] = valid_rotations[0]
+    filled[last + 1 :] = valid_rotations[-1]
+    interpolation_frames = np.arange(first, last + 1, dtype=np.float64)
+    filled[first : last + 1] = Slerp(
+        valid_indices.astype(np.float64),
+        Rotation.from_matrix(valid_rotations),
+    )(interpolation_frames).as_matrix()
     return filled, valid
+
+
+def extract_se3(pin: Any, body_frame: np.ndarray, rotation: np.ndarray, wrist_body_idx: int) -> Any:
+    """Build a hand target SE3 from body wrist translation and hand orientation."""
+    p = np.asarray(body_frame[wrist_body_idx], dtype=np.float64)
+    return pin.SE3(np.asarray(rotation, dtype=np.float64), p)
 
 
 def align_rotations_to_initial(rotations: np.ndarray, initial_target_rotation: np.ndarray) -> np.ndarray:
@@ -531,6 +590,7 @@ def build_targets(
     orientation_valid_hint: np.ndarray | None = None,
     initial_target_rotation: np.ndarray | None = None,
 ) -> tuple[list[Any], np.ndarray]:
+    wrist_idx = body_wrist_index(working_hand)
     rotations = [hand_palm_rotation(hand[t]) for t in range(len(hand))]
     if orientation_valid_hint is not None:
         hint = np.asarray(orientation_valid_hint, dtype=bool)
@@ -543,8 +603,7 @@ def build_targets(
     rotations, valid = fill_invalid_rotations(rotations)
     if initial_target_rotation is not None:
         rotations = align_rotations_to_initial(rotations, initial_target_rotation)
-    hand_centers = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
-    targets = [pin.SE3(rotations[t], hand_centers[t]) for t in range(len(body))]
+    targets = [extract_se3(pin, body[t], rotations[t], wrist_idx) for t in range(len(body))]
     return targets, valid
 
 
@@ -555,7 +614,6 @@ def build_direct_rotation_targets(
     working_hand: str,
     orientation_valid_hint: np.ndarray | None = None,
     initial_target_rotation: np.ndarray | None = None,
-    hand: np.ndarray | None = None,
 ) -> tuple[list[Any], np.ndarray]:
     wrist_idx = body_wrist_index(working_hand)
     arr = np.asarray(rotations, dtype=np.float64)
@@ -576,20 +634,13 @@ def build_direct_rotation_targets(
     filled, valid = fill_invalid_rotations(rotation_items)
     if initial_target_rotation is not None:
         filled = align_rotations_to_initial(filled, initial_target_rotation)
-    if hand is not None:
-        positions = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
-    else:
-        positions = body[:, wrist_idx, :]
-    targets = [pin.SE3(filled[t], positions[t]) for t in range(len(body))]
+    targets = [extract_se3(pin, body[t], filled[t], wrist_idx) for t in range(len(body))]
     return targets, valid
 
 
-def build_wrist_position_targets(pin: Any, body: np.ndarray, working_hand: str, hand: np.ndarray | None = None) -> list[Any]:
+def build_wrist_position_targets(pin: Any, body: np.ndarray, working_hand: str) -> list[Any]:
     wrist_idx = body_wrist_index(working_hand)
     identity = np.eye(3, dtype=np.float64)
-    if hand is not None:
-        positions = np.array([compute_hand_center_position(hand[t]) for t in range(len(hand))])
-        return [pin.SE3(identity, positions[t]) for t in range(len(body))]
     return [pin.SE3(identity, np.asarray(body[t, wrist_idx], dtype=np.float64)) for t in range(len(body))]
 
 
@@ -631,17 +682,22 @@ def recenter_landmarks_to_neutral(
     return body + offset, shifted_hand, offset
 
 
-def scale_landmarks_about_initial_wrist(
+def scale_landmarks(
     body: np.ndarray,
     hand: np.ndarray | None,
     working_hand: str,
     scale: float,
+    origin: str,
 ) -> tuple[np.ndarray, np.ndarray | None]:
-    """Uniformly scale the motion around the first wrist position."""
+    """Uniformly scale landmarks about the first wrist or robot-base origin."""
     if scale <= 0.0:
         raise ValueError("trajectory_scale must be positive.")
     wrist_idx = body_wrist_index(working_hand)
-    anchor = body[0, wrist_idx].copy()
+    anchor = (
+        np.zeros(3, dtype=np.float64)
+        if origin == "robot_base"
+        else body[0, wrist_idx].copy()
+    )
     scaled_hand = None if hand is None else anchor + (hand - anchor) * scale
     return anchor + (body - anchor) * scale, scaled_hand
 
@@ -747,12 +803,17 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
         raise ValueError(f"End-effector frame '{cfg.robot.ee_frame}' not found in {cfg.robot.description}.")
 
+    scale_origin = resolve_trajectory_scale_origin(
+        cfg.trajectory_scale_origin,
+        retarget_input.coordinate_frame,
+    )
     if abs(cfg.trajectory_scale - 1.0) > 1e-12:
-        body, hand = scale_landmarks_about_initial_wrist(
+        body, hand = scale_landmarks(
             body,
             hand,
             cfg.working_hand,
             cfg.trajectory_scale,
+            scale_origin,
         )
 
     recenter_offset = np.zeros(3, dtype=np.float64)
@@ -781,7 +842,6 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
                 cfg.working_hand,
                 retarget_input.orientation_valid,
                 initial_target_rotation,
-                hand=hand,
             )
         elif hand is not None:
             targets, orientation_valid = build_targets(
@@ -795,7 +855,7 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         else:
             raise ValueError("target_mode=hand_se3 requires either direct rotations or hand landmarks.")
     elif cfg.target_mode == "wrist_position":
-        targets = build_wrist_position_targets(pin, body, cfg.working_hand, hand=hand)
+        targets = build_wrist_position_targets(pin, body, cfg.working_hand)
     else:
         raise ValueError(f"Unknown target_mode: {cfg.target_mode}")
     target_pos = np.vstack([target.translation for target in targets])
@@ -857,8 +917,10 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset,
         "trajectory_scale": float(cfg.trajectory_scale),
+        "trajectory_scale_origin": scale_origin,
         "align_initial_orientation": bool(cfg.align_initial_orientation),
         "source_format": retarget_input.source_format,
+        "source_coordinate_frame": retarget_input.coordinate_frame,
         "source_npz": str(sample_path),
     }
     if retarget_input.timestamps_us is not None:
@@ -887,8 +949,10 @@ def retarget(sample_path: Path, out_path: Path, cfg: RunConfig) -> dict[str, Any
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset.tolist(),
         "trajectory_scale": float(cfg.trajectory_scale),
+        "trajectory_scale_origin": scale_origin,
         "align_initial_orientation": bool(cfg.align_initial_orientation),
         "source_format": retarget_input.source_format,
+        "source_coordinate_frame": retarget_input.coordinate_frame,
         "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
         "median_not_aligned_pos_error_mm": float(1000.0 * np.median(pos_err_smooth)),
         "mean_not_aligned_orientation_error_deg": float(np.mean(ori_err_smooth_deg)),
@@ -933,20 +997,32 @@ def retarget_from_poses(
     T = len(positions)
     positions = np.asarray(positions, dtype=np.float64)
 
+    # Snapshot world-frame positions BEFORE the robot-frame transform
+    world_positions = positions.copy()
+
     if rotations is not None:
         rotations = np.asarray(rotations, dtype=np.float64)
         if rotations.shape != (T, 3, 3):
             raise ValueError(f"Expected rotations shape ({T}, 3, 3), got {rotations.shape}.")
 
+    positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
+
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
         raise ValueError(f"End-effector frame '{cfg.robot.ee_frame}' not found in {cfg.robot.description}.")
 
-    # Scaling (about initial wrist position)
+    scale_origin = resolve_trajectory_scale_origin(
+        cfg.trajectory_scale_origin,
+        "robot_base",
+    )
     if abs(cfg.trajectory_scale - 1.0) > 1e-12:
         if cfg.trajectory_scale <= 0.0:
             raise ValueError("trajectory_scale must be positive.")
-        anchor = positions[0].copy()
+        anchor = (
+            np.zeros(3, dtype=np.float64)
+            if scale_origin == "robot_base"
+            else positions[0].copy()
+        )
         positions = anchor + (positions - anchor) * cfg.trajectory_scale
 
     # Recenter so frame-0 wrist matches robot neutral EE position
@@ -955,6 +1031,22 @@ def retarget_from_poses(
         offset = neutral_ee_position(pin, robot, cfg.robot.ee_frame) - positions[0]
         positions = positions + offset
         recenter_offset = offset
+
+    # Save debug snapshot of world vs robot-frame positions
+    try:
+        from viki.optimization.debug import save_retarget_debug
+        save_retarget_debug(
+            world_positions=world_positions,
+            robot_positions=positions,
+            robot_base_offset=ROBOT_BASE_OFFSET,
+            target_offset=TARGET_OFFSET,
+            trajectory_scale=cfg.trajectory_scale,
+            recenter_to_neutral=cfg.recenter_to_neutral,
+            robot_name=cfg.robot.description,
+            sample_file=str(out_path),
+        )
+    except Exception:
+        pass
 
     # Build SE3 targets
     if rotations is not None:
@@ -1045,6 +1137,7 @@ def retarget_from_poses(
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset,
         "trajectory_scale": float(cfg.trajectory_scale),
+        "trajectory_scale_origin": scale_origin,
         "source_cln": str(out_path),
     }
     if target_rot is not None:
@@ -1071,6 +1164,7 @@ def retarget_from_poses(
         "recenter_to_neutral": bool(cfg.recenter_to_neutral),
         "recenter_offset": recenter_offset.tolist(),
         "trajectory_scale": float(cfg.trajectory_scale),
+        "trajectory_scale_origin": scale_origin,
         "mean_not_aligned_pos_error_mm": float(1000.0 * np.mean(pos_err_smooth)),
         "median_not_aligned_pos_error_mm": float(1000.0 * np.median(pos_err_smooth)),
         "mean_not_aligned_orientation_error_deg": float(np.mean(ori_err_smooth_deg)),
@@ -1216,6 +1310,7 @@ def build_run_config(
         recenter_to_neutral=args.recenter_to_neutral,
         trajectory_scale=args.trajectory_scale,
         align_initial_orientation=args.align_initial_orientation,
+        trajectory_scale_origin=args.trajectory_scale_origin,
     )
 
 
@@ -1296,7 +1391,16 @@ def build_parser() -> argparse.ArgumentParser:
         "--trajectory-scale",
         type=float,
         default=1.0,
-        help="Uniformly scale all landmark motion about the first wrist before retargeting.",
+        help="Uniformly scale target positions before retargeting.",
+    )
+    parser.add_argument(
+        "--trajectory-scale-origin",
+        default="auto",
+        choices=["auto", "initial_wrist", "robot_base"],
+        help=(
+            "Scaling origin. Auto uses robot-base zero for calibrated robot_base "
+            "samples and the first wrist for legacy samples."
+        ),
     )
     parser.add_argument("--evaluate", action="store_true", help="Run FK evaluator after writing each trajectory.")
     parser.add_argument("--eval-align", default="rigid", choices=["rigid", "none"], help="Evaluator alignment mode.")

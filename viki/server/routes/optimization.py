@@ -42,6 +42,7 @@ TAIL_CHARS = 12000
 
 class ConvertRequest(BaseModel):
     """Request model for converting a raw recording to a .npz sample."""
+
     recording: str
     output_name: str
     hand: Literal["right", "left"] = "right"
@@ -50,6 +51,7 @@ class ConvertRequest(BaseModel):
 
 class RetargetRequest(BaseModel):
     """Request model for starting a retargeting optimisation job."""
+
     sample: str
     robot: str = "ur10"
     output_name: str
@@ -59,8 +61,9 @@ class RetargetRequest(BaseModel):
     ik_solver: str | None = None
     joint_sg_window: int = 0
     sg_window: int = 0
-    recenter_to_neutral: bool = True
+    recenter_to_neutral: bool = False
     trajectory_scale: float | None = Field(default=None, gt=0.0)
+    trajectory_scale_origin: Literal["auto", "initial_wrist", "robot_base"] = "auto"
     align_initial_orientation: bool | None = None
     evaluate: bool = True
 
@@ -68,6 +71,7 @@ class RetargetRequest(BaseModel):
 @dataclass(frozen=True)
 class RobotRetargetDefaults:
     """Default parameters for a given robot."""
+
     ik_position_cost: float
     ik_orientation_cost: float
     ik_solver: str
@@ -78,6 +82,7 @@ class RobotRetargetDefaults:
 @dataclass
 class OptimizationJob:
     """Internal state of an optimisation job."""
+
     job_id: str
     status: str
     description: str
@@ -230,6 +235,7 @@ async def retarget_endpoint(req: RetargetRequest) -> dict[str, Any]:
             if req.trajectory_scale is not None
             else defaults.trajectory_scale
         ),
+        trajectory_scale_origin=req.trajectory_scale_origin,
         align_initial_orientation=(
             req.align_initial_orientation
             if req.align_initial_orientation is not None
@@ -311,26 +317,15 @@ async def list_outputs() -> dict[str, Any]:
 
 @router.get("/outputs/download")
 async def download_output(filename: str) -> FileResponse:
-    """
-    Download an output file.
+    return _output_response(filename)
 
-    Parameters
-    ----------
-    filename : str
-        Name of the output file.
 
-    Returns
-    -------
-    FileResponse
-        The file.
+@router.get("/outputs/{filename}")
+async def download_output_by_filename(filename: str) -> FileResponse:
+    return _output_response(filename)
 
-    Raises
-    ------
-    HTTPException 404
-        If file not found.
-    HTTPException 400
-        If file type is not supported for download.
-    """
+
+def _output_response(filename: str) -> FileResponse:
     name = _safe_filename(filename)
     path = OUTPUT_DIR / name
     if not path.exists() or not path.is_file():
@@ -413,7 +408,7 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_orientation_cost=0.0,
             ik_solver="quadprog",
             trajectory_scale=(
-                0.1 if robot_key in {"iiwa14", "iiwa14_description"} else 0.25
+                0.55 if robot_key in {"iiwa14", "iiwa14_description"} else 0.8
             ),
             align_initial_orientation=False,
         )
@@ -422,14 +417,14 @@ def _retarget_defaults(robot: str, target_mode: str) -> RobotRetargetDefaults:
             ik_position_cost=2.0,
             ik_orientation_cost=0.3,
             ik_solver="quadprog",
-            trajectory_scale=0.1,
+            trajectory_scale=0.55,
             align_initial_orientation=False,
         )
     return RobotRetargetDefaults(
         ik_position_cost=5.0,
-        ik_orientation_cost=0.3,
+        ik_orientation_cost=0.6,
         ik_solver="quadprog",
-        trajectory_scale=0.25,
+        trajectory_scale=0.75,
         align_initial_orientation=True,
     )
 

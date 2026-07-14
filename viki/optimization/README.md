@@ -92,21 +92,24 @@ python skeleton_tests\optimization\convert_viki23_json.py `
 Run retargeting directly through the expected FK conda environment:
 
 ```powershell
-& 'C:\Users\minim\miniforge3\Scripts\conda.exe' run -n viki-fk python skeleton_tests\optimization\retarget_rgb_only.py `
-  --sample skeleton_tests\samples\rec_1782584807_smoothed_wrist_only.npz `
+& 'C:\Users\minim\miniforge3\Scripts\conda.exe' run -n viki-fk python viki\optimization\optimization\retarget_rgb_only.py `
+  --sample data\skeleton_smoothed\cln-17.20-12.07.2026.npz `
   --robot ur10 `
-  --out skeleton_tests\output\real_wrist_ur10.h5 `
-  --target-mode wrist_position `
+  --out data\robot_out\boardbase_ur10 `
+  --target-mode hand_se3 `
   --ik-position-cost 5 `
-  --ik-orientation-cost 0 `
+  --ik-orientation-cost 0.6 `
   --joint-sg-window 0 `
   --sg-window 0 `
-  --recenter-to-neutral `
-  --trajectory-scale 0.25 `
+  --trajectory-scale-origin auto `
+  --trajectory-scale 0.75 `
+  --align-initial-orientation `
   --evaluate
 ```
 
-For calibrated robot-base samples, use `--trajectory-scale 1.0` and do not use `--recenter-to-neutral`.
+The tested iiwa14 settings are scale `0.55`, orientation cost `0.3`, and no
+initial-orientation alignment. Do not use `--recenter-to-neutral` for the
+ChArUco robot-base flow.
 
 ## FastAPI Endpoints
 
@@ -179,16 +182,18 @@ Request:
 
 ```json
 {
-  "sample": "rec_1782584807_smoothed_wrist_only.npz",
+  "sample": "cln-17.20-12.07.2026.npz",
   "robot": "ur10",
   "output_name": "real_wrist_ur10",
-  "target_mode": "wrist_position",
+  "target_mode": "hand_se3",
   "ik_position_cost": 5,
-  "ik_orientation_cost": 0,
+  "ik_orientation_cost": 0.6,
   "joint_sg_window": 0,
-  "sg_window": 7,
-  "recenter_to_neutral": true,
-  "trajectory_scale": 0.25,
+  "sg_window": 0,
+  "recenter_to_neutral": false,
+  "trajectory_scale": 0.75,
+  "trajectory_scale_origin": "auto",
+  "align_initial_orientation": true,
   "evaluate": true
 }
 ```
@@ -278,16 +283,17 @@ The intended current flow is:
 ViKi skeleton recording -> hand-only optimiser sample -> wrist_position or hand_se3 retargeting
 ```
 
-Debug mode:
+Current board-base defaults:
 
 ```text
---recenter-to-neutral --trajectory-scale 0.25
+UR10 hand_se3: --trajectory-scale-origin auto --trajectory-scale 0.75 --ik-orientation-cost 0.6 --align-initial-orientation
+iiwa14 hand_se3: --trajectory-scale-origin auto --trajectory-scale 0.55 --ik-orientation-cost 0.3
 ```
 
-Real calibrated mode:
+Literal calibrated scale, when the target is reachable:
 
 ```text
---trajectory-scale 1.0
+--trajectory-scale-origin robot_base --trajectory-scale 1.0
 ```
 
 Do not use `--recenter-to-neutral` for calibrated robot-base trajectories because it hides the real spatial relationship between the skeleton and robot.
