@@ -4,10 +4,9 @@ scripts/live_demo.py
 Live skeleton overlay from a 2D webcam using the new modular detector stack
 in LIVE_STREAM mode.
 
-Default configuration runs MediaPipeArm + MediaPipeHand together via
-CompositeLandmarkDetector in FusionMode.ANY — arm chain (slots 0, 21, 22)
-plus full 21 hand keypoints (slots 0..20). Slot 0 (WRIST) is resolved by
-priority: arm (priority=0) wins over hand (priority=10).
+Runs a single RTMPoseWholeBody detector inside a CompositeLandmarkDetector
+in FusionMode.ANY. One inference call fills all 23 slots: WRIST, 20 finger
+landmarks, ELBOW, SHOULDER.
 
 Usage:
     python scripts/live_demo.py [--camera 0] [--hand right] [--width 640]
@@ -27,8 +26,7 @@ from viki.skeleton.camera_prep import prepare_frame
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
-    MediaPipeArm,
-    MediaPipeHand,
+    RTMPoseWholeBody,
 )
 from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.models import LM
@@ -186,12 +184,10 @@ def main():
         print(f"Cannot open camera {args.camera}")
         return
 
-    # Arm + hand together. ANY mode keeps frames when either detector succeeds,
-    # so missing-hand or missing-arm frames are still useful.
+    # RTMPose Wholebody fills all 23 slots in a single inference call.
     detector = CompositeLandmarkDetector(
         detectors=[
-            MediaPipeArm(hand=args.hand, mode="live"),
-            MediaPipeHand(hand=args.hand, mode="live"),
+            RTMPoseWholeBody(hand=args.hand, model_mode="balanced", device="cpu"),
         ],
         mode=FusionMode.ANY,
     )

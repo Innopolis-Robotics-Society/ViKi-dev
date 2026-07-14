@@ -3,7 +3,7 @@ viki.skeleton.camera_prep
 -------------------------
 Converts a raw capture Frame into a PreparedFrame ready for model inference.
 
-This module has no dependency on MediaPipe or CameraManager.
+This module has no dependency on any detector backend or CameraManager.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ def prepare_frame(frame: Frame) -> PreparedFrame:
     """
     Convert a raw Frame into a PreparedFrame.
 
-    The colour image is converted to RGB (no undistortion — MediaPipe
-    handles lens distortion natively).
+    The colour image is converted to RGB (no undistortion — modern
+    landmark detectors handle mild lens distortion natively).
     The depth image is converted to float32 metres; invalid zeros become NaN.
 
     Parameters

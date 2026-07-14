@@ -46,7 +46,8 @@ class PartialDetection2D:
     px : np.ndarray
         (k, 2) float32 pixel coordinates (NaN allowed for missing landmarks).
     lm_z_rel : np.ndarray
-        (k,) float32 MediaPipe‑style relative z (arbitrary units).
+        (k,) float32 relative-z channel in detector-specific units. Pure
+        2-D detectors (e.g. RTMPose) fill this with zeros.
     per_index_confidence : np.ndarray
         (k,) float32 confidence per landmark (0..1).
     device_id : str
@@ -57,7 +58,7 @@ class PartialDetection2D:
 
     indices: tuple[int, ...]  # global layout slots this detector writes (length k).
     px: np.ndarray  # (k, 2) float32 pixel coords (NaN allowed).
-    lm_z_rel: np.ndarray  # (k,) float32 MediaPipe-style relative z.
+    lm_z_rel: np.ndarray  # (k,) float32 relative-z channel; zeros for 2-D-only detectors.
     per_index_confidence: np.ndarray
     device_id: str
     timestamp_us: int

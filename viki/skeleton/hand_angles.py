@@ -118,10 +118,6 @@ def compute_hand_angles(points: Mapping[LM, np.ndarray]) -> HandAngles:
     """
     Compute forearm-local flexion / deviation / roll from a landmark dict.
 
-    **Note**: Arm landmarks (ELBOW, SHOULDER) are never detected by the pipeline
-    (MediaPipeArm is disabled), so this function will always return invalid
-    at runtime. Kept for schema compatibility.
-
     Parameters
     ----------
     points : Mapping[LM, np.ndarray]

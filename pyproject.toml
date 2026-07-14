@@ -14,12 +14,12 @@ dependencies = [
     "robot_descriptions>=2.0",
     "fastapi>=0.111",
     "uvicorn[standard]>=0.29",
-    "mediapipe>=0.10.35",
     "matplotlib>=3.8",
     "h5py>=3.10",
     "scipy>=1.11",
     "typing_extensions>=4.12",
     "xacrodoc",
+    "rtmlib>=0.0.15",
 ]
 
 [project.optional-dependencies]

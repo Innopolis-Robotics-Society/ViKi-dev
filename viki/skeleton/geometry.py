@@ -3,8 +3,13 @@ viki.skeleton.geometry
 ----------------------
 Mapping 2D points to 3D space using depth and camera intrinsics.
 
-Z estimation uses MediaPipe z_rel for hand-internal depth structure
-and depth-camera median for absolute hand position.
+Absolute Z per landmark is taken from the depth camera; if the detector
+supplies a per-landmark relative-z channel (``HandDetection.lm_z_rel``),
+it is used to add hand-internal depth structure via a least-squares fit
+against measured depth samples. RTMPose emits zeros for ``lm_z_rel``, so
+in the current stack every landmark falls onto the same ``hand_z`` plane
+— fine for wrist / arm slots but flattens finger depth. Downstream code
+should not rely on per-finger Z differentiation on top of RTMPose.
 """
 
 from __future__ import annotations
@@ -30,19 +35,19 @@ def lift_to_3d(
       1. Project color pixel (u, v) to depth-camera space via SDK calibration.
       2. Collect valid depth Z values across ALL landmarks.
       3. ``hand_z = median(valid_Zs)`` — robust absolute hand position.
-      4. Estimate ``z_scale`` converting MediaPipe z_rel to metres (least‑squares
-         against depth samples, or fallback constant).
+      4. Estimate ``z_scale`` converting relative-z units (detector-specific)
+         to metres via least-squares against depth samples, with a fallback
+         constant when the fit is degenerate.
       5. ``Z_i = hand_z + z_scale * z_rel[i]`` — per‑landmark depth.
       6. Deproject (u_depth, v_depth, Z_i) to (X, Y, Z).
 
     No ROI sampling, no background subtraction, no per‑landmark depth
-    variability.  The function never blinks when MediaPipe is stable
-    and at least a few depth pixels are valid.
+    variability. Robust as long as at least a few depth pixels are valid.
 
     Parameters
     ----------
     detection : HandDetection
-        2D landmark detections (pixel coordinates) from MediaPipe.
+        2D landmark detections (pixel coordinates) from the detector.
     frame : PreparedFrame
         Prepared frame with depth_m (metres) and depth_K.
     backend : Any

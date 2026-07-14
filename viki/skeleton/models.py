@@ -46,23 +46,24 @@ class PreparedFrame:
 @dataclass
 class HandDetection:
     """
-    Raw MediaPipe output for one camera, pixel-space.
+    2-D detector output for one camera, pixel-space.
 
     Parameters
     ----------
+    points[i] : (u, v) pixel coordinates of landmark i (float, subpixel;
+                NaN when the landmark was not detected).
+    lm_z_rel[i] : relative z for landmark i in arbitrary detector units.
+                  RTMPose is a pure 2-D detector, so this is 0 for all i.
+                  Kept in the schema for downstream code that may want a
+                  fallback depth signal from future backends.
+    confidence : overall detection score [0..1].
 
-    px[i] : (u, v) pixel coordinates of landmark i (float, subpixel).
-    lm_z_rel[i] : MediaPipe's relative z for landmark i.
-                  NOT metric depth. Relative to wrist (landmark 0). Approximated by mediapipe as ratio of landmarks
-                  Use only as fallback when depth_m is nan at that pixel.
-    confidence : overall hand detection score from MediaPipe [0..1].
-
-    None is returned by the detector when no hand is found; this dataclass
+    None is returned by the detector when no person is found; this dataclass
     is only instantiated on a successful detection.
     """
 
     points: dict[LM, np.ndarray]
-    lm_z_rel: np.ndarray  # float32, MediaPipe relative z
+    lm_z_rel: np.ndarray  # float32, relative-z channel (zeros with RTMPose)
     confidence: float
     device_id: str
     timestamp_us: int
@@ -165,10 +166,11 @@ class PipelineResult:
     detections: dict[str, HandDetection | None]  # Per-camera 2D landmarks
 
 
-# MediaPipe Hands landmark indices
+# ViKi landmark layout (21 hand landmarks in the standard COCO-WholeBody
+# hand order plus two arm landmarks).
 class LM(IntEnum):
     """
-    Landmark indices for MediaPipe Hands (21 hand landmarks) plus two arm landmarks.
+    Landmark indices — 21 hand landmarks plus two arm landmarks.
 
     Hand landmarks: 0 (WRIST) to 20 (PINKY_TIP).
     Arm landmarks (not detected): 21 (ELBOW), 22 (SHOULDER) – kept for schema compatibility.
@@ -195,8 +197,7 @@ class LM(IntEnum):
     PINKY_DIP = 19
     PINKY_TIP = 20
 
-    # Arm landmarks — never detected (MediaPipeArm disabled), but kept for
-    # backward compat and hand_angles schema.
+    # Arm landmarks — filled by RTMPose Wholebody body-block.
     ELBOW = 21
     SHOULDER = 22
 

@@ -28,8 +28,7 @@ from viki.skeleton.geometry import lift_to_3d
 from viki.skeleton.detectors import (
     CompositeLandmarkDetector,
     FusionMode,
-    MediaPipeArm,
-    MediaPipeHand,
+    RTMPoseWholeBody,
 )
 from viki.skeleton.models import (
     Landmarks3D,
@@ -47,7 +46,8 @@ class SkeletonPipeline:
 
     This pipeline:
         1. Prepares each camera frame (undistort, depth clean).
-        2. Runs hand detection (MediaPipe) on each camera in parallel.
+        2. Runs RTMPose whole-body detection on each camera in parallel;
+           one RTMPoseWholeBody call fills all 23 slots (arm + hand + fingers).
         3. Lifts 2D detections to 3D using depth maps.
         4. Fuses per‑camera 3D landmarks into a single world‑frame skeleton.
 
@@ -113,9 +113,8 @@ class SkeletonPipeline:
         confidences: dict[str, dict[LM, float]] = {}
         for dev_id, det in detections.items():
             if det:
-                # MediaPipe confidence is overall, but if we have per-landmark we'd use it.
-                # Currently HandDetection only has overall confidence.
-                # We'll map this overall confidence to all landmarks for now.
+                # HandDetection currently exposes only overall confidence;
+                # broadcast it as a per-landmark weight for the fuser.
                 confidences[dev_id] = {LM(i): det.confidence for i in range(LM.N)}
 
         # Fusion logic:
@@ -200,8 +199,11 @@ class SkeletonPipeline:
         if dev_id not in self._detectors:
             self._detectors[dev_id] = CompositeLandmarkDetector(
                 detectors=[
-                    # MediaPipeArm(hand=self._hand, mode="live"),
-                    MediaPipeHand(hand=self._hand, mode="live"),
+                    RTMPoseWholeBody(
+                        hand=self._hand,
+                        model_mode="balanced",
+                        device="cpu",
+                    ),
                 ],
                 mode=FusionMode.ANY,
             )
@@ -210,7 +212,7 @@ class SkeletonPipeline:
         return dev_id, det, prepared
 
     def close(self) -> None:
-        """Release MediaPipe resources."""
+        """Release detector resources (ONNXRuntime sessions, threadpool)."""
         self._executor.shutdown(wait=False)
         for detector in self._detectors.values():
             detector.close()

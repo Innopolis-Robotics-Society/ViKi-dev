@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from viki.skeleton.detectors import MediaPipeArm, MediaPipeHand
+from viki.skeleton.detectors import RTMPoseWholeBody
 from viki.skeleton.hand_angles import compute_end_effector_pose, compute_palm_rotation
 from viki.skeleton.models import LM, SkeletonFrame
 from viki.skeleton.recorder import SkeletonRecorder
@@ -27,8 +27,8 @@ class HandAnglesTests(unittest.TestCase):
         self.assertEqual(LM.N, 23)
         self.assertEqual(LM.ELBOW, 21)
         self.assertEqual(LM.SHOULDER, 22)
-        self.assertEqual(MediaPipeHand.indices, tuple(range(21)))
-        self.assertEqual(MediaPipeArm.indices, (0, 21, 22))
+        # The whole-body detector covers every ViKi slot in one call.
+        self.assertEqual(RTMPoseWholeBody.indices, tuple(range(23)))
 
     def test_palm_rotation_is_orthonormal_right_handed(self) -> None:
         points = synthetic_points()

@@ -1,6 +1,6 @@
 """
 Tests for geometry utilities.
-Verifies lift_to_3d with MediaPipe z_rel + depth median.
+Verifies lift_to_3d with detector z_rel + depth median.
 """
 
 import numpy as np
@@ -82,7 +82,7 @@ def test_lift_to_3d_no_depth():
 
 
 def test_lift_to_3d_nan_landmarks():
-    """Some MediaPipe landmarks NaN → those individually NaN, others valid."""
+    """Some detected landmarks NaN → those individually NaN, others valid."""
     depth_m = np.full((576, 640), 0.5, dtype=np.float32)
     depth_K = np.array([[600, 0, 320], [0, 600, 240], [0, 0, 1]], dtype=np.float32)
     frame = PreparedFrame(
