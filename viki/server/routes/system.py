@@ -12,7 +12,7 @@ import logging
 from viki.config import USER_CONFIG_PATH, DEFAULT_CONFIG_PATH
 
 logger = logging.getLogger(__name__)
-router = APIRouter(prefix="/api", tags=["system"])
+router = APIRouter(prefix="", tags=["system"])
 
 @router.get("/config")
 async def get_config():

@@ -72,13 +72,20 @@ docker compose -f docker-compose.test.yml run --rm tests
 ```
 
 ### Project Architecture
-- `viki/capture`: Camera backend abstractions and multi-camera management.
-- `viki/viz`: Pure pixel processing (depth colorization, MJPEG encoding).
-- `viki/server`: FastAPI handlers and streaming logic.
-- `viki/skeleton`: Pose estimation (MediaPipe) and multi-view fusion.
-- `viki/optimization`: Trajectory smoothing and interpolation.
+
+See the per-package READMEs for details:
+
+- `viki/capture` ([cameras](viki/capture/README.md)) — camera backend abstractions (RealSense, Azure Kinect) and multi-camera management.
+- `viki/calibration` ([calibration](viki/calibration/README.md)) — chessboard/ChArUco intrinsics + per-camera extrinsics.
+- `viki/skeleton` ([skeleton](viki/skeleton/README.md)) — MediaPipe pose estimation, depth-fused 3D keypoints, multi-view recording.
+- `viki/optimization` ([optimization](viki/optimization/README.md)) — `preparation/` (recorded landmarks → end-effector pose) and `retarget/` (end-effector pose → IK `.h5`).
+- `viki/viz` — pure pixel processing (depth colorization, MJPEG encoding, undistortion). No FastAPI/camera/IO dependencies.
+- `viki/server` ([server](viki/server/README.md)) — FastAPI app assembly, DI, streaming, and route handlers.
+
+**Layering:** `routes/` (thin handlers) → `deps.py` (DI) → `streams.py` (poll + timing) → `viz/` (pure pixel work) → `config.py` (constants). `viz/` depends on neither FastAPI nor the camera layer, so it is reusable and testable without hardware.
+
+**Data flow:** `CameraManager` owns one `_CameraWorker` (daemon thread) per active camera, each storing the latest frames in a ring buffer under a lock. Stream generators and the skeleton worker *pull* `manager.latest_frame()` independently — there is no push pub/sub.
 
 
 ### The Project's UML Diagrams
-![classes](artifacts/classes_Viki-dev.png)
-![packages](artifacts/packages_Viki-dev.png)
+![classes](artifacts/classes_viki.png)

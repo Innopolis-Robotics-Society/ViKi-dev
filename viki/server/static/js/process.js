@@ -60,7 +60,7 @@ export async function loadProcessRecordings() {
     if (processMode === 'dataset') {
       data = await api('GET', `/api/dataset/recordings?page=${processPage}&limit=10`);
     } else {
-      data = await api('GET', `/api/skeleton/recordings?page=${processPage}&limit=10`);
+      data = await api('GET', `/api/optimization/recordings?page=${processPage}&limit=10`);
     }
     const recs = data.recordings || [];
     listEl.innerHTML = recs.length === 0
@@ -182,12 +182,12 @@ export async function processSmoothSelected() {
   const poly = parseInt(document.getElementById('process-poly').value) || 2;
   statusEl.textContent = `Smoothing ${processSelectedRec}...`;
   try {
-    const res = await api('POST', '/api/skeleton/smooth', { filename: processSelectedRec, window_length: winLen, polyorder: poly });
+    const res = await api('POST', '/api/optimization/smooth', { filename: processSelectedRec, window_length: winLen, polyorder: poly });
     statusEl.textContent = `✅ ${res.path}`;
     log(`Smoothed: ${res.path}`, 'ok');
     const plotContainer = document.getElementById('process-smooth-plot');
     const plotName = res.path.split('/').pop() || res.path.split('\\').pop();
-    plotContainer.innerHTML = `<img src="/api/skeleton/smooth-plot?filename=${encodeURIComponent(plotName)}" style="width:100%;height:100%;object-fit:contain;">`;
+    plotContainer.innerHTML = `<img src="/api/optimization/smooth-plot?filename=${encodeURIComponent(plotName)}" style="width:100%;height:100%;object-fit:contain;">`;
     plotContainer.style.display = 'flex';
   } catch (e) {
     statusEl.textContent = `❌ ${e}`;

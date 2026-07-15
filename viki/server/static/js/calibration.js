@@ -1,6 +1,6 @@
 // Camera calibration: board params, per-device streams, capture, extrinsics.
 import { api, log, state, FRONTEND_CONFIG } from './core.js';
-import { setCameraExtrinsics, setCalibBoard, setCalibCameras } from './skeleton.js';
+import { setCameraExtrinsics, setCalibBoard, setCalibCameras, captureBaseDepth } from './skeleton.js';
 
 const ARUCO_DICTS = [
   'DICT_4X4_50', 'DICT_4X4_100', 'DICT_4X4_250', 'DICT_4X4_1000',
@@ -230,6 +230,17 @@ export async function extrinsicsCalibration() {
       setCalibBoard(viz.board);
       setCalibCameras(viz.cameras);
     } catch { /* non-critical */ }
+
+    // Snapshot the now-empty scene as static background depth for every camera
+    // so skeleton estimation can subtract it. Run after extrinsics so the
+    // board (if still in view) is out of the way.
+    await Promise.all(Object.keys(state).map(async (id) => {
+      try {
+        await captureBaseDepth(id);
+      } catch (e) {
+        log(`Base depth capture for ${id} failed: ${e}`, 'error');
+      }
+    }));
 
     log('Extrinsics calibration successful', 'ok');
   } catch (e) {

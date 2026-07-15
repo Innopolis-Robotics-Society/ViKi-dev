@@ -54,11 +54,4 @@ export async function restartServer() {
   }
 }
 
-export async function checkServer() {
-  try {
-    await fetch('/api/devices');
-    document.getElementById('server-dot').classList.add('alive');
-  } catch {
-    document.getElementById('server-dot').classList.remove('alive');
-  }
-}
+

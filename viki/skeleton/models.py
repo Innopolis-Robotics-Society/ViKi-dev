@@ -26,6 +26,8 @@ class PreparedFrame:
       - color is converted BGR to RGB (no undistort)
       - depth is float32 metres with 0 replaced by nan
       - depth_K is the real depth-camera intrinsic matrix (for 3D lifting)
+      - base_depth_m is the optional static background depth (metres) used to
+        subtract the scene so the tracked hand stands out.
     """
 
     rgb: np.ndarray  # (H, W, 3) uint8, RGB
@@ -33,6 +35,7 @@ class PreparedFrame:
     depth_K: Optional[np.ndarray]  # (3, 3)    depth intrinsic matrix
     device_id: str
     timestamp_us: int
+    base_depth_m: Optional[np.ndarray] = None  # (H, W) float32, background depth (m)
 
 
 #

@@ -1,6 +1,6 @@
 """
-viki.optimization.fusion
--------------------------
+viki.optimization.preparation.fusion
+-------------------------------------
 Fuse per‑camera 3‑D hand trajectories into a single world‑frame skeleton
 trajectory.
 

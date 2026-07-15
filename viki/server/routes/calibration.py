@@ -32,7 +32,7 @@ from viki.config import (
     EXTRINSICS_FILENAME,
 )
 
-router = APIRouter(prefix="/api/calibration", tags=["calibration"])
+router = APIRouter(prefix="/calibration", tags=["calibration"])
 
 _MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
 _STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
@@ -484,7 +484,12 @@ async def extrinsics_viz(
             "tvec": extr.tvec.flatten().tolist(),
         }
         if intr is not None:
-            cam.update(fx=float(intr.fx), fy=float(intr.fy), cx=float(intr.cx), cy=float(intr.cy))
+            cam.update(
+                fx=float(intr.fx),
+                fy=float(intr.fy),
+                cx=float(intr.cx),
+                cy=float(intr.cy),
+            )
         if info:
             shape = info.get("color_shape")
             if shape and len(shape) >= 2:
@@ -497,7 +502,11 @@ async def extrinsics_viz(
         cameras.append(cam)
 
     bp = cal.get_board_params()
-    board = {"board_size": list(bp.board_size), "square_size": bp.square_size} if bp else None
+    board = (
+        {"board_size": list(bp.board_size), "square_size": bp.square_size}
+        if bp
+        else None
+    )
 
     return {"board": board, "cameras": cameras}
 

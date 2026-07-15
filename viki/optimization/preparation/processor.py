@@ -1,9 +1,10 @@
 """
-viki.skeleton.processor
-----------------------
-Business logic for processing skeleton recording files.
+viki.optimization.preparation.processor
+--------------------------------------
+Business logic for preparing skeleton recordings.
 
-Handles listing, smoothing, and exporting of recorded skeleton data.
+Takes recorded landmarks, interpolates, fuses across cameras, smooths, and
+computes end-effector poses (rotation + position) for the retarget stage.
 """
 
 from __future__ import annotations
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import List
 
 import numpy as np
-from viki.skeleton.smoothing import smooth_landmark_sequence, interpolate_nans
+from .smoothing import smooth_landmark_sequence, interpolate_nans
 from viki.skeleton.hand_angles import compute_end_effector_pose
 from viki.skeleton.models import LM
 import viki.config as config
@@ -85,9 +86,9 @@ def stable_palm_orientation_mask(
 
     return valid
 
-class SkeletonProcessor:
+class PreparationPipeline:
     """
-    Handles listing and smoothing of skeleton recording files.
+    Handles listing and preparation of skeleton recording files.
 
     Attributes
     ----------
@@ -216,7 +217,7 @@ class SkeletonProcessor:
 
         # 2. Fusion part: right after interpolation, average the per-camera
         #    trajectories onto a common time grid (deferred from capture time).
-        from viki.optimization.fusion import fuse_trajectories
+        from .fusion import fuse_trajectories
 
         fused_points, grid = fuse_trajectories(smoothed, ts_map, landmark_ids)
         raw_fused, _ = fuse_trajectories(raw_filled, ts_map, landmark_ids)
@@ -292,3 +293,14 @@ class SkeletonProcessor:
                 json.dump(json_data, f, indent=2)
 
         return str(output_path), fused_points
+
+
+def estimate_fps(timestamps_us: np.ndarray) -> float:
+    """Estimate frame rate (Hz) from a sequence of microsecond timestamps."""
+    if len(timestamps_us) < 2:
+        return 30.0
+    dt = np.diff(timestamps_us.astype(np.float64)) / 1_000_000.0
+    dt = dt[np.isfinite(dt) & (dt > 0)]
+    if len(dt) == 0:
+        return 30.0
+    return float(1.0 / np.median(dt))

@@ -10,7 +10,7 @@ from viki.capture.manager import CameraManager
 from viki.server.deps import get_manager, get_worker
 from viki.server.skeleton_worker import SkeletonWorker
 
-router = APIRouter(prefix="/api/record", tags=["recording"])
+router = APIRouter(prefix="/record", tags=["recording"])
 
 class RecordRequest(BaseModel):
     duration: float = 10.0

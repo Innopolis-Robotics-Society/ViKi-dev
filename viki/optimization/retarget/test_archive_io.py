@@ -8,7 +8,7 @@ from pathlib import Path
 
 import numpy as np
 
-from viki.optimization.optimization.archive_io import load_archive, write_hdf5_archive
+from viki.optimization.retarget.archive_io import load_archive, write_hdf5_archive
 
 
 class ArchiveIoTests(unittest.TestCase):

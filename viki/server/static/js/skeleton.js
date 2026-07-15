@@ -65,9 +65,10 @@ const HAND_CONNS = [
   [0, 17], [17, 18], [18, 19], [19, 20], // Pinky
 ];
 
-// Defined for parity with the original UI; no button currently triggers it.
-async function captureBaseDepth() {
-  const deviceId = document.getElementById('skel-viz-cam')?.value;
+// Capture the current static background depth for a camera. If deviceId is
+// omitted, the currently selected visualize camera is used.
+export async function captureBaseDepth(deviceId = null) {
+  if (!deviceId) deviceId = document.getElementById('skel-viz-cam')?.value;
   if (!deviceId) {
     log('No camera selected for base depth capture', 'error');
     return;

@@ -8,8 +8,6 @@ and a WebSocket for streaming the latest skeleton frame.
 from __future__ import annotations
 
 import asyncio
-import io
-import json
 from pathlib import Path
 import time
 import logging
@@ -19,12 +17,11 @@ from pydantic import BaseModel
 import numpy as np
 from viki.skeleton.models import LM
 
-from argparse import Namespace
-
 import viki.config as config
-from viki.server.deps import get_worker, get_processor
+from viki.capture.manager import CameraManager
+from viki.skeleton.camera_prep import prepare_frame
+from viki.server.deps import get_worker, get_manager
 from viki.server.skeleton_worker import SkeletonWorker
-from viki.skeleton.processor import SkeletonProcessor
 
 
 def sanitize_nan(val):
@@ -40,18 +37,12 @@ def sanitize_nan(val):
     return val
 
 
-router = APIRouter(prefix="/api/skeleton", tags=["skeleton"])
+router = APIRouter(prefix="/skeleton", tags=["skeleton"])
 logger = logging.getLogger(__name__)
 
 
 class ToggleRequest(BaseModel):
     enabled: bool
-
-
-class SmoothRequest(BaseModel):
-    filename: str
-    window_length: int = 7
-    polyorder: int = 2
 
 
 @router.post("/toggle")
@@ -117,6 +108,46 @@ async def toggle_depth_debug(
     return {"status": "updated", "depth_debug": req.enabled}
 
 
+@router.post("/capture_base/{device_id}")
+async def capture_base_depth(
+    device_id: str,
+    mgr: CameraManager = Depends(get_manager),
+):
+    """
+    Capture the current background depth for a camera and persist it as the
+    static "base" depth map.
+
+    During skeleton estimation, ``lift_to_3d`` subtracts this base from the live
+    depth so the tracked hand stands out from the (static) background, which
+    stabilises depth at the hand even when the IR pattern is sparse.
+
+    Parameters
+    ----------
+    device_id : str
+        Camera to capture the base depth for.
+
+    Returns
+    -------
+    dict
+        {"status": "success", "device_id": str, "path": str}
+    """
+    base_dir = Path(config.SKELETON_DEPTH_BASE_DIR)
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    frame = mgr.latest_frame(device_id)
+    if frame is None or not frame.has_depth():
+        raise HTTPException(
+            status_code=400, detail=f"No depth frame available for {device_id}"
+        )
+
+    # Save in the same depth space the live pipeline uses: mm -> m, 0 -> NaN.
+    prepared = prepare_frame(frame)
+    path = base_dir / f"{device_id}.npy"
+    np.save(path, prepared.depth_m)
+    logger.info("Saved base depth for %s -> %s", device_id, path)
+    return {"status": "success", "device_id": device_id, "path": str(path)}
+
+
 @router.get("/status")
 async def get_status(worker: SkeletonWorker = Depends(get_worker)):
     """
@@ -131,135 +162,6 @@ async def get_status(worker: SkeletonWorker = Depends(get_worker)):
         "enabled": worker.is_enabled,
         "recording": worker.is_recording,
     }
-
-@router.get("/recordings")
-async def list_recordings(
-    page: int = 0, 
-    limit: int = 10, 
-    processor: SkeletonProcessor = Depends(get_processor)
-):
-    """
-    List recorded skeleton data files (paginated).
-
-    Parameters
-    ----------
-    page : int, default=0
-        Page number.
-    limit : int, default=10
-        Items per page.
-
-    Returns
-    -------
-    dict
-        {"recordings": list[str]} – list of filenames.
-    """
-    return {"recordings": processor.list_recordings(page=page, page_size=limit)}
-
-
-@router.post("/smooth")
-async def smooth_recording(
-    req: SmoothRequest,
-    processor: SkeletonProcessor = Depends(get_processor)
-):
-    """
-    Apply Savitzky-Golay smoothing to a recorded skeleton file.
-
-    Parameters
-    ----------
-    req : SmoothRequest
-        Filename, window length, and polynomial order.
-
-    Returns
-    -------
-    dict
-        {"status": "success", "path": str} – path to smoothed file.
-
-    Raises
-    ------
-    HTTPException 404
-        If file not found.
-    HTTPException 400
-        If smoothing parameters are invalid.
-    HTTPException 500
-        If an internal error occurs.
-    """
-    try:
-        path, _ = processor.smooth_recording(
-            req.filename,
-            window_length=req.window_length,
-            polyorder=req.polyorder
-        )
-        return {"status": "success", "path": path}
-    except FileNotFoundError:
-        raise HTTPException(404, f"Recording {req.filename} not found")
-    except ValueError as e:
-        raise HTTPException(400, str(e))
-    except Exception as e:
-        logger.exception("Smoothing failed")
-        raise HTTPException(500, f"Smoothing failed: {str(e)}")
-
-
-@router.get("/smooth-plot")
-async def smooth_plot(filename: str):
-    """
-    Return a PNG image comparing raw and smoothed wrist trajectories.
-
-    Parameters
-    ----------
-    filename : str
-        Smoothed .npz file name.
-
-    Returns
-    -------
-    Response
-        PNG image.
-
-    Raises
-    ------
-    HTTPException 404
-        If file not found.
-    """
-    """Return a PNG comparison of raw vs smoothed wrist trajectory."""
-    smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
-    npz_path = smoothed_dir / filename
-    if not npz_path.exists():
-        raise HTTPException(status_code=404, detail=f"Smoothed recording not found: {filename}")
-
-    with np.load(npz_path) as data:
-        positions = data["positions"]
-        timestamps = data["timestamps"]
-        raw_points = data.get("raw_points")
-        landmark_ids = data.get("landmark_ids")
-
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(3, 1, figsize=(10, 6), sharex=True)
-    t_sec = (timestamps - timestamps[0]) / 1_000_000
-
-    labels = ["X", "Y", "Z"]
-    colors_raw = ["#e74c3c", "#e67e22", "#3498db"]
-    colors_smooth = ["#2ecc71", "#1abc9c", "#9b59b6"]
-
-    for i, (ax, label, cr, cs) in enumerate(zip(axes, labels, colors_raw, colors_smooth)):
-        ax.plot(t_sec, positions[:, i], color=cs, linewidth=2, label="Smoothed" if i == 0 else None)
-        if raw_points is not None and landmark_ids is not None:
-            wrist_col = int(np.where(landmark_ids == 0)[0][0])
-            ax.plot(t_sec, raw_points[:, wrist_col, i], color=cr, linewidth=1, alpha=0.5, label="Raw" if i == 0 else None)
-        ax.set_ylabel(f"{label} (m)")
-        ax.legend(loc="upper right", fontsize=8)
-        ax.grid(True, alpha=0.3)
-
-    axes[-1].set_xlabel("Time (s)")
-    fig.suptitle(f"Smoothing comparison — {filename}", fontsize=12)
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=120)
-    plt.close(fig)
-    buf.seek(0)
-    return Response(content=buf.getvalue(), media_type="image/png")
 
 
 @router.websocket("/stream")
