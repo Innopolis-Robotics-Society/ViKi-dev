@@ -8,12 +8,10 @@ calibration solve, status, and clearing collected samples.
 from __future__ import annotations
 
 import cv2
-import os
-import numpy as np
+import logging
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-import logging
 
 from viki.calibration.models import ArucoBoardParameters
 
@@ -32,9 +30,7 @@ from viki.server.routes.models import (
 from viki.config import (
     INTRINSICS_FILENAME,
     EXTRINSICS_FILENAME,
-    SKELETON_DEPTH_BASE_DIR,
 )
-from viki.skeleton.camera_prep import prepare_frame
 
 router = APIRouter(prefix="/api/calibration", tags=["calibration"])
 
@@ -54,48 +50,6 @@ async def reset(cal: CalibrationManager = Depends(get_calibrator)):
     """
     cal.stop_all()
     return {"status": "success"}
-
-
-@router.post("/capture-base-depth")
-async def capture_base_depth(
-    mgr: CameraManager = Depends(get_manager),
-    cal: CalibrationManager = Depends(get_calibrator),
-):
-    """
-    Capture and save undistorted base depth maps for all active cameras.
-
-    Uses the latest frame and current intrinsics; saves depth (in metres) as
-    `.npy` files in `SKELETON_DEPTH_BASE_DIR`.
-
-    Returns
-    -------
-    dict
-        {"status": "success", "captured": list[str]} – list of device IDs for which
-        depth was successfully saved.
-    """
-    os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
-
-    active_devices = mgr.active_device_ids()
-    if not active_devices:
-        raise HTTPException(400, "No active cameras to capture base depth")
-
-    captured = []
-
-    for dev_id in active_devices:
-        frame = mgr.latest_frame(dev_id)
-        if frame is None:
-            logger.warning(f"No frame available for {dev_id}")
-            continue
-
-        prepared = prepare_frame(frame)
-
-        # Save base depth map (in meters)
-        path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
-        path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
-        np.save(path, prepared.depth_m)
-        captured.append(dev_id)
-
-    return {"status": "success", "captured": captured}
 
 
 @router.post("/sync")
@@ -140,7 +94,7 @@ async def sync(
         marker_size = params.marker_size
         try:
             aruco_dict = getattr(cv2.aruco, str(params.aruco_dict))
-        except:
+        except Exception:
             raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
 
     cal.sync_params(board_type, board_size, square_size, marker_size, aruco_dict)
@@ -269,7 +223,7 @@ async def start_aruco_worker(
         marker_size = params.marker_size
         try:
             aruco_dict = getattr(cv2.aruco, params.aruco_dict)
-        except:
+        except Exception:
             raise HTTPException(422, f"wrong aruco_dict: {params.aruco_dict}")
     cal.start(
         device_id, mode, "aruco", board_size, square_size, marker_size, aruco_dict
@@ -431,8 +385,8 @@ async def extrinsics_post_all(
     """
     Compute and save extrinsic parameters for all active devices.
 
-    First captures base depth maps for each device, then runs extrinsics
-    calibration (pose estimation) using the most recent sample.
+    Runs extrinsics calibration (pose estimation) using the most recent sample
+    for each active device.
 
     Returns
     -------
@@ -446,25 +400,10 @@ async def extrinsics_post_all(
     HTTPException 422
         If calibration fails for all devices (e.g., insufficient samples).
     """
-    # 1. Capture base depth for all active devices before calibration
-    os.makedirs(SKELETON_DEPTH_BASE_DIR, exist_ok=True)
     active_devices = mgr.active_device_ids()
     if not active_devices:
         raise HTTPException(400, "No active cameras to calibrate")
 
-    for dev_id in active_devices:
-        frame = mgr.latest_frame(dev_id)
-        if frame:
-            prepared = prepare_frame(frame)
-            path = os.path.join(SKELETON_DEPTH_BASE_DIR, f"{dev_id}.npy")
-            np.save(path, prepared.depth_m)
-            logger.info(f"Recorded base depth for {dev_id}")
-        else:
-            logger.warning(
-                f"Could not capture base depth for {dev_id}: missing frame"
-            )
-
-    # 2. Run extrinsics calibration
     results = []
     for device_id in active_devices:
         try:

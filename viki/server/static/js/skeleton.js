@@ -8,6 +8,17 @@ let selectedSkelCam = null;
 let smoothedCenter = null;
 let skelFollowEE = false; // Whether the 3D view follows the end effector
 let skelViewMode = 'projections'; // 'projections', 'isometric', or 'camera'
+let skelDepthDebug = false; // Whether to draw depth-projection debug dots
+let skelDepthMarks = null; // Last received debug_depth_marks (per device)
+
+// Distinct colour per camera so multiple hands can be told apart in the 3D
+// panel. Two cameras are expected, but a few extras are provided for safety.
+const SKEL_DEVICE_COLORS = ['#5b7fff', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
+const _deviceColorIndex = {};
+function colorForDevice(id) {
+  if (!(id in _deviceColorIndex)) _deviceColorIndex[id] = Object.keys(_deviceColorIndex).length;
+  return SKEL_DEVICE_COLORS[_deviceColorIndex[id] % SKEL_DEVICE_COLORS.length];
+}
 let cameraExtrinsics = {}; // deviceId -> { rvec, tvec }
 let calibBoard = null; // { board_size, square_size } or null
 let calibCameras = null; // [{ device_id, rvec, tvec, fx, fy, cx, cy, ... }]
@@ -28,6 +39,16 @@ export function setCalibCameras(cameras) {
 
 export function toggleCalibOverlay() {
   calibOverlayVisible = !calibOverlayVisible;
+  drawSkeleton3D([], null);
+}
+
+export async function toggleDepthDebug() {
+  skelDepthDebug = !skelDepthDebug;
+  try {
+    await api('POST', '/api/skeleton/depth-debug', { enabled: skelDepthDebug });
+  } catch (e) {
+    log('Depth debug toggle failed: ' + e, 'error');
+  }
   drawSkeleton3D([], null);
 }
 
@@ -114,11 +135,12 @@ function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
   const labels = ['X', 'Y', 'Z'];
   const origin = projFn(pos);
   if (!origin) return;
+  // R_world_palm is column-major: each column is a world-space axis.
   for (let i = 0; i < 3; i++) {
     const tip = [
-      pos[0] + len * R[i][0],
-      pos[1] + len * R[i][1],
-      pos[2] + len * R[i][2],
+      pos[0] + len * R[0][i],
+      pos[1] + len * R[1][i],
+      pos[2] + len * R[2][i],
     ];
     const pTip = projFn(tip);
     if (!pTip) continue;
@@ -131,6 +153,63 @@ function drawWristAxes(ctx, ee, projFn, cx, cy, scale) {
     ctx.fillStyle = colors[i];
     ctx.font = '9px SF Mono';
     ctx.fillText(labels[i], cx + pTip.x * scale + 2, cy - pTip.y * scale);
+  }
+}
+
+function _drawHand(ctx, proj, cx, cy, scale, landmarks, color) {
+  if (!landmarks) return;
+  // Arm chain (wrist -> elbow -> shoulder) for context.
+  ctx.strokeStyle = 'rgba(150,150,170,0.7)';
+  ctx.lineWidth = 1;
+  [[0, 21], [21, 22]].forEach(([a, b]) => {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!pa || !pb || isNaN(pa[0]) || isNaN(pb[0])) return;
+    const qa = proj(pa), qb = proj(pb);
+    if (!qa || !qb) return;
+    ctx.beginPath();
+    ctx.moveTo(cx + qa.x * scale, cy - qa.y * scale);
+    ctx.lineTo(cx + qb.x * scale, cy - qb.y * scale);
+    ctx.stroke();
+  });
+  // Hand bones (camera colour).
+  ctx.strokeStyle = color || 'rgba(91,127,255,0.9)';
+  ctx.lineWidth = 1.5;
+  HAND_CONNS.forEach(([a, b]) => {
+    const pa = landmarks[a], pb = landmarks[b];
+    if (!pa || !pb || isNaN(pa[0]) || isNaN(pb[0])) return;
+    const qa = proj(pa), qb = proj(pb);
+    if (!qa || !qb) return;
+    ctx.beginPath();
+    ctx.moveTo(cx + qa.x * scale, cy - qa.y * scale);
+    ctx.lineTo(cx + qb.x * scale, cy - qb.y * scale);
+    ctx.stroke();
+  });
+  // Joints (wrist highlighted; others in camera colour).
+  for (let i = 0; i <= 20; i++) {
+    const p = landmarks[i];
+    if (!p || isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) continue;
+    const q = proj(p);
+    if (!q) continue;
+    ctx.fillStyle = (i === 0) ? '#ffcc00' : (color || '#5b7fff');
+    ctx.beginPath();
+    ctx.arc(cx + q.x * scale, cy - q.y * scale, i === 0 ? 4 : 2.5, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// Raw depth-projection debug dots (red), one per landmark that the depth
+// camera could deproject. Drawn on top of the skeleton for visual comparison.
+function _drawDepthMarks(ctx, proj, cx, cy, scale, marks) {
+  if (!marks) return;
+  ctx.fillStyle = '#ff2d2d';
+  for (let i = 0; i < marks.length; i++) {
+    const p = marks[i];
+    if (!p || isNaN(p[0]) || isNaN(p[1]) || isNaN(p[2])) continue;
+    const q = proj(p);
+    if (!q) continue;
+    ctx.beginPath();
+    ctx.arc(cx + q.x * scale, cy - q.y * scale, 2.5, 0, Math.PI * 2);
+    ctx.fill();
   }
 }
 
@@ -157,11 +236,21 @@ function _drawBoard(ctx, proj, cx, cy, scale) {
   ctx.fill();
 }
 
+function _camWorldPos(cam) {
+  const R = rodrigues(cam.rvec), t = cam.tvec;
+  // Camera position in world frame is -R^T @ tvec.
+  return [
+    -(R[0][0] * t[0] + R[1][0] * t[1] + R[2][0] * t[2]),
+    -(R[0][1] * t[0] + R[1][1] * t[1] + R[2][1] * t[2]),
+    -(R[0][2] * t[0] + R[1][2] * t[1] + R[2][2] * t[2]),
+  ];
+}
+
 function _drawCameras(ctx, proj, cx, cy, scale) {
   if (!_calibVisible()) return;
   const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
   calibCameras.forEach((cam, i) => {
-    const p = proj(cam.tvec);
+    const p = proj(_camWorldPos(cam));
     if (!p) return;
     const col = colors[i % colors.length];
     const px = cx + p.x * scale, py = cy - p.y * scale;
@@ -174,7 +263,7 @@ function _drawCameras(ctx, proj, cx, cy, scale) {
   });
 }
 
-function drawSkeleton3D(landmarks, endEffector) {
+function drawSkeleton3D(hands, depthMarks) {
   const canvas = document.getElementById('skel-canvas-3d');
   if (!canvas) return;
   const ctx = canvas.getContext('2d');
@@ -188,20 +277,23 @@ function drawSkeleton3D(landmarks, endEffector) {
   const scale = canvas.width / 5;
   let projCenter = { x: 0, y: 0, z: 0 };
 
+  // Use the first camera's hand as the reference for centring/following.
+  const primary = (hands && hands.length) ? hands[0] : null;
+
   if (skelFollowEE) {
-    if (endEffector && endEffector.valid) {
+    if (primary && primary.endEffector && primary.endEffector.valid) {
       projCenter = {
-        x: endEffector.position[0],
-        y: endEffector.position[1],
-        z: endEffector.position[2],
+        x: primary.endEffector.position[0],
+        y: primary.endEffector.position[1],
+        z: primary.endEffector.position[2],
       };
-    } else if (landmarks && landmarks.length > 0) {
-      const valid = landmarks.map((p, i) => (p && !isNaN(p[0]) && !isNaN(p[1]) && !isNaN(p[2]) && p[2] > 0.1) ? i : -1).filter(i => i >= 0);
+    } else if (primary && primary.landmarks && primary.landmarks.length > 0) {
+      const valid = primary.landmarks.map((p, i) => (p && !isNaN(p[0]) && !isNaN(p[1]) && !isNaN(p[2]) && p[2] > 0.1) ? i : -1).filter(i => i >= 0);
       if (valid.length > 0) {
         projCenter = {
-          x: valid.reduce((s, i) => s + landmarks[i][0], 0) / valid.length,
-          y: valid.reduce((s, i) => s + landmarks[i][1], 0) / valid.length,
-          z: valid.reduce((s, i) => s + landmarks[i][2], 0) / valid.length,
+          x: valid.reduce((s, i) => s + primary.landmarks[i][0], 0) / valid.length,
+          y: valid.reduce((s, i) => s + primary.landmarks[i][1], 0) / valid.length,
+          z: valid.reduce((s, i) => s + primary.landmarks[i][2], 0) / valid.length,
         };
       }
     }
@@ -221,9 +313,9 @@ function drawSkeleton3D(landmarks, endEffector) {
     const viewW = canvas.width / 3;
     const viewH = canvas.height;
     const views = [
-      { label: 'TOP (X-Z)', proj: (p) => ({ x: -(p[0] - pc.x), y: p[2] - pc.z }), offset: 0 },
-      { label: 'FRONT (X-Y)', proj: (p) => ({ x: -(p[0] - pc.x), y: p[1] - pc.y }), offset: viewW },
-      { label: 'SIDE (Z-Y)', proj: (p) => ({ x: p[2] - pc.z, y: p[1] - pc.y }), offset: viewW * 2 },
+      { label: '(X-Z)', proj: (p) => ({ x: -(p[0] - pc.x), y: p[2] - pc.z }), offset: 0 },
+      { label: '(X-Y)', proj: (p) => ({ x: -(p[0] - pc.x), y: p[1] - pc.y }), offset: viewW },
+      { label: '(Z-Y)', proj: (p) => ({ x: p[2] - pc.z, y: p[1] - pc.y }), offset: viewW * 2 },
     ];
     views.forEach(view => {
       const cx = view.offset + viewW / 2, cy = viewH / 2;
@@ -231,14 +323,16 @@ function drawSkeleton3D(landmarks, endEffector) {
       ctx.font = '10px SF Mono';
       ctx.fillText(view.label, view.offset + 10, 20);
       ctx.fillStyle = '#fff';
-      // Wrist dot
-      if (endEffector && endEffector.valid) {
-        const wp = view.proj(endEffector.position);
+      // Wrist dot (primary camera)
+      if (primary && primary.endEffector && primary.endEffector.valid) {
+        const wp = view.proj(primary.endEffector.position);
         ctx.beginPath();
         ctx.arc(cx + wp.x * scale, cy - wp.y * scale, 4, 0, Math.PI * 2);
         ctx.fill();
       }
-      drawWristAxes(ctx, endEffector, view.proj, cx, cy, scale);
+      drawWristAxes(ctx, primary ? primary.endEffector : null, view.proj, cx, cy, scale);
+      hands.forEach(h => _drawHand(ctx, view.proj, cx, cy, scale, h.landmarks, h.color));
+      if (skelDepthDebug) _drawDepthMarks(ctx, view.proj, cx, cy, scale, depthMarks);
       _drawBoard(ctx, view.proj, cx, cy, scale);
       _drawCameras(ctx, view.proj, cx, cy, scale);
     });
@@ -260,13 +354,15 @@ function drawSkeleton3D(landmarks, endEffector) {
       ctx.fillStyle = colors[i]; ctx.font = '10px SF Mono'; ctx.fillText(labels[i], cx + pe.x * scale + 2, cy - pe.y * scale);
     });
     ctx.fillStyle = '#fff';
-    if (endEffector && endEffector.valid) {
-      const wp = projectIso(endEffector.position);
+    if (primary && primary.endEffector && primary.endEffector.valid) {
+      const wp = projectIso(primary.endEffector.position);
       ctx.beginPath();
       ctx.arc(cx + wp.x * scale, cy - wp.y * scale, 4, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawWristAxes(ctx, endEffector, projectIso, cx, cy, scale);
+    drawWristAxes(ctx, primary ? primary.endEffector : null, projectIso, cx, cy, scale);
+    hands.forEach(h => _drawHand(ctx, projectIso, cx, cy, scale, h.landmarks, h.color));
+    if (skelDepthDebug) _drawDepthMarks(ctx, projectIso, cx, cy, scale, depthMarks);
     _drawBoard(ctx, projectIso, cx, cy, scale);
     _drawCameras(ctx, projectIso, cx, cy, scale);
   } else if (skelViewMode === 'camera') {
@@ -284,18 +380,20 @@ function drawSkeleton3D(landmarks, endEffector) {
       return { x: xc / zc, y: yc / zc };
     };
     ctx.fillStyle = '#fff';
-    if (endEffector && endEffector.valid) {
-      const wp = projectCam(endEffector.position);
+    if (primary && primary.endEffector && primary.endEffector.valid) {
+      const wp = projectCam(primary.endEffector.position);
       if (wp) { ctx.beginPath(); ctx.arc(cx + wp.x * scale, cy - wp.y * scale, 4, 0, Math.PI * 2); ctx.fill(); }
     }
-    drawWristAxes(ctx, endEffector, projectCam, cx, cy, scale);
+    drawWristAxes(ctx, primary ? primary.endEffector : null, projectCam, cx, cy, scale);
+    hands.forEach(h => _drawHand(ctx, projectCam, cx, cy, scale, h.landmarks, h.color));
+    if (skelDepthDebug) _drawDepthMarks(ctx, projectCam, cx, cy, scale, depthMarks);
     if (calibOverlayVisible) {
       _drawBoard(ctx, projectCam, cx, cy, scale);
     }
     if (calibOverlayVisible && calibCameras && calibCameras.length > 0) {
       const colors = ['#00ff88', '#ff8844', '#44aaff', '#ff44aa', '#aaff44'];
       calibCameras.forEach((cam, i) => {
-        const p = projectCam(cam.tvec);
+        const p = projectCam(_camWorldPos(cam));
         if (!p) return;
         const col = colors[i % colors.length];
         const px = cx + p.x * scale, py = cy - p.y * scale;
@@ -312,29 +410,45 @@ function drawSkeleton3D(landmarks, endEffector) {
   }
 }
 
-function updateSkeletonUI(deviceId, landmarks, endEffector) {
-  if (deviceId !== selectedSkelCam) return;
+function updateSkeletonUI(hands, depthMarks) {
+  // Show the landmark table for the selected camera if present, else the first.
+  const sel = (hands && hands.length)
+    ? (hands.find(h => h.device_id === selectedSkelCam) || hands[0])
+    : null;
 
   const tableBody = document.getElementById('skel-table-body');
   if (tableBody) {
     tableBody.innerHTML = '';
-    const idx = Object.keys(landmarks).map(Number).filter(k => !isNaN(k));
-    idx.sort((a, b) => a - b);
-    idx.forEach(k => {
-      const p = landmarks[k];
-      if (!p || p[0] === null || isNaN(p[0])) return;
-      const name = SKEL_NAMES[k] || k;
-      const row = document.createElement('tr');
-      row.innerHTML = `<td>${name}</td><td>${Number(p[0]).toFixed(3)}</td><td>${Number(p[1]).toFixed(3)}</td><td>${Number(p[2]).toFixed(3)}</td>`;
-      tableBody.appendChild(row);
-    });
+    if (sel && sel.landmarks) {
+      for (let k = 0; k < SKEL_NAMES.length; k++) {
+        const p = sel.landmarks[k];
+        if (!p || p[0] === null || isNaN(p[0])) continue;
+        const name = SKEL_NAMES[k] || k;
+        const row = document.createElement('tr');
+        row.innerHTML = `<td>${name}</td><td>${Number(p[0]).toFixed(3)}</td><td>${Number(p[1]).toFixed(3)}</td><td>${Number(p[2]).toFixed(3)}</td>`;
+        tableBody.appendChild(row);
+      }
+    }
   }
 
-  const landmarksArray = [];
-  for (let i = 0; i < SKEL_NAMES.length; i++) {
-    landmarksArray[i] = (landmarks[i] || null);
+  // Depth-projection debug marks. Merge every camera that reported marks so
+  // the dots show whenever ANY camera detects the hand. Left red, never fused.
+  let depthMarksArray = null;
+  if (skelDepthMarks) {
+    depthMarksArray = [];
+    for (let i = 0; i < SKEL_NAMES.length; i++) depthMarksArray[i] = null;
+    for (const camId of Object.keys(skelDepthMarks)) {
+      const marks = skelDepthMarks[camId];
+      if (!marks) continue;
+      for (let i = 0; i < SKEL_NAMES.length; i++) {
+        const m = marks[i];
+        if (m && !isNaN(m[0]) && !isNaN(m[1]) && !isNaN(m[2])) {
+          depthMarksArray[i] = m;
+        }
+      }
+    }
   }
-  drawSkeleton3D(landmarksArray, endEffector);
+  drawSkeleton3D(hands || [], depthMarksArray);
 }
 
 export function toggleSkeleton() {
@@ -421,9 +535,23 @@ function startSkelStream() {
 
   skeletonWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
-    const detections = data.detections;
-    const globalLms = data.landmarks;
-    const endEffector = data.end_effector;
+    const detections = data.detections || {};
+    const frames = data.frames || [];
+    skelDepthMarks = data.debug_depth_marks || null;
+
+    // Build one hand object per camera, each with its own colour.
+    const hands = frames.map(f => {
+      const landmarksArray = [];
+      for (let i = 0; i < SKEL_NAMES.length; i++) {
+        landmarksArray[i] = (f.landmarks && (i in f.landmarks)) ? f.landmarks[i] : null;
+      }
+      return {
+        device_id: f.device_id,
+        landmarks: landmarksArray,
+        endEffector: f.end_effector || null,
+        color: colorForDevice(f.device_id),
+      };
+    });
 
     // Update detection status in panel
     const detEl = document.getElementById('skeleton-detections');
@@ -440,6 +568,7 @@ function startSkelStream() {
       const canvas = document.getElementById(`skel-canvas-${deviceId}`);
       if (!canvas) continue;
       const ctx = canvas.getContext('2d');
+      const color = colorForDevice(deviceId);
 
       if (!det) {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -462,8 +591,8 @@ function startSkelStream() {
       const scaleY = canvas.height / img.naturalHeight;
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.strokeStyle = '#5b7fff';
-      ctx.fillStyle = '#5b7fff';
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
       ctx.lineWidth = 2;
 
       const coords = {};
@@ -491,9 +620,7 @@ function startSkelStream() {
       });
     }
 
-    if (globalLms && Object.keys(globalLms).length > 0) {
-      updateSkeletonUI(selectedSkelCam, globalLms, endEffector);
-    }
+    updateSkeletonUI(hands);
   };
 
   skeletonWs.onclose = () => {

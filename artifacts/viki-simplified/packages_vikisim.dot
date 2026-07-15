@@ -1,0 +1,38 @@
+digraph "packages_vikisim" {
+rankdir=BT
+charset="utf-8"
+"vikisim" [color="black", label=<vikisim>, shape="box", style="solid"];
+"vikisim.app" [color="black", label=<vikisim.app>, shape="box", style="solid"];
+"vikisim.calibration" [color="black", label=<vikisim.calibration>, shape="box", style="solid"];
+"vikisim.capture_base" [color="black", label=<vikisim.capture_base>, shape="box", style="solid"];
+"vikisim.manager" [color="black", label=<vikisim.manager>, shape="box", style="solid"];
+"vikisim.models" [color="black", label=<vikisim.models>, shape="box", style="solid"];
+"vikisim.pipeline" [color="black", label=<vikisim.pipeline>, shape="box", style="solid"];
+"vikisim.sync" [color="black", label=<vikisim.sync>, shape="box", style="solid"];
+"vikisim.worker" [color="black", label=<vikisim.worker>, shape="box", style="solid"];
+"vikisim" -> "vikisim.calibration" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.capture_base" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.manager" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.models" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.pipeline" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.sync" [arrowhead="open", arrowtail="none"];
+"vikisim" -> "vikisim.worker" [arrowhead="open", arrowtail="none"];
+"vikisim.app" -> "vikisim.calibration" [arrowhead="open", arrowtail="none"];
+"vikisim.app" -> "vikisim.manager" [arrowhead="open", arrowtail="none"];
+"vikisim.app" -> "vikisim.pipeline" [arrowhead="open", arrowtail="none"];
+"vikisim.app" -> "vikisim.sync" [arrowhead="open", arrowtail="none"];
+"vikisim.app" -> "vikisim.worker" [arrowhead="open", arrowtail="none"];
+"vikisim.calibration" -> "vikisim.manager" [arrowhead="open", arrowtail="none"];
+"vikisim.manager" -> "vikisim.capture_base" [arrowhead="open", arrowtail="none"];
+"vikisim.manager" -> "vikisim.sync" [arrowhead="open", arrowtail="none"];
+"vikisim.pipeline" -> "vikisim.calibration" [arrowhead="open", arrowtail="none"];
+"vikisim.pipeline" -> "vikisim.manager" [arrowhead="open", arrowtail="none"];
+"vikisim.pipeline" -> "vikisim.models" [arrowhead="open", arrowtail="none"];
+"vikisim.pipeline" -> "vikisim.sync" [arrowhead="open", arrowtail="none"];
+"vikisim.sync" -> "vikisim.capture_base" [arrowhead="open", arrowtail="none"];
+"vikisim.worker" -> "vikisim.calibration" [arrowhead="open", arrowtail="none"];
+"vikisim.worker" -> "vikisim.manager" [arrowhead="open", arrowtail="none"];
+"vikisim.worker" -> "vikisim.models" [arrowhead="open", arrowtail="none"];
+"vikisim.worker" -> "vikisim.pipeline" [arrowhead="open", arrowtail="none"];
+"vikisim.worker" -> "vikisim.sync" [arrowhead="open", arrowtail="none"];
+}

@@ -96,6 +96,27 @@ async def toggle_recording(
     return {"status": "updated", "recording": worker.is_recording}
 
 
+@router.post("/depth-debug")
+async def toggle_depth_debug(
+    req: ToggleRequest, worker: SkeletonWorker = Depends(get_worker)
+):
+    """
+    Enable or disable depth-projection debug marks (red dots on the 3D panel).
+
+    Parameters
+    ----------
+    req : ToggleRequest
+        `enabled` boolean.
+
+    Returns
+    -------
+    dict
+        {"status": "updated", "depth_debug": bool}
+    """
+    worker.set_depth_debug(req.enabled)
+    return {"status": "updated", "depth_debug": req.enabled}
+
+
 @router.get("/status")
 async def get_status(worker: SkeletonWorker = Depends(get_worker)):
     """
@@ -244,33 +265,58 @@ async def smooth_plot(filename: str):
 @router.websocket("/stream")
 async def skeleton_stream(websocket: WebSocket):
     """
-    WebSocket endpoint that streams the latest skeleton frame.
+    WebSocket endpoint that streams the latest skeleton result.
 
-    Sends JSON data with landmarks, end‑effector pose, and per‑camera detections.
-    Updates at approximately 20 Hz.
+    Sends JSON with one entry per camera in ``frames`` (each tagged with its
+    ``device_id`` so the frontend can draw it in its own colour), the per‑camera
+    2D ``detections``, and the (un‑fused) ``debug_depth_marks``. Updates at
+    approximately 20 Hz.
     """
     await websocket.accept()
-    # logger.debug("ROUTES/SKELETON: stream endpoint engaged")
     worker: SkeletonWorker = websocket.app.state.skeleton_worker
     try:
         while True:
-            frame = worker.get_latest_frame()
+            result = worker.get_latest_result()
             detections = worker.get_latest_detections()
 
-            if frame or detections:
-                # Serialize result to dict
+            if result or detections:
+                debug_marks = (
+                    result.debug_depth_marks if result is not None else None
+                )
+                ts = (
+                    result.frames[0].timestamp_us
+                    if result and result.frames
+                    else time.time_ns() // 1000
+                )
                 data = {
-                    "ts": frame.timestamp_us if frame else time.time_ns() // 1000,
-                    "landmarks": (
-                        sanitize_nan(frame.points) if frame else {}
-                    ),
-                    "end_effector": (
-                        sanitize_nan(frame.end_effector.as_dict()) if frame and frame.end_effector else None
-                    ),
+                    "ts": ts,
+                    "frames": [
+                        {
+                            "device_id": f.device_id,
+                            "landmarks": sanitize_nan(
+                                {lm.value: vec for lm, vec in f.points.items()}
+                            ),
+                            "end_effector": (
+                                sanitize_nan(f.end_effector.as_dict())
+                                if f.end_effector else None
+                            ),
+                        }
+                        for f in (result.frames if result else [])
+                    ],
                     "detections": {
                         dev_id: (sanitize_nan(det.points) if det else {})
                         for dev_id, det in detections.items()
                     },
+                    "debug_depth_marks": (
+                        {
+                            dev_id: {
+                                lm.value: sanitize_nan(vec.tolist())
+                                for lm, vec in marks.items()
+                            }
+                            for dev_id, marks in debug_marks.items()
+                        }
+                        if debug_marks else {}
+                    ),
                 }
                 await websocket.send_json(data)
 

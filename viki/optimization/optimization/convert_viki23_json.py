@@ -97,7 +97,7 @@ def orientation_valid_mask(landmarks: np.ndarray) -> np.ndarray:
     valid = np.zeros(len(landmarks), dtype=bool)
     for frame_idx, frame in enumerate(landmarks):
         valid[frame_idx] = (
-            compute_palm_rotation(frame[0], frame[1], frame[9]) is not None
+            compute_palm_rotation(frame[0], frame[5], frame[9], frame[17]) is not None
         )
     return valid
 

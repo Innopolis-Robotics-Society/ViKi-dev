@@ -40,7 +40,7 @@ def write_device_intrinsics(
     except (FileNotFoundError, json.JSONDecodeError):
         data = []
 
-    print(data)
+    logging.debug("intrinsics DB: %s", data)
     new_entry = {
         "device_id": device_id,
         "fx": intrinsics.fx,
@@ -59,7 +59,7 @@ def write_device_intrinsics(
     else:
         data.append(new_entry)
 
-    print(file, data)
+    logging.debug("writing intrinsics DB to %s", file)
     with open(file, "w") as f:
         json.dump(data, f, indent=2)
 

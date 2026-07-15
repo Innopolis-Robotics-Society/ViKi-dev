@@ -114,7 +114,9 @@ class ExtrinsicsResponse(BaseModel):
     def transform_matrix(self) -> np.ndarray:
         """4x4 homogeneous transformation matrix."""
         R = self.rotation_matrix
+        R_inv = R.T
+        t = self.tvec_np.flatten()
         T = np.eye(4)
-        T[:3, :3] = R
-        T[:3, 3] = self.tvec_np.flatten()
+        T[:3, :3] = R_inv
+        T[:3, 3] = -R_inv @ t
         return T

@@ -142,14 +142,25 @@ class SkeletonWorker:
                 self._rgbd_recording = False
 
     def get_latest_frame(self) -> Optional[SkeletonFrame]:
-        """Return the most recently processed skeleton frame."""
+        """Return the most recently processed skeleton frame (first camera)."""
         with self._lock:
-            return self._latest_result.fused_frame if self._latest_result else None
+            if not self._latest_result:
+                return None
+            return self._latest_result.frames[0] if self._latest_result.frames else None
 
     def get_latest_detections(self) -> dict[str, HandDetection | None]:
         """Return the most recent 2D detections per camera."""
         with self._lock:
             return self._latest_result.detections if self._latest_result else {}
+
+    def get_latest_result(self) -> Optional[PipelineResult]:
+        """Return the full most recent pipeline result (incl. debug marks)."""
+        with self._lock:
+            return self._latest_result
+
+    def set_depth_debug(self, enabled: bool) -> None:
+        """Enable/disable depth-projection debug marks on the running pipeline."""
+        self._pipeline.set_depth_debug(enabled)
 
     def _run(self) -> None:
         """
@@ -184,7 +195,11 @@ class SkeletonWorker:
                             with self._lock:
                                 self._latest_result = result
                             if self._recording:
-                                self._recorder.record(result.fused_frame)
+                                depth_debug = result.depth_debug
+                                for frame in result.frames:
+                                    self._recorder.record(
+                                        frame, depth_debug=depth_debug
+                                    )
                     else:
                         # No synced frames - if recording, we could write a duplicate here
                         # but for now we just let it be (MultiCameraSync returns None)

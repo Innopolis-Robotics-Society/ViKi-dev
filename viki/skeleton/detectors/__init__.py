@@ -30,20 +30,3 @@ __all__ = [
     "PartialLandmarkDetector",
     "ensure_model",
 ]
-from viki.skeleton.detectors.composite import CompositeLandmarkDetector
-from viki.skeleton.detectors.mediapipe_base import (
-    MODELS_DIR_DEFAULT,
-    MediaPipeTaskRunner,
-    ensure_model,
-)
-
-__all__ = [
-    "CompositeLandmarkDetector",
-    "FusionMode",
-    "MODELS_DIR_DEFAULT",
-    "MediaPipeArm",
-    "MediaPipeTaskRunner",
-    "PartialDetection2D",
-    "PartialLandmarkDetector",
-    "ensure_model",
-]

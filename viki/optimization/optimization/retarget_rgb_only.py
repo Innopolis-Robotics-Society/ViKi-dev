@@ -55,7 +55,7 @@ except ImportError:  # pragma: no cover - allows package-style imports later.
 
 RIGHT_BODY_WRIST = 16
 LEFT_BODY_WRIST = 15
-HAND_IDXS = {"wrist": 0, "thumb_cmc": 1, "middle_mcp": 9}
+HAND_IDXS = {"wrist": 0, "index_mcp": 5, "middle_mcp": 9, "pinky_mcp": 17}
 SMOOTHED_TARGET_KEYS = {"positions", "rotations", "valid", "timestamps"}
 
 # Same transform used in the exploration notebook: MediaPipe RGB coordinates
@@ -528,8 +528,9 @@ def body_wrist_index(working_hand: str) -> int:
 def hand_palm_rotation(hand_frame: np.ndarray) -> np.ndarray | None:
     return compute_palm_rotation(
         hand_frame[HAND_IDXS["wrist"]],
-        hand_frame[HAND_IDXS["thumb_cmc"]],
+        hand_frame[HAND_IDXS["index_mcp"]],
         hand_frame[HAND_IDXS["middle_mcp"]],
+        hand_frame[HAND_IDXS["pinky_mcp"]],
     )
 
 

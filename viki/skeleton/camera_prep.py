@@ -51,9 +51,7 @@ def prepare_frame(frame: Frame) -> PreparedFrame:
     return PreparedFrame(
         rgb=rgb,
         depth_m=depth,
-        K=np.eye(3, dtype=np.float32),  # dummy — real K not needed for this path
         depth_K=depth_K,
         device_id=frame.device_id,
         timestamp_us=frame.timestamp_us,
-        aligned_depth=frame.aligned_depth,
     )

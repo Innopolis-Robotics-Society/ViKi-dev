@@ -14,7 +14,7 @@ import threading
 import cv2
 import numpy as np
 import logging
-from typing import Dict, List
+from typing import List
 from viki.capture.base import Frame
 from viki.capture.manager import CameraManager
 from viki.calibration.models import (
