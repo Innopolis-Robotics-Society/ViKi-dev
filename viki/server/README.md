@@ -25,13 +25,12 @@ viki/server/
   routes/
     cameras.py        # /api  device list + per-camera start/stop/info/streams
     calibration.py    # /api/calibration  capture/intrinsics/extrinsics/viz
-    skeleton.py       # /api/skeleton  toggle/record/smooth + /stream websocket
+    skeleton.py       # /api/skeleton  toggle/record/capture_base + /stream websocket
     recording.py      # /api/record  start a recording session
     system.py         # /api  config get/post/reset + restart
-    optimization.py   # /api/optimization  retarget jobs + outputs
-    dataset.py        # /api/dataset  smoothed recordings + optimize + viz
+    optimization.py   # /api/optimization  raw→prepared: recordings + smooth
+    dataset.py        # /api/dataset  prepared→h5: optimize + viz
     models.py         # Shared Pydantic/NumPy response models (intrinsics/extrinsics)
-    test_optimization.py
 ```
 
 **Layering:** `routes/` (thin handlers) → `deps.py` (DI) → `streams.py` (poll +
@@ -171,9 +170,13 @@ reloads it at import time.
 
 ## Tests
 
+Logic tests live with their packages and run without the server:
+
 ```bash
-python -m unittest viki.server.routes.test_optimization
+python -m unittest discover viki.skeleton
+python -m unittest discover viki.optimization.preparation
+python -m unittest discover viki.optimization.retarget
 ```
 
-`test_optimization` uses FastAPI's `TestClient`, which requires `httpx`; run it
-inside the container where all dependencies are present.
+Route-level `TestClient` tests were removed — the `/api/optimization` retargeting
+endpoints they covered were unused (the UI drives retargeting via `/api/dataset`).

@@ -112,11 +112,15 @@ also written. It records **landmarks only** — no smoothing/fusion here.
 | POST | `/api/skeleton/toggle` | Enable/disable live estimation. |
 | POST | `/api/skeleton/record` | Start/stop a recording session. |
 | POST | `/api/skeleton/depth-debug` | Toggle per-frame depth diagnostics. |
+| POST | `/api/skeleton/capture_base/{device_id}` | Snapshot static background depth for a camera. |
 | GET | `/api/skeleton/status` | Worker running/recording state. |
-| GET | `/api/skeleton/recordings` | List raw `rec-*.npz`. |
-| POST | `/api/skeleton/smooth` | Run `PreparationPipeline.smooth_recording` → `cln-*.npz`. |
-| GET | `/api/skeleton/smooth-plot` | Smoothing diagnostic plot. |
 | WS | `/api/skeleton/stream` | Live 3-D skeleton frames. |
+
+> Raw `rec-*.npz` → prepared `cln-*.npz` (smoothing / interpolation / fusion)
+> lives in the **optimisation** router:
+> `/api/optimization/recordings`, `/api/optimization/smooth`,
+> `/api/optimization/smooth-plot`. Prepared `cln-*.npz` → robot `.h5` is the
+> **dataset** router (`/api/dataset/*`).
 
 ## Tests
 

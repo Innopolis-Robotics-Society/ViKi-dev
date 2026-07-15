@@ -208,7 +208,6 @@ Run from the repo root (the logic tests do not require PINK/Pinocchio):
 ```bash
 python -m unittest discover viki/optimization/preparation
 python -m unittest discover viki/optimization/retarget
-python -m unittest viki.server.routes.test_optimization
 ```
 
 The retarget logic tests do not require PINK/Pinocchio. Full IK execution still

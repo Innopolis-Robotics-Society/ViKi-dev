@@ -88,5 +88,4 @@ See the per-package READMEs for details:
 
 
 ### The Project's UML Diagrams
-![classes](artifacts/classes_Viki-dev.png)
-![packages](artifacts/packages_Viki-dev.png)
+![classes](artifacts/classes_viki.png)
