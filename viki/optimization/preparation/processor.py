@@ -203,29 +203,28 @@ class PreparationPipeline:
                 [int(timestamps[i]) for i in idxs], dtype=np.int64
             )
 
-        # 1. Interpolation part: per camera, fill NaN gaps then smooth.
-        smoothed: dict[str, np.ndarray] = {}
+        # 1. Interpolation part: per camera, independently fill NaN gaps.
         raw_filled: dict[str, np.ndarray] = {}
         for dev in trajectories:
-            filled = interpolate_nans(trajectories[dev])
-            raw_filled[dev] = filled
-            smoothed[dev] = smooth_landmark_sequence(
-                filled,
-                window_length=window_length,
-                polyorder=polyorder,
-            )
+            raw_filled[dev] = interpolate_nans(trajectories[dev])
 
-        # 2. Fusion part: right after interpolation, average the per-camera
-        #    trajectories onto a common time grid (deferred from capture time).
+        # 2. Fusion part: fuse the interpolated per-camera trajectories onto a
+        #    common time grid (deferred from capture time).
         from .fusion import fuse_trajectories
 
-        fused_points, grid = fuse_trajectories(smoothed, ts_map, landmark_ids)
-        raw_fused, _ = fuse_trajectories(raw_filled, ts_map, landmark_ids)
+        raw_fused, grid = fuse_trajectories(raw_filled, ts_map, landmark_ids)
 
         if grid.size == 0:
             raise ValueError("Recording contains no valid trajectories.")
 
-        # 3. Compute end-effector poses on the fused trajectory.
+        # 3. Smooth the fused trajectory.
+        fused_points = smooth_landmark_sequence(
+            raw_fused,
+            window_length=window_length,
+            polyorder=polyorder,
+        )
+
+        # 4. Compute end-effector poses on the smoothed fused trajectory.
         T = fused_points.shape[0]
         L = fused_points.shape[1]
 
@@ -251,7 +250,7 @@ class PreparationPipeline:
             valid,
         )
 
-        # 4. Save to smoothed directory as cln-*.npz
+        # 5. Save to smoothed directory as cln-*.npz
         output_filename = filename.replace("rec-", "cln-")
         output_path = self.smoothed_dir / output_filename
 

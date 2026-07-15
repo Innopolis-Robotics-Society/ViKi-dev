@@ -89,14 +89,14 @@
   "RETARGET_RECENTER_TO_NEUTRAL": false,
   "RETARGET_TRAJECTORY_SCALE": 2,
   "ROBOT_BASE_OFFSET": [
-    0,
-    0,
+    1,
+    1,
     0
   ],
   "TARGET_OFFSET": [
-    0,
     -1,
-    -1
+    -1,
+    1
   ],
   "MODELS_DIR": "models/"
 }
