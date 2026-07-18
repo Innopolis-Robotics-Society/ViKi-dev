@@ -1,8 +1,10 @@
-// Robot trajectory visualization: list dataset outputs, stream selected one.
+// Robot trajectory visualization: comprehensive extrinsics + FK animation.
+// Displays an MJPEG stream with full scene: cameras, board, human path, robot path, FK arm.
 import { api } from './core.js';
 
-let robotVizInterval = null;
 let robotVizStreamUrl = null;
+let robotVizInterval = null;
+let previousFilename = null;
 
 export function toggleRobotViz() {
   const panel = document.getElementById('robotviz-panel');
@@ -11,10 +13,16 @@ export function toggleRobotViz() {
   if (!visible) {
     loadRobotVizOutputs();
   } else {
-    const img = document.querySelector('#robotviz-stream img');
-    if (img) img.src = '';
-    if (robotVizInterval) { clearInterval(robotVizInterval); robotVizInterval = null; }
+    stopStream();
   }
+}
+
+function stopStream() {
+  const img = document.querySelector('#robotviz-stream img');
+  if (img) img.src = '';
+  if (robotVizInterval) { clearInterval(robotVizInterval); robotVizInterval = null; }
+  robotVizStreamUrl = null;
+  previousFilename = null;
 }
 
 export async function loadRobotVizOutputs() {
@@ -42,15 +50,47 @@ export async function loadRobotVizOutputs() {
 export function selectRobotVizOutput(filename, el) {
   document.querySelectorAll('#robotviz-output-list div').forEach(d => d.style.background = '');
   if (el) el.style.background = 'var(--surface)';
+  previousFilename = filename;
+  startStream();
+}
+
+function buildConfig() {
+  const getChecked = id => document.getElementById(id)?.checked ?? true;
+  const centerOn = document.querySelector('input[name="robotviz-center"]:checked')?.value ?? 'world';
+  const axesLength = parseFloat(document.getElementById('robotviz-axes-length')?.value) || 2.0;
+  return {
+    center_on: centerOn,
+    axes_length: axesLength,
+    show_cameras: getChecked('rv-toggle-cameras'),
+    show_board: getChecked('rv-toggle-board'),
+    show_neutral_ee: getChecked('rv-toggle-neutral'),
+    show_human_trail: getChecked('rv-toggle-human-trail'),
+    show_robot_trail: getChecked('rv-toggle-robot-trail'),
+    show_base_to_ee: getChecked('rv-toggle-base-to-ee'),
+    show_debug_overlay: getChecked('rv-toggle-debug'),
+    show_reach_sphere: getChecked('rv-toggle-reach'),
+    show_fk_arm: getChecked('rv-toggle-fk'),
+    show_ee_target: getChecked('rv-toggle-ee-target'),
+  };
+}
+
+function startStream() {
+  const filename = previousFilename;
+  if (!filename) return;
+
+  const cfg = buildConfig();
+  const params = new URLSearchParams({ filename, ...cfg });
+  const url = `/api/dataset/viz-stream?${params}&t=${Date.now()}`;
 
   const streamDiv = document.getElementById('robotviz-stream');
-  const url = `/api/dataset/viz-stream?filename=${encodeURIComponent(filename)}&t=${Date.now()}`;
-
   if (robotVizStreamUrl) {
-    // Remove old img to stop previous stream
     const oldImg = streamDiv.querySelector('img');
     if (oldImg) oldImg.src = '';
   }
   robotVizStreamUrl = url;
   streamDiv.innerHTML = `<img src="${url}" alt="robot trajectory">`;
+}
+
+export function applyRobotVizConfig() {
+  startStream();
 }

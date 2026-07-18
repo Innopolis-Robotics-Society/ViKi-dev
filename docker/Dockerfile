@@ -52,7 +52,7 @@ WORKDIR /app
 
 COPY pyproject.toml .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install pip-tools && \
+    pip install pip-tools typing_extensions && \
     pip-compile pyproject.toml -o requirements.txt && \
     pip install -r requirements.txt
 

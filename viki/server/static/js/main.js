@@ -58,6 +58,8 @@ const CHANGE_ACTIONS = {
   syncBoardParameters: () => calibration.syncBoardParameters(),
   updateSkelVizCam: () => skeleton.updateSkelVizCam(),
   toggleFollowEE: () => skeleton.toggleFollowEE(),
+  // robot viz config changes
+  applyRobotVizConfig: () => robotviz.applyRobotVizConfig(),
 };
 
 document.addEventListener('click', e => {

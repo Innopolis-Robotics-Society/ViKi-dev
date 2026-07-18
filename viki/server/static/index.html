@@ -281,10 +281,39 @@
         <div style="display:flex;gap:8px;align-items:center;">
           <button data-action="loadRobotVizOutputs" style="font-size:11px;">⟳ Refresh</button>
         </div>
+
         <div id="robotviz-output-list"
-          style="font-size:12px;max-height:300px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+          style="font-size:12px;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
         </div>
         <div id="robotviz-info" style="font-size:11px;color:var(--muted);"></div>
+
+        <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px;">
+
+          <label>Center on:</label>
+          <div style="display:flex;gap:10px;font-size:11px;">
+            <label><input type="radio" name="robotviz-center" value="world" checked data-change="applyRobotVizConfig"> World Origin</label>
+            <label><input type="radio" name="robotviz-center" value="robot" data-change="applyRobotVizConfig"> Robot Base</label>
+          </div>
+
+          <label>Axes half-range (m):
+            <input type="number" id="robotviz-axes-length" value="2.0" min="0.5" max="10" step="0.1"
+                   data-change="applyRobotVizConfig" style="width:70px;">
+          </label>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">
+            <label><input type="checkbox" id="rv-toggle-board" checked data-change="applyRobotVizConfig"> Board</label>
+            <label><input type="checkbox" id="rv-toggle-cameras" checked data-change="applyRobotVizConfig"> Cameras</label>
+            <label><input type="checkbox" id="rv-toggle-neutral" checked data-change="applyRobotVizConfig"> Neutral EE</label>
+            <label><input type="checkbox" id="rv-toggle-human-trail" checked data-change="applyRobotVizConfig"> Human Trail</label>
+            <label><input type="checkbox" id="rv-toggle-robot-trail" checked data-change="applyRobotVizConfig"> Robot Trail</label>
+            <label><input type="checkbox" id="rv-toggle-base-to-ee" checked data-change="applyRobotVizConfig"> Base→EE Line</label>
+            <label><input type="checkbox" id="rv-toggle-debug" checked data-change="applyRobotVizConfig"> Debug</label>
+            <label><input type="checkbox" id="rv-toggle-reach" checked data-change="applyRobotVizConfig"> Reach Sphere</label>
+            <label><input type="checkbox" id="rv-toggle-fk" checked data-change="applyRobotVizConfig"> FK Arm</label>
+            <label><input type="checkbox" id="rv-toggle-ee-target" checked data-change="applyRobotVizConfig"> EE Targets</label>
+          </div>
+
+        </div>
       </div>
     </div>
   </div>

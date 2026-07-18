@@ -205,6 +205,17 @@
       font-size: 11px;
     }
 
+    .robotviz-controls label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    .robotviz-controls input[type=checkbox] {
+      accent-color: var(--accent);
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
@@ -587,7 +598,7 @@
     }
 
     .robotviz-controls {
-      width: 220px;
+      width: 260px;
       display: flex;
       flex-direction: column;
       gap: 10px;
