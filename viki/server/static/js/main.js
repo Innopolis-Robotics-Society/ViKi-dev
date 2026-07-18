@@ -45,10 +45,15 @@ const CLICK_ACTIONS = {
   processNextPage: () => process.processNextPage(),
   processSmoothSelected: () => process.processSmoothSelected(),
   selectProcessRec: el => process.selectProcessRec(el.dataset.filename, el),
-  // robot viz
+  // process - dataset mode
+  loadPreparedRecordings: () => process.loadPreparedRecordings(),
+  selectPreparedRec: el => process.selectPreparedRec(el.dataset.filename, el),
+  selectDsCLNRec: el => process.selectDsCLNRec(el.dataset.filename, el),
+  convertDataset: () => process.convertDataset(),
+  loadVizOutputs: () => process.loadVizOutputs(),
+  selectVizOutput: el => process.selectVizOutput(el.dataset.filename, el),
+  // robot viz (redirect to process in dataset mode)
   toggleRobotViz: () => robotviz.toggleRobotViz(),
-  loadRobotVizOutputs: () => robotviz.loadRobotVizOutputs(),
-  selectRobotVizOutput: el => robotviz.selectRobotVizOutput(el.dataset.filename, el),
 };
 
 // data-change -> handler (change on inputs/selects).
@@ -58,8 +63,10 @@ const CHANGE_ACTIONS = {
   syncBoardParameters: () => calibration.syncBoardParameters(),
   updateSkelVizCam: () => skeleton.updateSkelVizCam(),
   toggleFollowEE: () => skeleton.toggleFollowEE(),
-  // robot viz config changes
-  applyRobotVizConfig: () => robotviz.applyRobotVizConfig(),
+  // smoothing viz config changes
+  applySmoothConfig: () => process.applySmoothConfig(),
+  // robot viz config changes (now in process panel)
+  applyVizConfig: () => process.applyVizConfig(),
 };
 
 document.addEventListener('click', e => {

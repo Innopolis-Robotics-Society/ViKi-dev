@@ -13,12 +13,17 @@ from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 import viki.config as config
 from viki.optimization.preparation.processor import PreparationPipeline
 from viki.server.deps import get_processor
+from viki.server.smooth_viz import smooth_trajectory_stream
+from viki.viz.smooth_viz_shared import SmoothVizConfig
+
+_MJPEG_MEDIA = "multipart/x-mixed-replace; boundary=frame"
+_STREAM_HEADERS = {"X-Accel-Buffering": "no", "Cache-Control": "no-cache"}
 
 router = APIRouter(prefix="/optimization", tags=["optimization"])
 logger = logging.getLogger(__name__)
@@ -96,6 +101,41 @@ async def smooth_recording(
     except Exception as e:
         logger.exception("Smoothing failed")
         raise HTTPException(500, f"Smoothing failed: {str(e)}")
+
+
+@router.get("/smoothed-recordings")
+async def list_smoothed_recordings(page: int = 0, limit: int = 10):
+    smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
+    smoothed_dir.mkdir(parents=True, exist_ok=True)
+    files = sorted([f.name for f in smoothed_dir.glob("cln-*.npz")], reverse=True)
+    start = page * limit
+    end = start + limit
+    return {"recordings": files[start:end]}
+
+
+@router.get("/smooth-stream")
+async def smooth_viz_stream(
+    filename: str,
+    show_raw: bool = True,
+    show_smooth: bool = True,
+    axes_length: float = 1.0,
+    center_on: str = "world",
+):
+    smoothed_dir = Path(config.SKELETON_SMOOTHED_DIR)
+    npz_path = smoothed_dir / filename
+    if not npz_path.exists():
+        raise HTTPException(status_code=404, detail=f"Smoothed recording not found: {filename}")
+    cfg = SmoothVizConfig(
+        show_raw=show_raw,
+        show_smooth=show_smooth,
+        axes_length=axes_length,
+        center_on=center_on,
+    )
+    return StreamingResponse(
+        smooth_trajectory_stream(npz_path, cfg=cfg),
+        media_type=_MJPEG_MEDIA,
+        headers=_STREAM_HEADERS,
+    )
 
 
 @router.get("/smooth-plot")

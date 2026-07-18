@@ -24,7 +24,6 @@
     <button id="btn-calib-toggle" data-action="toggleCalibration">⚙ Calibration</button>
     <button id="btn-skeleton-toggle" data-action="toggleSkeleton">🦴 Skeleton</button>
     <button id="btn-process-toggle" data-action="toggleProcess">📊 Process</button>
-    <button id="btn-robotviz-toggle" data-action="toggleRobotViz">🤖 Robot Viz</button>
     <div class="sep"></div>
     <button id="btn-record-rgbd" class="primary" data-action="startRGBDRecording">Record</button>
     <button style="margin-left: auto" data-action="toggleConfig">⚙ Config</button>
@@ -223,100 +222,162 @@
       <span class="title">Process Recordings</span>
       <button class="danger" data-action="toggleProcess">✕ Close</button>
     </div>
-    <div class="skeleton-body" id="process-body">
-      <div class="skeleton-controls" style="flex-direction: column; gap: 8px; padding: 12px; min-width: 280px;">
+    <div class="process-body" id="process-body">
+
+      <!-- LEFT COLUMN -->
+      <div class="process-controls-left" id="process-controls-left">
         <div style="display: flex; gap: 8px;">
           <button id="btn-process-mode-smooth" class="primary" data-action="setProcessMode"
             data-mode="smooth">Smoothing</button>
           <button id="btn-process-mode-dataset" data-action="setProcessMode" data-mode="dataset">Robot Dataset</button>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <button data-action="loadProcessRecordings" style="font-size: 11px;">⟳ Refresh</button>
-          <span id="process-page-info" style="font-size: 11px; color: var(--muted);"></span>
-          <button id="btn-process-prev" data-action="processPrevPage" style="font-size: 11px;" disabled>◀ Prev</button>
-          <button id="btn-process-next" data-action="processNextPage" style="font-size: 11px;">Next ▶</button>
+
+        <!-- SMOOTHING controls -->
+        <div id="process-smooth-controls">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <button data-action="loadProcessRecordings" style="font-size: 11px;">⟳ Refresh</button>
+            <span id="process-page-info" style="font-size: 11px; color: var(--muted);"></span>
+            <button id="btn-process-prev" data-action="processPrevPage" style="font-size: 11px;" disabled>◀ Prev</button>
+            <button id="btn-process-next" data-action="processNextPage" style="font-size: 11px;">Next ▶</button>
+          </div>
+          <div id="process-rec-list"
+            style="font-size: 12px; max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px;">
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <label for="process-win-len" style="font-size: 11px;">Window:</label>
+            <input type="number" id="process-win-len" value="7" min="3" max="31" step="2"
+              style="width: 80px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 12px;">
+            <label for="process-poly" style="font-size: 11px;">Poly:</label>
+            <input type="number" id="process-poly" value="2" min="1" max="5"
+              style="width: 70px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 4px 6px; border-radius: 4px; font-size: 12px;">
+          </div>
+          <button id="btn-process-smooth" class="primary" data-action="processSmoothSelected" disabled style="width:100%;">Smooth Selected</button>
+          <div id="process-status" style="font-size: 11px; color: var(--muted);"></div>
+          <div id="process-conversion-status"
+            style="font-size: 11px; max-height: 120px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; display: none;">
+          </div>
         </div>
-        <div id="process-rec-list"
-          style="font-size: 12px; max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px;">
-        </div>
-        <div id="process-robot-row" style="display: none; gap: 8px; align-items: center;">
-          <label for="process-robot" style="font-size: 11px;">Robot:</label>
-          <select id="process-robot"
-            style="background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 12px;">
-            <option value="ur10">UR10</option>
-            <option value="iiwa14">KUKA iiwa14</option>
-          </select>
-        </div>
-        <div style="display: flex; gap: 8px; align-items: center;">
-          <label for="process-win-len" style="font-size: 11px;">Window:</label>
-          <input type="number" id="process-win-len" value="7" min="3" max="31" step="2"
-            style="width: 60px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 12px;">
-          <label for="process-poly" style="font-size: 11px;">Poly:</label>
-          <input type="number" id="process-poly" value="2" min="1" max="5"
-            style="width: 50px; background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 4px; font-size: 12px;">
-          <button id="btn-process-smooth" class="primary" data-action="processSmoothSelected" disabled>Smooth
-            Selected</button>
-        </div>
-        <div id="process-status" style="font-size: 11px; color: var(--muted);"></div>
-        <div id="process-conversion-status"
-          style="font-size: 11px; max-height: 150px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px; margin-top: 4px; display: none;">
+
+        <!-- DATASET controls -->
+        <div id="process-dataset-controls" style="display:none;flex-direction:column;gap:8px;">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button data-action="loadPreparedRecordings" style="font-size:11px;">⟳ Refresh</button>
+            <span id="process-ds-page-info" style="font-size:11px;color:var(--muted);"></span>
+          </div>
+          <div id="process-ds-cln-list"
+            style="font-size:12px;max-height:120px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <label for="process-ds-robot" style="font-size:11px;">Robot:</label>
+            <select id="process-ds-robot"
+              style="flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:2px 6px;border-radius:4px;font-size:12px;">
+              <option value="ur10">UR10</option>
+              <option value="iiwa14">KUKA iiwa14</option>
+            </select>
+          </div>
+          <div style="font-size:11px;">
+            <label>Base offset</label>
+            <div style="display:flex;gap:4px;align-items:center;">
+              X: <input type="number" id="process-ds-base-x" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+              Y: <input type="number" id="process-ds-base-y" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+              Z: <input type="number" id="process-ds-base-z" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+            </div>
+          </div>
+          <div style="font-size:11px;">
+            <label>Target offset</label>
+            <div style="display:flex;gap:4px;align-items:center;">
+              X: <input type="number" id="process-ds-target-x" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+              Y: <input type="number" id="process-ds-target-y" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+              Z: <input type="number" id="process-ds-target-z" value="0" step="0.1"
+                     style="width:65px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <label for="process-ds-scale" style="font-size:11px;">Scale:</label>
+            <input type="number" id="process-ds-scale" value="1.0" min="0.1" max="10" step="0.1"
+              style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:4px 6px;border-radius:4px;font-size:12px;">
+          </div>
+          <button id="btn-process-ds-convert" class="primary" disabled style="width:100%;" data-action="convertDataset">Convert to Dataset</button>
+          <div id="process-ds-status" style="font-size: 11px; color: var(--muted);"></div>
         </div>
       </div>
-      <div id="process-smooth-plot"
-        style="flex: 1; display: none; background: #000; border-radius: 6px; overflow: hidden; min-height: 300px; align-items: center; justify-content: center;">
+
+      <!-- MIDDLE COLUMN -->
+      <div class="process-stream" id="process-stream">
+        <div style="color:var(--muted);padding:20px;text-align:center;">Select a recording to view</div>
+      </div>
+
+      <!-- RIGHT COLUMN -->
+      <div class="process-controls-right" id="process-controls-right">
+
+        <!-- SMOOTHING viz controls -->
+        <div id="process-smooth-viz-controls">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button data-action="loadPreparedRecordings" style="font-size:11px;">⟳ Refresh</button>
+            <span id="process-cln-info" style="font-size:11px;color:var(--muted);"></span>
+          </div>
+          <div id="process-cln-list"
+            style="font-size:12px;max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px;">
+            <label style="font-size:11px;"><input type="checkbox" id="smooth-toggle-raw" checked data-change="applySmoothConfig"> Show Original</label>
+            <label style="font-size:11px;"><input type="checkbox" id="smooth-toggle-smooth" checked data-change="applySmoothConfig"> Show Smooth</label>
+            <label style="font-size:11px;">Axes length:
+              <input type="number" id="smooth-axes-length" value="1.0" min="0.1" max="10" step="0.1"
+                     data-change="applySmoothConfig" style="width:60px;">
+            </label>
+            <label style="font-size:11px;">Center on:</label>
+            <div style="display:flex;gap:10px;font-size:11px;">
+              <label><input type="radio" name="smooth-center" value="world" checked data-change="applySmoothConfig"> World</label>
+              <label><input type="radio" name="smooth-center" value="robot" data-change="applySmoothConfig"> Robot</label>
+            </div>
+          </div>
+        </div>
+
+        <!-- DATASET viz controls -->
+        <div id="process-dataset-viz-controls" style="display:none;flex-direction:column;gap:6px;">
+          <div style="display:flex;gap:4px;align-items:center;">
+            <button data-action="loadVizOutputs" style="font-size:11px;">⟳ Refresh</button>
+            <span id="process-viz-info" style="font-size:11px;color:var(--muted);"></span>
+          </div>
+          <div id="process-viz-output-list"
+            style="font-size:12px;max-height:140px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
+          </div>
+          <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px;">
+            <label style="font-size:11px;">Center on:</label>
+            <div style="display:flex;gap:10px;font-size:11px;">
+              <label><input type="radio" name="viz-center" value="world" checked data-change="applyVizConfig"> World</label>
+              <label><input type="radio" name="viz-center" value="robot" data-change="applyVizConfig"> Robot</label>
+            </div>
+            <label style="font-size:11px;">Axes:
+              <input type="number" id="viz-axes-length" value="2.0" min="0.5" max="10" step="0.1"
+                     data-change="applyVizConfig" style="width:60px;">
+            </label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">
+              <label><input type="checkbox" id="viz-toggle-board" checked data-change="applyVizConfig"> Board</label>
+              <label><input type="checkbox" id="viz-toggle-cameras" checked data-change="applyVizConfig"> Cameras</label>
+              <label><input type="checkbox" id="viz-toggle-neutral" checked data-change="applyVizConfig"> Neutral EE</label>
+              <label><input type="checkbox" id="viz-toggle-human-trail" checked data-change="applyVizConfig"> Human Trail</label>
+              <label><input type="checkbox" id="viz-toggle-robot-trail" checked data-change="applyVizConfig"> Robot Trail</label>
+              <label><input type="checkbox" id="viz-toggle-base-to-ee" checked data-change="applyVizConfig"> Base→EE</label>
+              <label><input type="checkbox" id="viz-toggle-debug" checked data-change="applyVizConfig"> Debug</label>
+              <label><input type="checkbox" id="viz-toggle-reach" checked data-change="applyVizConfig"> Reach Sphere</label>
+              <label><input type="checkbox" id="viz-toggle-fk" checked data-change="applyVizConfig"> FK Arm</label>
+              <label><input type="checkbox" id="viz-toggle-ee-target" checked data-change="applyVizConfig"> EE Targets</label>
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
 
-  <div class="robotviz-panel" id="robotviz-panel">
-    <div class="robotviz-header">
-      <span class="title">Robot Trajectory Visualization</span>
-      <button class="danger" data-action="toggleRobotViz">✕ Close</button>
-    </div>
-    <div class="robotviz-body">
-      <div class="robotviz-stream" id="robotviz-stream">
-        <div style="color:var(--muted);padding:20px;text-align:center;">Select an output file to view</div>
-      </div>
-      <div class="robotviz-controls">
-        <div style="display:flex;gap:8px;align-items:center;">
-          <button data-action="loadRobotVizOutputs" style="font-size:11px;">⟳ Refresh</button>
-        </div>
 
-        <div id="robotviz-output-list"
-          style="font-size:12px;max-height:180px;overflow-y:auto;border:1px solid var(--border);border-radius:4px;padding:4px;">
-        </div>
-        <div id="robotviz-info" style="font-size:11px;color:var(--muted);"></div>
-
-        <div style="border-top:1px solid var(--border);padding-top:8px;display:flex;flex-direction:column;gap:6px;">
-
-          <label>Center on:</label>
-          <div style="display:flex;gap:10px;font-size:11px;">
-            <label><input type="radio" name="robotviz-center" value="world" checked data-change="applyRobotVizConfig"> World Origin</label>
-            <label><input type="radio" name="robotviz-center" value="robot" data-change="applyRobotVizConfig"> Robot Base</label>
-          </div>
-
-          <label>Axes half-range (m):
-            <input type="number" id="robotviz-axes-length" value="2.0" min="0.5" max="10" step="0.1"
-                   data-change="applyRobotVizConfig" style="width:70px;">
-          </label>
-
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:11px;">
-            <label><input type="checkbox" id="rv-toggle-board" checked data-change="applyRobotVizConfig"> Board</label>
-            <label><input type="checkbox" id="rv-toggle-cameras" checked data-change="applyRobotVizConfig"> Cameras</label>
-            <label><input type="checkbox" id="rv-toggle-neutral" checked data-change="applyRobotVizConfig"> Neutral EE</label>
-            <label><input type="checkbox" id="rv-toggle-human-trail" checked data-change="applyRobotVizConfig"> Human Trail</label>
-            <label><input type="checkbox" id="rv-toggle-robot-trail" checked data-change="applyRobotVizConfig"> Robot Trail</label>
-            <label><input type="checkbox" id="rv-toggle-base-to-ee" checked data-change="applyRobotVizConfig"> Base→EE Line</label>
-            <label><input type="checkbox" id="rv-toggle-debug" checked data-change="applyRobotVizConfig"> Debug</label>
-            <label><input type="checkbox" id="rv-toggle-reach" checked data-change="applyRobotVizConfig"> Reach Sphere</label>
-            <label><input type="checkbox" id="rv-toggle-fk" checked data-change="applyRobotVizConfig"> FK Arm</label>
-            <label><input type="checkbox" id="rv-toggle-ee-target" checked data-change="applyRobotVizConfig"> EE Targets</label>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </div>
 
   <div class="grid" id="grid">
     <div class="empty-state">

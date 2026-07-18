@@ -130,6 +130,8 @@ class RunConfig:
     trajectory_scale: float
     align_initial_orientation: bool
     trajectory_scale_origin: str = "auto"
+    base_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    target_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -801,7 +803,9 @@ def retarget_from_poses(
         if rotations.shape != (T, 3, 3):
             raise ValueError(f"Expected rotations shape ({T}, 3, 3), got {rotations.shape}.")
 
-    positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
+    bo = np.array(cfg.base_offset, dtype=np.float64)
+    to = np.array(cfg.target_offset, dtype=np.float64)
+    positions = positions + to - bo
 
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):
