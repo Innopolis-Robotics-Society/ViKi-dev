@@ -673,6 +673,8 @@ def _run_ik_and_write(
         "recenter_offset": recenter_offset,
         "trajectory_scale": float(cfg.trajectory_scale),
         "trajectory_scale_origin": scale_origin,
+        "base_offset": np.array(cfg.base_offset, dtype=np.float64),
+        "target_offset": np.array(cfg.target_offset, dtype=np.float64),
         **source_meta,
     }
     if target_rot is not None:

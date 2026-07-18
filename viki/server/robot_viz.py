@@ -87,7 +87,14 @@ def robot_trajectory_stream(
             robot_name = robot_name.decode()
         if isinstance(ee_frame, bytes):
             ee_frame = ee_frame.decode()
+        base_offset_from_h5 = f["base_offset"][:] if "base_offset" in f else None
     n_frames, _n_joints = q_all.shape
+
+    # Use the offset actually applied during IK (stored in HDF5),
+    # falling back to the config-level ROBOT_BASE_OFFSET for legacy files.
+    actual_offset = get_robot_world_pos(np.zeros(3))
+    if base_offset_from_h5 is not None:
+        actual_offset = np.asarray(base_offset_from_h5, dtype=np.float64)
 
     robot_alias = resolve_robot_alias(robot_name)
     reach_radius = get_reach_radius(robot_alias)
@@ -115,12 +122,15 @@ def robot_trajectory_stream(
             model = pin.buildModelFromUrdf(str(urdf_path))
             data = pin.Data(model)
             joint_positions_all, ee_positions = fk_positions(model, data, q_all, ee_frame)
+            # Shift FK positions from URDF frame to world frame
+            joint_positions_all = joint_positions_all + actual_offset
+            ee_positions = ee_positions + actual_offset
         except Exception:
             pass
 
     # ── Neutral EE ──────────────────────────────────────────────────────
     p_neutral_robot = get_neutral_ee(robot_alias)
-    p_neutral_board = get_robot_world_pos(p_neutral_robot)
+    p_neutral_board = p_neutral_robot + actual_offset
 
     # ── Process debug data ──────────────────────────────────────────────
     debug_world: np.ndarray | None = None
@@ -135,8 +145,7 @@ def robot_trajectory_stream(
             debug_base = np.array(debug_data.get("robot_base_offset", [0, 0, 0]), dtype=np.float64)
 
     # ── Prepare reach sphere mesh (static) ─────────────────────────────
-    base_offset = np.array([0.0, 0.0, 0.0], dtype=np.float64)
-    base_offset_world = get_robot_world_pos(base_offset)
+    base_offset_world = actual_offset
     sphere_u, sphere_v = np.mgrid[0 : 2 * np.pi : 20j, 0 : np.pi : 10j]
     sphere_x = reach_radius * np.cos(sphere_u) * np.sin(sphere_v) + base_offset_world[0]
     sphere_y = reach_radius * np.sin(sphere_u) * np.sin(sphere_v) + base_offset_world[1]
