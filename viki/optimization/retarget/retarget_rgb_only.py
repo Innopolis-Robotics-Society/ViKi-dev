@@ -130,6 +130,8 @@ class RunConfig:
     trajectory_scale: float
     align_initial_orientation: bool
     trajectory_scale_origin: str = "auto"
+    base_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
+    target_offset: tuple[float, float, float] = (0.0, 0.0, 0.0)
 
 
 @dataclass(frozen=True)
@@ -671,6 +673,8 @@ def _run_ik_and_write(
         "recenter_offset": recenter_offset,
         "trajectory_scale": float(cfg.trajectory_scale),
         "trajectory_scale_origin": scale_origin,
+        "base_offset": np.array(cfg.base_offset, dtype=np.float64),
+        "target_offset": np.array(cfg.target_offset, dtype=np.float64),
         **source_meta,
     }
     if target_rot is not None:
@@ -801,7 +805,8 @@ def retarget_from_poses(
         if rotations.shape != (T, 3, 3):
             raise ValueError(f"Expected rotations shape ({T}, 3, 3), got {rotations.shape}.")
 
-    positions = positions + TARGET_OFFSET - ROBOT_BASE_OFFSET
+    to = np.array(cfg.target_offset, dtype=np.float64)
+    positions = positions + to - ROBOT_BASE_OFFSET
 
     robot = load_robot_description(cfg.robot.description)
     if robot.model.getFrameId(cfg.robot.ee_frame) >= len(robot.model.frames):

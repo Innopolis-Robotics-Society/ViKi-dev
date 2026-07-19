@@ -205,6 +205,19 @@
       font-size: 11px;
     }
 
+    .process-controls-right label,
+    .process-controls-left label {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+    }
+
+    .process-controls-right input[type=checkbox],
+    .process-controls-left input[type=checkbox] {
+      accent-color: var(--accent);
+    }
+
     .grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(660px, 1fr));
@@ -540,36 +553,13 @@
       display: block;
     }
 
-    .robotviz-panel {
-      display: none;
-      margin: 0 24px 24px;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .robotviz-header {
+    .process-body {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 14px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .robotviz-header .title {
-      font-weight: 600;
-      font-size: 12px;
-      color: var(--accent);
-    }
-
-    .robotviz-body {
-      display: flex;
-      gap: 20px;
+      gap: 16px;
       padding: 14px;
     }
 
-    .robotviz-stream {
+    .process-stream {
       flex: 1;
       background: #000;
       border-radius: 4px;
@@ -580,14 +570,21 @@
       justify-content: center;
     }
 
-    .robotviz-stream img {
+    .process-stream img {
       width: 100%;
       height: 100%;
       object-fit: contain;
     }
 
-    .robotviz-controls {
-      width: 220px;
+    .process-controls-left {
+      width: 240px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .process-controls-right {
+      width: 240px;
       display: flex;
       flex-direction: column;
       gap: 10px;
